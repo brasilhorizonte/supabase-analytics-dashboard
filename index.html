@@ -649,7 +649,6 @@
             <button class="tab-btn active" data-tab="overview">Visão Geral</button>
             <button class="tab-btn" data-tab="bh">brasilhorizonte</button>
             <button class="tab-btn" data-tab="hta">Horizon Terminal</button>
-            <button class="tab-btn" data-tab="tickers">Tickers</button>
         </div>
 
         <div class="dashboard-content">
@@ -658,12 +657,28 @@
                 <div class="kpi-grid" id="overviewKpis"></div>
                 <div class="charts-grid">
                     <div class="chart-container">
-                        <div class="chart-title">Atividade diária - BH (últimos 30 dias)</div>
-                        <canvas id="bhActivityChart"></canvas>
+                        <div class="chart-title">Eventos BH (últimos 30 dias)</div>
+                        <canvas id="bhEventsOverviewChart"></canvas>
                     </div>
                     <div class="chart-container">
-                        <div class="chart-title">Atividade diária - HTA (últimos 14 dias)</div>
-                        <canvas id="htaActivityChart"></canvas>
+                        <div class="chart-title">DAU BH (últimos 30 dias)</div>
+                        <canvas id="bhDauOverviewChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Sessões HTA (últimos 14 dias)</div>
+                        <canvas id="htaSessionsOverviewChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Tasks IA HTA (últimos 14 dias)</div>
+                        <canvas id="htaTasksOverviewChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Chat Msgs HTA (últimos 14 dias)</div>
+                        <canvas id="htaChatOverviewChart"></canvas>
                     </div>
                 </div>
                 <div class="table-container">
@@ -695,13 +710,9 @@
                         <canvas id="reportDownloadsChart"></canvas>
                     </div>
                     <div class="chart-container">
-                        <div class="chart-title">Distribuição por Setor</div>
-                        <canvas id="sectorChart"></canvas>
+                        <div class="chart-title">Tickers Mais Buscados no Dashboard</div>
+                        <canvas id="bhTickersSearchedChart"></canvas>
                     </div>
-                </div>
-                <div class="table-container">
-                    <div class="table-title">Top 20 Tickers - Mercado</div>
-                    <table id="topTickersTable"></table>
                 </div>
             </div>
 
@@ -710,12 +721,42 @@
                 <div class="kpi-grid" id="htaKpis"></div>
                 <div class="charts-grid">
                     <div class="chart-container">
-                        <div class="chart-title">Atividade Diária (últimos 14 dias)</div>
-                        <canvas id="htaDailyChart"></canvas>
+                        <div class="chart-title">Sessões Diárias (últimos 14 dias)</div>
+                        <canvas id="htaSessionsDailyChart"></canvas>
                     </div>
                     <div class="chart-container">
-                        <div class="chart-title">Chat Diário (últimos 14 dias)</div>
-                        <canvas id="chatDailyChart"></canvas>
+                        <div class="chart-title">Tasks IA Diárias (últimos 14 dias)</div>
+                        <canvas id="htaTasksDailyChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Chat Msgs Diárias (últimos 14 dias)</div>
+                        <canvas id="htaChatMsgsDailyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Mensagens Chat (últimos 14 dias)</div>
+                        <canvas id="chatMessagesDailyChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Usuários Únicos Chat (últimos 14 dias)</div>
+                        <canvas id="chatUsersDailyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Logins Diários (últimos 14 dias)</div>
+                        <canvas id="loginsDailyChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Usuários Únicos Login (últimos 14 dias)</div>
+                        <canvas id="loginUsersDailyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Tickers Mais Buscados no Terminal</div>
+                        <canvas id="htaTickersSearchedChart"></canvas>
                     </div>
                 </div>
                 <div class="panels-grid">
@@ -728,10 +769,6 @@
                         <div id="watchlistPanel"></div>
                     </div>
                 </div>
-                <div class="chart-container mb-2">
-                    <div class="chart-title">Login Diário (últimos 14 dias)</div>
-                    <canvas id="loginDailyChart"></canvas>
-                </div>
                 <div class="table-container">
                     <div class="table-title">Resumo de Eventos - Terminal</div>
                     <table id="terminalEventsTable"></table>
@@ -742,17 +779,6 @@
                 </div>
             </div>
 
-            <!-- TICKERS TAB -->
-            <div class="tab-content" id="tickers">
-                <div class="chart-container mb-2">
-                    <div class="chart-title">Tickers por Setor</div>
-                    <canvas id="tickersPerSectorChart"></canvas>
-                </div>
-                <div class="table-container">
-                    <div class="table-title">Tickers - Dados Mercado</div>
-                    <table id="tickersMarketTable"></table>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -930,76 +956,114 @@
             `;
             document.getElementById('overviewKpis').innerHTML = kpisHtml;
 
-            // BH Activity Chart (30 days)
-            destroyChart('bhActivityChart');
             const bhDaily = bh.daily_activity || [];
-            charts.bhActivityChart = new Chart(document.getElementById('bhActivityChart'), {
+            const htaDaily = hta.terminal_daily || [];
+
+            // 1. Eventos BH (30d) - line verde
+            destroyChart('bhEventsOverviewChart');
+            charts.bhEventsOverviewChart = new Chart(document.getElementById('bhEventsOverviewChart'), {
                 type: 'line',
                 data: {
                     labels: bhDaily.map(d => d.day || ''),
-                    datasets: [
-                        {
-                            label: 'Eventos',
-                            data: bhDaily.map(d => d.events || 0),
-                            borderColor: '#3ecf8e',
-                            backgroundColor: 'rgba(62, 207, 142, 0.1)',
-                            tension: 0.4,
-                            fill: true,
-                            pointBackgroundColor: '#3ecf8e'
-                        },
-                        {
-                            label: 'DAU',
-                            data: bhDaily.map(d => d.dau || 0),
-                            borderColor: '#6366f1',
-                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                            tension: 0.4,
-                            fill: true,
-                            pointBackgroundColor: '#6366f1'
-                        }
-                    ]
+                    datasets: [{
+                        label: 'Eventos',
+                        data: bhDaily.map(d => d.events || 0),
+                        borderColor: '#3ecf8e',
+                        backgroundColor: 'rgba(62, 207, 142, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: '#3ecf8e'
+                    }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
-                    plugins: { legend: { position: 'top' } },
-                    scales: {
-                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
-                    }
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
                 }
             });
 
-            // HTA Activity Chart (14 days)
-            destroyChart('htaActivityChart');
-            const htaDaily = hta.terminal_daily || [];
-            charts.htaActivityChart = new Chart(document.getElementById('htaActivityChart'), {
-                type: 'bar',
+            // 2. DAU BH (30d) - line roxo
+            destroyChart('bhDauOverviewChart');
+            charts.bhDauOverviewChart = new Chart(document.getElementById('bhDauOverviewChart'), {
+                type: 'line',
                 data: {
-                    labels: htaDaily.map(d => d.day || ''),
-                    datasets: [
-                        {
-                            label: 'Sessões',
-                            data: htaDaily.map(d => d.sessions || 0),
-                            backgroundColor: '#3ecf8e'
-                        },
-                        {
-                            label: 'Tasks',
-                            data: htaDaily.map(d => d.tasks || 0),
-                            backgroundColor: '#6366f1'
-                        },
-                        {
-                            label: 'Chat Msgs',
-                            data: htaDaily.map(d => d.chat_msgs || 0),
-                            backgroundColor: '#f59e0b'
-                        }
-                    ]
+                    labels: bhDaily.map(d => d.day || ''),
+                    datasets: [{
+                        label: 'DAU',
+                        data: bhDaily.map(d => d.dau || 0),
+                        borderColor: '#6366f1',
+                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: '#6366f1'
+                    }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
-                    plugins: { legend: { position: 'top' } },
-                    scales: {
-                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
-                    }
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // 3. Sessões HTA (14d) - bar verde
+            destroyChart('htaSessionsOverviewChart');
+            charts.htaSessionsOverviewChart = new Chart(document.getElementById('htaSessionsOverviewChart'), {
+                type: 'bar',
+                data: {
+                    labels: htaDaily.map(d => d.day || ''),
+                    datasets: [{
+                        label: 'Sessões',
+                        data: htaDaily.map(d => d.sessions || 0),
+                        backgroundColor: '#3ecf8e'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // 4. Tasks IA HTA (14d) - bar roxo
+            destroyChart('htaTasksOverviewChart');
+            charts.htaTasksOverviewChart = new Chart(document.getElementById('htaTasksOverviewChart'), {
+                type: 'bar',
+                data: {
+                    labels: htaDaily.map(d => d.day || ''),
+                    datasets: [{
+                        label: 'Tasks IA',
+                        data: htaDaily.map(d => d.tasks || 0),
+                        backgroundColor: '#6366f1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // 5. Chat Msgs HTA (14d) - bar amber
+            destroyChart('htaChatOverviewChart');
+            charts.htaChatOverviewChart = new Chart(document.getElementById('htaChatOverviewChart'), {
+                type: 'bar',
+                data: {
+                    labels: htaDaily.map(d => d.day || ''),
+                    datasets: [{
+                        label: 'Chat Msgs',
+                        data: htaDaily.map(d => d.chat_msgs || 0),
+                        backgroundColor: '#f59e0b'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
                 }
             });
 
@@ -1129,60 +1193,29 @@
                 }
             });
 
-            // Sectors Chart
-            destroyChart('sectorChart');
-            const sectors = (bh.sector_distribution || []).sort((a, b) => (Number(b.tickers) || 0) - (Number(a.tickers) || 0)).slice(0, 10);
-            charts.sectorChart = new Chart(document.getElementById('sectorChart'), {
+            // Tickers Mais Buscados no Dashboard
+            destroyChart('bhTickersSearchedChart');
+            const tickersSearched = (bh.top_tickers_searched || []).slice(0, 15);
+            charts.bhTickersSearchedChart = new Chart(document.getElementById('bhTickersSearchedChart'), {
                 type: 'bar',
                 data: {
-                    labels: sectors.map(s => s.sector || 'Unknown'),
+                    labels: tickersSearched.map(t => t.ticker || 'Unknown'),
                     datasets: [{
-                        label: 'Tickers',
-                        data: sectors.map(s => Number(s.tickers) || 0),
+                        label: 'Buscas',
+                        data: tickersSearched.map(t => t.cnt || 0),
                         backgroundColor: '#6366f1'
                     }]
                 },
                 options: {
+                    indexAxis: 'y',
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
                     scales: {
-                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                        x: { beginAtZero: true, grid: { color: '#2a2d3e' } }
                     }
                 }
             });
-
-            // Top Tickers Table
-            const tickers = (bh.top_tickers_market || []).slice(0, 20);
-            const tickersHtml = `
-                <thead>
-                    <tr>
-                        <th>Ticker</th>
-                        <th>Setor</th>
-                        <th>Preço</th>
-                        <th>MktCap</th>
-                        <th>Volume</th>
-                        <th>Var%</th>
-                        <th>Div Yield</th>
-                        <th>P/L</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${tickers.map(t => `
-                        <tr>
-                            <td><strong>${t.ticker || '-'}</strong></td>
-                            <td>${t.sector || '-'}</td>
-                            <td>${t.price ? '$' + t.price.toFixed(2) : '-'}</td>
-                            <td>${t.market_cap ? fmtBytes(t.market_cap) : '-'}</td>
-                            <td>${t.regular_market_volume ? fmt(t.regular_market_volume) : '-'}</td>
-                            <td style="color: ${(t.regular_market_change_percent || 0) >= 0 ? '#3ecf8e' : '#ef4444'}">${t.regular_market_change_percent ? t.regular_market_change_percent.toFixed(2) : '-'}%</td>
-                            <td>${t.dividend_yield ? t.dividend_yield.toFixed(2) : '-'}%</td>
-                            <td>${t.pl ? t.pl.toFixed(2) : '-'}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            `;
-            document.getElementById('topTickersTable').innerHTML = tickersHtml;
         }
 
         // ===== RENDER HTA TAB =====
@@ -1218,73 +1251,176 @@
             `;
             document.getElementById('htaKpis').innerHTML = kpisHtml;
 
-            // Daily Activity Chart
-            destroyChart('htaDailyChart');
-            charts.htaDailyChart = new Chart(document.getElementById('htaDailyChart'), {
+            const chatDaily = hta.chat_daily || [];
+            const loginDaily = hta.login_daily || [];
+
+            // 1. Sessões Diárias (bar verde)
+            destroyChart('htaSessionsDailyChart');
+            charts.htaSessionsDailyChart = new Chart(document.getElementById('htaSessionsDailyChart'), {
                 type: 'bar',
                 data: {
                     labels: terminalDaily.map(d => d.day || ''),
-                    datasets: [
-                        {
-                            label: 'Sessões',
-                            data: terminalDaily.map(d => d.sessions || 0),
-                            backgroundColor: '#3ecf8e'
-                        },
-                        {
-                            label: 'Tasks',
-                            data: terminalDaily.map(d => d.tasks || 0),
-                            backgroundColor: '#6366f1'
-                        },
-                        {
-                            label: 'Chat Msgs',
-                            data: terminalDaily.map(d => d.chat_msgs || 0),
-                            backgroundColor: '#f59e0b'
-                        }
-                    ]
+                    datasets: [{
+                        label: 'Sessões',
+                        data: terminalDaily.map(d => d.sessions || 0),
+                        backgroundColor: '#3ecf8e'
+                    }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
-                    plugins: { legend: { position: 'top' } },
-                    scales: {
-                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
-                    }
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
                 }
             });
 
-            // Chat Daily Chart
-            destroyChart('chatDailyChart');
-            const chatDaily = hta.chat_daily || [];
-            charts.chatDailyChart = new Chart(document.getElementById('chatDailyChart'), {
-                type: 'line',
+            // 2. Tasks IA Diárias (bar roxo)
+            destroyChart('htaTasksDailyChart');
+            charts.htaTasksDailyChart = new Chart(document.getElementById('htaTasksDailyChart'), {
+                type: 'bar',
                 data: {
-                    labels: chatDaily.map(d => d.day || ''),
-                    datasets: [
-                        {
-                            label: 'Mensagens',
-                            data: chatDaily.map(d => d.messages || 0),
-                            borderColor: '#3ecf8e',
-                            backgroundColor: 'rgba(62, 207, 142, 0.1)',
-                            tension: 0.4,
-                            fill: true
-                        },
-                        {
-                            label: 'Usuários Únicos',
-                            data: chatDaily.map(d => d.unique_users || 0),
-                            borderColor: '#6366f1',
-                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                            tension: 0.4,
-                            fill: true
-                        }
-                    ]
+                    labels: terminalDaily.map(d => d.day || ''),
+                    datasets: [{
+                        label: 'Tasks IA',
+                        data: terminalDaily.map(d => d.tasks || 0),
+                        backgroundColor: '#6366f1'
+                    }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
-                    plugins: { legend: { position: 'top' } },
-                    scales: {
-                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
-                    }
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // 3. Chat Msgs Diárias (bar amber)
+            destroyChart('htaChatMsgsDailyChart');
+            charts.htaChatMsgsDailyChart = new Chart(document.getElementById('htaChatMsgsDailyChart'), {
+                type: 'bar',
+                data: {
+                    labels: terminalDaily.map(d => d.day || ''),
+                    datasets: [{
+                        label: 'Chat Msgs',
+                        data: terminalDaily.map(d => d.chat_msgs || 0),
+                        backgroundColor: '#f59e0b'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // 4. Mensagens Chat (line verde)
+            destroyChart('chatMessagesDailyChart');
+            charts.chatMessagesDailyChart = new Chart(document.getElementById('chatMessagesDailyChart'), {
+                type: 'line',
+                data: {
+                    labels: chatDaily.map(d => d.day || ''),
+                    datasets: [{
+                        label: 'Mensagens',
+                        data: chatDaily.map(d => d.messages || 0),
+                        borderColor: '#3ecf8e',
+                        backgroundColor: 'rgba(62, 207, 142, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: '#3ecf8e'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // 5. Usuários Únicos Chat (line roxo)
+            destroyChart('chatUsersDailyChart');
+            charts.chatUsersDailyChart = new Chart(document.getElementById('chatUsersDailyChart'), {
+                type: 'line',
+                data: {
+                    labels: chatDaily.map(d => d.day || ''),
+                    datasets: [{
+                        label: 'Usuários Únicos',
+                        data: chatDaily.map(d => d.unique_users || 0),
+                        borderColor: '#6366f1',
+                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: '#6366f1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // 6. Logins Diários (bar verde)
+            destroyChart('loginsDailyChart');
+            charts.loginsDailyChart = new Chart(document.getElementById('loginsDailyChart'), {
+                type: 'bar',
+                data: {
+                    labels: loginDaily.map(d => d.day || ''),
+                    datasets: [{
+                        label: 'Logins',
+                        data: loginDaily.map(d => d.logins || 0),
+                        backgroundColor: '#3ecf8e'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // 7. Usuários Únicos Login (bar roxo)
+            destroyChart('loginUsersDailyChart');
+            charts.loginUsersDailyChart = new Chart(document.getElementById('loginUsersDailyChart'), {
+                type: 'bar',
+                data: {
+                    labels: loginDaily.map(d => d.day || ''),
+                    datasets: [{
+                        label: 'Usuários Únicos',
+                        data: loginDaily.map(d => d.unique_users || 0),
+                        backgroundColor: '#6366f1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // 8. Tickers Mais Buscados no Terminal
+            destroyChart('htaTickersSearchedChart');
+            const tickersSearched = (hta.top_tickers_searched || []).slice(0, 15);
+            charts.htaTickersSearchedChart = new Chart(document.getElementById('htaTickersSearchedChart'), {
+                type: 'bar',
+                data: {
+                    labels: tickersSearched.map(t => t.ticker || 'Unknown'),
+                    datasets: [{
+                        label: 'Buscas',
+                        data: tickersSearched.map(t => t.cnt || 0),
+                        backgroundColor: '#6366f1'
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
                 }
             });
 
@@ -1313,36 +1449,6 @@
                 ? watchlist.map(w => `<div class="list-item"><span class="list-item-value">${w.ticker}</span></div>`).join('')
                 : '<div class="list-item" style="color: #94a3b8;">Nenhum ticker favorito</div>';
             document.getElementById('watchlistPanel').innerHTML = watchlistHtml;
-
-            // Login Daily Chart
-            destroyChart('loginDailyChart');
-            const loginDaily = hta.login_daily || [];
-            charts.loginDailyChart = new Chart(document.getElementById('loginDailyChart'), {
-                type: 'bar',
-                data: {
-                    labels: loginDaily.map(d => d.day || ''),
-                    datasets: [
-                        {
-                            label: 'Logins',
-                            data: loginDaily.map(d => d.logins || 0),
-                            backgroundColor: '#3ecf8e'
-                        },
-                        {
-                            label: 'Usuários Únicos',
-                            data: loginDaily.map(d => d.unique_users || 0),
-                            backgroundColor: '#6366f1'
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: { legend: { position: 'top' } },
-                    scales: {
-                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
-                    }
-                }
-            });
 
             // Terminal Events Table
             const terminalEventsHtml = `
@@ -1390,66 +1496,6 @@
             document.getElementById('userProfilesTable').innerHTML = profilesHtml;
         }
 
-        // ===== RENDER TICKERS TAB =====
-        function renderTickersTab() {
-            const bh = dashboardData.bh;
-
-            // Tickers per Sector Chart
-            destroyChart('tickersPerSectorChart');
-            const sectors = (bh.sector_distribution || []).sort((a, b) => (Number(b.tickers) || 0) - (Number(a.tickers) || 0)).slice(0, 12);
-            charts.tickersPerSectorChart = new Chart(document.getElementById('tickersPerSectorChart'), {
-                type: 'bar',
-                data: {
-                    labels: sectors.map(s => s.sector || 'Unknown'),
-                    datasets: [{
-                        label: 'Quantidade de Tickers',
-                        data: sectors.map(s => Number(s.tickers) || 0),
-                        backgroundColor: '#6366f1'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
-                    }
-                }
-            });
-
-            // Tickers Market Data Table
-            const tickers = (bh.top_tickers_market || []);
-            const tickersHtml = `
-                <thead>
-                    <tr>
-                        <th>Ticker</th>
-                        <th>Setor</th>
-                        <th>Preço</th>
-                        <th>MktCap</th>
-                        <th>Volume</th>
-                        <th>Var%</th>
-                        <th>Div Yield</th>
-                        <th>P/L</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${tickers.map(t => `
-                        <tr>
-                            <td><strong>${t.ticker || '-'}</strong></td>
-                            <td>${t.sector || '-'}</td>
-                            <td>${t.price ? '$' + t.price.toFixed(2) : '-'}</td>
-                            <td>${t.market_cap ? fmtBytes(t.market_cap) : '-'}</td>
-                            <td>${t.regular_market_volume ? fmt(t.regular_market_volume) : '-'}</td>
-                            <td style="color: ${(t.regular_market_change_percent || 0) >= 0 ? '#3ecf8e' : '#ef4444'}">${t.regular_market_change_percent ? t.regular_market_change_percent.toFixed(2) : '-'}%</td>
-                            <td>${t.dividend_yield ? t.dividend_yield.toFixed(2) : '-'}%</td>
-                            <td>${t.pl ? t.pl.toFixed(2) : '-'}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            `;
-            document.getElementById('tickersMarketTable').innerHTML = tickersHtml;
-        }
-
         // ===== TAB NAVIGATION =====
         function switchTab(tabName) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -1482,7 +1528,6 @@
                 renderOverviewTab();
                 renderBhTab();
                 renderHtaTab();
-                renderTickersTab();
 
                 // Set up auto-refresh (every 5 minutes)
                 if (refreshInterval) clearInterval(refreshInterval);
@@ -1493,7 +1538,6 @@
                         if (currentTab === 'overview') renderOverviewTab();
                         else if (currentTab === 'bh') renderBhTab();
                         else if (currentTab === 'hta') renderHtaTab();
-                        else if (currentTab === 'tickers') renderTickersTab();
                     }
                 }, 5 * 60 * 1000);
 

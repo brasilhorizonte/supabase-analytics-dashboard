@@ -105,6 +105,15 @@ BEGIN
         GROUP BY day
         ORDER BY day DESC
       ) t
+    ),
+    'top_tickers_searched', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT ticker, count(*) as cnt
+        FROM public.usage_events
+        WHERE ticker IS NOT NULL AND ticker != ''
+        GROUP BY ticker ORDER BY cnt DESC LIMIT 15
+      ) t
     )
   ) INTO result;
 
