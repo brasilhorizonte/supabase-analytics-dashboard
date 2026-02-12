@@ -1067,7 +1067,7 @@
             destroyChart('bhFeaturesChart');
             const features = (bh.feature_usage || []).sort((a, b) => (b.cnt || 0) - (a.cnt || 0)).slice(0, 10);
             charts.bhFeaturesChart = new Chart(document.getElementById('bhFeaturesChart'), {
-                type: 'barH',
+                type: 'bar',
                 data: {
                     labels: features.map(f => f.feature || 'Unknown'),
                     datasets: [{
@@ -1131,14 +1131,14 @@
 
             // Sectors Chart
             destroyChart('sectorChart');
-            const sectors = (bh.sector_distribution || []).sort((a, b) => (b.tickers || '').split(',').length - (a.tickers || '').split(',').length).slice(0, 10);
+            const sectors = (bh.sector_distribution || []).sort((a, b) => (Number(b.tickers) || 0) - (Number(a.tickers) || 0)).slice(0, 10);
             charts.sectorChart = new Chart(document.getElementById('sectorChart'), {
                 type: 'bar',
                 data: {
                     labels: sectors.map(s => s.sector || 'Unknown'),
                     datasets: [{
                         label: 'Tickers',
-                        data: sectors.map(s => (s.tickers || '').split(',').filter(t => t).length),
+                        data: sectors.map(s => Number(s.tickers) || 0),
                         backgroundColor: '#6366f1'
                     }]
                 },
@@ -1392,14 +1392,14 @@
 
             // Tickers per Sector Chart
             destroyChart('tickersPerSectorChart');
-            const sectors = (bh.sector_distribution || []).sort((a, b) => (b.tickers || '').split(',').length - (a.tickers || '').split(',').length).slice(0, 12);
+            const sectors = (bh.sector_distribution || []).sort((a, b) => (Number(b.tickers) || 0) - (Number(a.tickers) || 0)).slice(0, 12);
             charts.tickersPerSectorChart = new Chart(document.getElementById('tickersPerSectorChart'), {
                 type: 'bar',
                 data: {
                     labels: sectors.map(s => s.sector || 'Unknown'),
                     datasets: [{
                         label: 'Quantidade de Tickers',
-                        data: sectors.map(s => (s.tickers || '').split(',').filter(t => t).length),
+                        data: sectors.map(s => Number(s.tickers) || 0),
                         backgroundColor: '#6366f1'
                     }]
                 },
