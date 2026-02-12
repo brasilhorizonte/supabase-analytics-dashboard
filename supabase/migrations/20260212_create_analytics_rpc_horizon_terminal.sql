@@ -46,11 +46,12 @@ BEGIN
     'chat_daily', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
-        SELECT date_trunc('day', created_at)::date as day,
+        SELECT date_trunc('day', m.created_at)::date as day,
                count(*) as messages,
-               count(DISTINCT user_id) as unique_users
-        FROM public.chat_messages
-        WHERE created_at > now() - interval '14 days'
+               count(DISTINCT s.user_id) as unique_users
+        FROM public.chat_messages m
+        JOIN public.chat_sessions s ON s.id = m.session_id
+        WHERE m.created_at > now() - interval '14 days'
         GROUP BY day
         ORDER BY day DESC
       ) t
@@ -58,19 +59,19 @@ BEGIN
     'daily_usage', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
-        SELECT date_trunc('day', timestamp)::date as day,
-               count(*) as requests
+        SELECT usage_date as day,
+               sum(request_count) as requests
         FROM public.proxy_daily_usage
-        WHERE timestamp > now() - interval '14 days'
-        GROUP BY day
-        ORDER BY day DESC
+        WHERE usage_date > (now() - interval '14 days')::date
+        GROUP BY usage_date
+        ORDER BY usage_date DESC
       ) t
     ),
     'watchlist', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
         SELECT ticker, count(*) as users
-        FROM public.watchlist
+        FROM public.user_watchlist
         GROUP BY ticker
         ORDER BY users DESC
         LIMIT 15
@@ -89,7 +90,7 @@ BEGIN
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
         SELECT doc_type, count(*) as total
-        FROM public.cvm_documents
+        FROM public.documents
         GROUP BY doc_type
         ORDER BY total DESC
       ) t
@@ -97,11 +98,11 @@ BEGIN
     'login_daily', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
-        SELECT date_trunc('day', created_at)::date as day,
+        SELECT date_trunc('day', login_at)::date as day,
                count(*) as logins,
                count(DISTINCT user_id) as unique_users
-        FROM public.login_events
-        WHERE created_at > now() - interval '14 days'
+        FROM public.user_login_events
+        WHERE login_at > now() - interval '14 days'
         GROUP BY day
         ORDER BY day DESC
       ) t

@@ -31,11 +31,11 @@ BEGIN
     'daily_activity', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
-        SELECT date_trunc('day', created_at)::date as day,
+        SELECT date_trunc('day', event_ts)::date as day,
                count(*) as events,
                count(DISTINCT user_id) as dau
         FROM public.usage_events
-        WHERE created_at > now() - interval '30 days'
+        WHERE event_ts > now() - interval '30 days'
         GROUP BY day
         ORDER BY day DESC
       ) t
