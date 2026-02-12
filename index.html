@@ -880,15 +880,12 @@
                     }
                 });
 
+                if (response.status === 401) {
+                    throw new Error('Sessão expirada. Faça login novamente.');
+                }
+
                 if (response.status === 403) {
-                    showLoading(false);
-                    document.getElementById('dashboard').innerHTML += `
-                        <div style="padding: 40px; text-align: center;">
-                            <div style="font-size: 24px; font-weight: 700; color: #ef4444; margin-bottom: 16px;">Acesso Negado</div>
-                            <div style="color: #94a3b8;">Usuário: ${currentAdmin}</div>
-                        </div>
-                    `;
-                    return null;
+                    throw new Error('Acesso negado. Apenas administradores podem acessar o dashboard.');
                 }
 
                 if (!response.ok) {
@@ -1500,7 +1497,7 @@
             } catch (error) {
                 showLoading(false);
                 console.error('Dashboard Error:', error);
-                logout();
+                showError('Erro ao carregar dashboard: ' + (error.message || 'erro desconhecido'));
             }
         }
 
