@@ -1201,16 +1201,20 @@
                 ? (terminalEvents.reduce((s, e) => s + (e.avg_duration_ms || 0), 0) / terminalEvents.length).toFixed(0)
                 : 0;
 
-            // Count CVM documents
-            const cvmDocs = (hta.documents_by_type || []).reduce((s, d) => d.doc_type === 'CVM' ? s + (d.total || 0) : s, 0);
+            // Count all CVM documents (all doc types are from CVM)
+            const totalDocs = (hta.documents_by_type || []).reduce((s, d) => s + (d.total || 0), 0);
+
+            // Count errors (task_error, workflow_error, aborted)
+            const errorActions = ['task_error', 'workflow_error', 'aborted'];
+            const totalErrors = terminalEvents.filter(e => errorActions.includes(e.action)).reduce((s, e) => s + (e.event_count || 0), 0);
 
             // KPIs
             const kpisHtml = `
                 ${createKpiCard('Usuários', fmt(hta.overview.total_users || 0))}
                 ${createKpiCard('Tasks IA', fmt(totalTasks) + ' (' + successRate + '%)')}
-                ${createKpiCard('Erros', fmt(terminalEvents.filter(e => e.action === 'error').reduce((s, e) => s + (e.event_count || 0), 0)))}
+                ${createKpiCard('Erros', fmt(totalErrors))}
                 ${createKpiCard('Tempo Médio', avgDuration + 'ms')}
-                ${createKpiCard('Docs CVM', fmt(cvmDocs))}
+                ${createKpiCard('Docs CVM', fmt(totalDocs))}
             `;
             document.getElementById('htaKpis').innerHTML = kpisHtml;
 
