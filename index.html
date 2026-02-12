@@ -568,11 +568,83 @@
             .chart-container {
                 padding: 16px;
             }
+
+            .filter-bar {
+                gap: 12px;
+            }
+
+            .gran-btn {
+                padding: 5px 10px;
+                font-size: 12px;
+            }
+
+            .date-filters input[type="date"] {
+                padding: 5px 8px;
+                font-size: 12px;
+            }
         }
 
         /* ===== UTILITY ===== */
         .hidden {
             display: none !important;
+        }
+
+        /* ===== FILTER BAR ===== */
+        .filter-bar {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .gran-toggle {
+            display: flex;
+            gap: 4px;
+        }
+
+        .gran-btn {
+            padding: 6px 14px;
+            background: var(--bg);
+            border: 1px solid var(--bd);
+            color: var(--m);
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .gran-btn:hover {
+            border-color: var(--g);
+            color: var(--t);
+        }
+
+        .gran-btn.active {
+            background: var(--g);
+            color: white;
+            border-color: var(--g);
+        }
+
+        .date-filters {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .date-filters input[type="date"] {
+            background: var(--bg);
+            border: 1px solid var(--bd);
+            color: var(--t);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        .date-filters input[type="date"]:focus {
+            outline: none;
+            border-color: var(--g);
         }
 
         .text-center {
@@ -655,6 +727,18 @@
             <!-- OVERVIEW TAB -->
             <div class="tab-content show" id="overview">
                 <div class="kpi-grid" id="overviewKpis"></div>
+                <div class="filter-bar" data-tab="overview">
+                    <div class="gran-toggle">
+                        <button class="gran-btn active" data-gran="daily">Diário</button>
+                        <button class="gran-btn" data-gran="weekly">Semanal</button>
+                        <button class="gran-btn" data-gran="monthly">Mensal</button>
+                    </div>
+                    <div class="date-filters">
+                        <input type="date" class="filter-from" />
+                        <span style="color:var(--m)">até</span>
+                        <input type="date" class="filter-to" />
+                    </div>
+                </div>
                 <div class="charts-grid">
                     <div class="chart-container">
                         <div class="chart-title">Eventos BH (diário)</div>
@@ -690,6 +774,18 @@
             <!-- BH TAB -->
             <div class="tab-content" id="bh">
                 <div class="kpi-grid" id="bhKpis"></div>
+                <div class="filter-bar" data-tab="bh">
+                    <div class="gran-toggle">
+                        <button class="gran-btn active" data-gran="daily">Diário</button>
+                        <button class="gran-btn" data-gran="weekly">Semanal</button>
+                        <button class="gran-btn" data-gran="monthly">Mensal</button>
+                    </div>
+                    <div class="date-filters">
+                        <input type="date" class="filter-from" />
+                        <span style="color:var(--m)">até</span>
+                        <input type="date" class="filter-to" />
+                    </div>
+                </div>
                 <div class="charts-grid">
                     <div class="chart-container">
                         <div class="chart-title">Eventos (diário)</div>
@@ -729,6 +825,18 @@
             <!-- HTA TAB -->
             <div class="tab-content" id="hta">
                 <div class="kpi-grid" id="htaKpis"></div>
+                <div class="filter-bar" data-tab="hta">
+                    <div class="gran-toggle">
+                        <button class="gran-btn active" data-gran="daily">Diário</button>
+                        <button class="gran-btn" data-gran="weekly">Semanal</button>
+                        <button class="gran-btn" data-gran="monthly">Mensal</button>
+                    </div>
+                    <div class="date-filters">
+                        <input type="date" class="filter-from" />
+                        <span style="color:var(--m)">até</span>
+                        <input type="date" class="filter-to" />
+                    </div>
+                </div>
                 <div class="charts-grid">
                     <div class="chart-container">
                         <div class="chart-title">Sessões Diárias</div>
@@ -809,6 +917,11 @@
         let dashboardData = null;
         let charts = {};
         let refreshInterval = null;
+        const tabFilters = {
+            overview: { gran: 'daily', from: '', to: '' },
+            bh:       { gran: 'daily', from: '', to: '' },
+            hta:      { gran: 'daily', from: '', to: '' }
+        };
 
         // ===== CHART SETUP =====
         Chart.defaults.color = '#94a3b8';
@@ -849,6 +962,68 @@
                 charts[chartId].destroy();
                 delete charts[chartId];
             }
+        }
+
+        // ===== FILTER UTILITIES =====
+        function filterByDateRange(data, from, to) {
+            return data.filter(d => {
+                const day = d.day;
+                if (from && day < from) return false;
+                if (to && day > to) return false;
+                return true;
+            });
+        }
+
+        function aggregateData(data, granularity, valueFields) {
+            if (granularity === 'daily') return data;
+            const groups = {};
+            data.forEach(d => {
+                let key;
+                const date = new Date(d.day + 'T00:00:00');
+                if (granularity === 'weekly') {
+                    const dow = date.getDay();
+                    const diff = dow === 0 ? -6 : 1 - dow;
+                    const monday = new Date(date);
+                    monday.setDate(date.getDate() + diff);
+                    key = monday.toISOString().slice(0, 10);
+                } else {
+                    key = d.day.slice(0, 7);
+                }
+                if (!groups[key]) {
+                    groups[key] = { day: key };
+                    valueFields.forEach(f => groups[key][f] = 0);
+                }
+                valueFields.forEach(f => { groups[key][f] += (d[f] || 0); });
+            });
+            return Object.values(groups).sort((a, b) => a.day.localeCompare(b.day));
+        }
+
+        function formatLabel(day, granularity) {
+            const parts = day.split('-');
+            if (granularity === 'daily') {
+                return parts[2] + '/' + parts[1];
+            } else if (granularity === 'weekly') {
+                return 'Sem ' + parts[2] + '/' + parts[1];
+            } else {
+                const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+                return months[parseInt(parts[1]) - 1] + ' ' + parts[0].slice(2);
+            }
+        }
+
+        function prepareTimeSeries(data, filters, valueFields) {
+            let result = filterByDateRange(data, filters.from, filters.to);
+            result = aggregateData(result, filters.gran, valueFields);
+            return {
+                labels: result.map(d => formatLabel(d.day, filters.gran)),
+                data: result
+            };
+        }
+
+        function reRenderTab(tabName) {
+            if (!dashboardData) return;
+            if (tabName === 'overview') renderOverviewTab();
+            else if (tabName === 'bh') renderBhTab();
+            else if (tabName === 'hta') renderHtaTab();
         }
 
         // ===== AUTHENTICATION =====
@@ -968,16 +1143,19 @@
 
             const bhDaily = bh.daily_activity || [];
             const htaDaily = hta.terminal_daily || [];
+            const ovF = tabFilters.overview;
+            const bhPrep = prepareTimeSeries(bhDaily, ovF, ['events', 'dau']);
+            const htaPrep = prepareTimeSeries(htaDaily, ovF, ['sessions', 'tasks', 'chat_msgs']);
 
-            // 1. Eventos BH (30d) - line verde
+            // 1. Eventos BH - line verde
             destroyChart('bhEventsOverviewChart');
             charts.bhEventsOverviewChart = new Chart(document.getElementById('bhEventsOverviewChart'), {
                 type: 'line',
                 data: {
-                    labels: bhDaily.map(d => d.day || ''),
+                    labels: bhPrep.labels,
                     datasets: [{
                         label: 'Eventos',
-                        data: bhDaily.map(d => d.events || 0),
+                        data: bhPrep.data.map(d => d.events || 0),
                         borderColor: '#3ecf8e',
                         backgroundColor: 'rgba(62, 207, 142, 0.1)',
                         tension: 0.4,
@@ -993,15 +1171,15 @@
                 }
             });
 
-            // 2. DAU BH (30d) - line roxo
+            // 2. DAU BH - line roxo
             destroyChart('bhDauOverviewChart');
             charts.bhDauOverviewChart = new Chart(document.getElementById('bhDauOverviewChart'), {
                 type: 'line',
                 data: {
-                    labels: bhDaily.map(d => d.day || ''),
+                    labels: bhPrep.labels,
                     datasets: [{
                         label: 'DAU',
-                        data: bhDaily.map(d => d.dau || 0),
+                        data: bhPrep.data.map(d => d.dau || 0),
                         borderColor: '#6366f1',
                         backgroundColor: 'rgba(99, 102, 241, 0.1)',
                         tension: 0.4,
@@ -1017,15 +1195,15 @@
                 }
             });
 
-            // 3. Sessões HTA (14d) - bar verde
+            // 3. Sessões HTA - bar verde
             destroyChart('htaSessionsOverviewChart');
             charts.htaSessionsOverviewChart = new Chart(document.getElementById('htaSessionsOverviewChart'), {
                 type: 'bar',
                 data: {
-                    labels: htaDaily.map(d => d.day || ''),
+                    labels: htaPrep.labels,
                     datasets: [{
                         label: 'Sessões',
-                        data: htaDaily.map(d => d.sessions || 0),
+                        data: htaPrep.data.map(d => d.sessions || 0),
                         backgroundColor: '#3ecf8e'
                     }]
                 },
@@ -1037,15 +1215,15 @@
                 }
             });
 
-            // 4. Tasks IA HTA (14d) - bar roxo
+            // 4. Tasks IA HTA - bar roxo
             destroyChart('htaTasksOverviewChart');
             charts.htaTasksOverviewChart = new Chart(document.getElementById('htaTasksOverviewChart'), {
                 type: 'bar',
                 data: {
-                    labels: htaDaily.map(d => d.day || ''),
+                    labels: htaPrep.labels,
                     datasets: [{
                         label: 'Tasks IA',
-                        data: htaDaily.map(d => d.tasks || 0),
+                        data: htaPrep.data.map(d => d.tasks || 0),
                         backgroundColor: '#6366f1'
                     }]
                 },
@@ -1057,15 +1235,15 @@
                 }
             });
 
-            // 5. Chat Msgs HTA (14d) - bar amber
+            // 5. Chat Msgs HTA - bar amber
             destroyChart('htaChatOverviewChart');
             charts.htaChatOverviewChart = new Chart(document.getElementById('htaChatOverviewChart'), {
                 type: 'bar',
                 data: {
-                    labels: htaDaily.map(d => d.day || ''),
+                    labels: htaPrep.labels,
                     datasets: [{
                         label: 'Chat Msgs',
-                        data: htaDaily.map(d => d.chat_msgs || 0),
+                        data: htaPrep.data.map(d => d.chat_msgs || 0),
                         backgroundColor: '#f59e0b'
                     }]
                 },
@@ -1125,16 +1303,19 @@
             `;
             document.getElementById('bhKpis').innerHTML = kpisHtml;
 
-            // Eventos BH (diário)
+            // Apply filters
             const bhDaily = bh.daily_activity || [];
+            const bhF = tabFilters.bh;
+            const bhPrep = prepareTimeSeries(bhDaily, bhF, ['events', 'dau']);
+
             destroyChart('bhEventsDailyChart');
             charts.bhEventsDailyChart = new Chart(document.getElementById('bhEventsDailyChart'), {
                 type: 'line',
                 data: {
-                    labels: bhDaily.map(d => d.day || ''),
+                    labels: bhPrep.labels,
                     datasets: [{
                         label: 'Eventos',
-                        data: bhDaily.map(d => d.events || 0),
+                        data: bhPrep.data.map(d => d.events || 0),
                         borderColor: '#3ecf8e',
                         backgroundColor: 'rgba(62, 207, 142, 0.1)',
                         tension: 0.4,
@@ -1150,15 +1331,15 @@
                 }
             });
 
-            // DAU BH (diário)
+            // DAU BH
             destroyChart('bhDauDailyChart');
             charts.bhDauDailyChart = new Chart(document.getElementById('bhDauDailyChart'), {
                 type: 'line',
                 data: {
-                    labels: bhDaily.map(d => d.day || ''),
+                    labels: bhPrep.labels,
                     datasets: [{
                         label: 'DAU',
-                        data: bhDaily.map(d => d.dau || 0),
+                        data: bhPrep.data.map(d => d.dau || 0),
                         borderColor: '#6366f1',
                         backgroundColor: 'rgba(99, 102, 241, 0.1)',
                         tension: 0.4,
@@ -1232,13 +1413,14 @@
             // Report Downloads Chart
             destroyChart('reportDownloadsChart');
             const downloads = bh.report_downloads_daily || [];
+            const dlPrep = prepareTimeSeries(downloads, bhF, ['downloads']);
             charts.reportDownloadsChart = new Chart(document.getElementById('reportDownloadsChart'), {
                 type: 'bar',
                 data: {
-                    labels: downloads.map(d => d.day || ''),
+                    labels: dlPrep.labels,
                     datasets: [{
                         label: 'Downloads',
-                        data: downloads.map(d => d.downloads || 0),
+                        data: dlPrep.data.map(d => d.downloads || 0),
                         backgroundColor: '#f59e0b'
                     }]
                 },
@@ -1312,16 +1494,20 @@
 
             const chatDaily = hta.chat_daily || [];
             const loginDaily = hta.login_daily || [];
+            const htaF = tabFilters.hta;
+            const termPrep = prepareTimeSeries(terminalDaily, htaF, ['sessions', 'tasks', 'chat_msgs']);
+            const chatPrep = prepareTimeSeries(chatDaily, htaF, ['messages', 'unique_users']);
+            const loginPrep = prepareTimeSeries(loginDaily, htaF, ['logins', 'unique_users']);
 
             // 1. Sessões Diárias (bar verde)
             destroyChart('htaSessionsDailyChart');
             charts.htaSessionsDailyChart = new Chart(document.getElementById('htaSessionsDailyChart'), {
                 type: 'bar',
                 data: {
-                    labels: terminalDaily.map(d => d.day || ''),
+                    labels: termPrep.labels,
                     datasets: [{
                         label: 'Sessões',
-                        data: terminalDaily.map(d => d.sessions || 0),
+                        data: termPrep.data.map(d => d.sessions || 0),
                         backgroundColor: '#3ecf8e'
                     }]
                 },
@@ -1338,10 +1524,10 @@
             charts.htaTasksDailyChart = new Chart(document.getElementById('htaTasksDailyChart'), {
                 type: 'bar',
                 data: {
-                    labels: terminalDaily.map(d => d.day || ''),
+                    labels: termPrep.labels,
                     datasets: [{
                         label: 'Tasks IA',
-                        data: terminalDaily.map(d => d.tasks || 0),
+                        data: termPrep.data.map(d => d.tasks || 0),
                         backgroundColor: '#6366f1'
                     }]
                 },
@@ -1358,10 +1544,10 @@
             charts.htaChatMsgsDailyChart = new Chart(document.getElementById('htaChatMsgsDailyChart'), {
                 type: 'bar',
                 data: {
-                    labels: terminalDaily.map(d => d.day || ''),
+                    labels: termPrep.labels,
                     datasets: [{
                         label: 'Chat Msgs',
-                        data: terminalDaily.map(d => d.chat_msgs || 0),
+                        data: termPrep.data.map(d => d.chat_msgs || 0),
                         backgroundColor: '#f59e0b'
                     }]
                 },
@@ -1378,10 +1564,10 @@
             charts.chatMessagesDailyChart = new Chart(document.getElementById('chatMessagesDailyChart'), {
                 type: 'line',
                 data: {
-                    labels: chatDaily.map(d => d.day || ''),
+                    labels: chatPrep.labels,
                     datasets: [{
                         label: 'Mensagens',
-                        data: chatDaily.map(d => d.messages || 0),
+                        data: chatPrep.data.map(d => d.messages || 0),
                         borderColor: '#3ecf8e',
                         backgroundColor: 'rgba(62, 207, 142, 0.1)',
                         tension: 0.4,
@@ -1402,10 +1588,10 @@
             charts.chatUsersDailyChart = new Chart(document.getElementById('chatUsersDailyChart'), {
                 type: 'line',
                 data: {
-                    labels: chatDaily.map(d => d.day || ''),
+                    labels: chatPrep.labels,
                     datasets: [{
                         label: 'Usuários Únicos',
-                        data: chatDaily.map(d => d.unique_users || 0),
+                        data: chatPrep.data.map(d => d.unique_users || 0),
                         borderColor: '#6366f1',
                         backgroundColor: 'rgba(99, 102, 241, 0.1)',
                         tension: 0.4,
@@ -1426,10 +1612,10 @@
             charts.loginsDailyChart = new Chart(document.getElementById('loginsDailyChart'), {
                 type: 'bar',
                 data: {
-                    labels: loginDaily.map(d => d.day || ''),
+                    labels: loginPrep.labels,
                     datasets: [{
                         label: 'Logins',
-                        data: loginDaily.map(d => d.logins || 0),
+                        data: loginPrep.data.map(d => d.logins || 0),
                         backgroundColor: '#3ecf8e'
                     }]
                 },
@@ -1446,10 +1632,10 @@
             charts.loginUsersDailyChart = new Chart(document.getElementById('loginUsersDailyChart'), {
                 type: 'bar',
                 data: {
-                    labels: loginDaily.map(d => d.day || ''),
+                    labels: loginPrep.labels,
                     datasets: [{
                         label: 'Usuários Únicos',
-                        data: loginDaily.map(d => d.unique_users || 0),
+                        data: loginPrep.data.map(d => d.unique_users || 0),
                         backgroundColor: '#6366f1'
                     }]
                 },
@@ -1625,6 +1811,28 @@
 
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+        });
+
+        // Filter controls
+        document.querySelector('.dashboard-content').addEventListener('click', (e) => {
+            const btn = e.target.closest('.gran-btn');
+            if (!btn) return;
+            const bar = btn.closest('.filter-bar');
+            const tabName = bar.dataset.tab;
+            tabFilters[tabName].gran = btn.dataset.gran;
+            bar.querySelectorAll('.gran-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            reRenderTab(tabName);
+        });
+
+        document.querySelector('.dashboard-content').addEventListener('change', (e) => {
+            if (e.target.classList.contains('filter-from') || e.target.classList.contains('filter-to')) {
+                const bar = e.target.closest('.filter-bar');
+                const tabName = bar.dataset.tab;
+                tabFilters[tabName].from = bar.querySelector('.filter-from').value;
+                tabFilters[tabName].to = bar.querySelector('.filter-to').value;
+                reRenderTab(tabName);
+            }
         });
 
         // Update timestamp every second
