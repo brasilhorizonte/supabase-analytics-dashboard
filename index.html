@@ -690,6 +690,16 @@
             <!-- BH TAB -->
             <div class="tab-content" id="bh">
                 <div class="kpi-grid" id="bhKpis"></div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Eventos (diário)</div>
+                        <canvas id="bhEventsDailyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">DAU (diário)</div>
+                        <canvas id="bhDauDailyChart"></canvas>
+                    </div>
+                </div>
                 <div class="chart-container mb-2">
                     <div class="chart-title">Funil de Conversão</div>
                     <div class="funnel" id="conversionFunnel"></div>
@@ -1114,6 +1124,55 @@
                 ${createKpiCard('Eventos', fmt((bh.daily_activity || []).reduce((s, d) => s + (d.events || 0), 0)))}
             `;
             document.getElementById('bhKpis').innerHTML = kpisHtml;
+
+            // Eventos BH (diário)
+            const bhDaily = bh.daily_activity || [];
+            destroyChart('bhEventsDailyChart');
+            charts.bhEventsDailyChart = new Chart(document.getElementById('bhEventsDailyChart'), {
+                type: 'line',
+                data: {
+                    labels: bhDaily.map(d => d.day || ''),
+                    datasets: [{
+                        label: 'Eventos',
+                        data: bhDaily.map(d => d.events || 0),
+                        borderColor: '#3ecf8e',
+                        backgroundColor: 'rgba(62, 207, 142, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: '#3ecf8e'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // DAU BH (diário)
+            destroyChart('bhDauDailyChart');
+            charts.bhDauDailyChart = new Chart(document.getElementById('bhDauDailyChart'), {
+                type: 'line',
+                data: {
+                    labels: bhDaily.map(d => d.day || ''),
+                    datasets: [{
+                        label: 'DAU',
+                        data: bhDaily.map(d => d.dau || 0),
+                        borderColor: '#6366f1',
+                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: '#6366f1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
 
             // Conversion Funnel
             const funnel = bh.conversion_funnel || {};
