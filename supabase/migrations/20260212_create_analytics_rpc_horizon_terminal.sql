@@ -38,7 +38,6 @@ BEGIN
                count(*) FILTER (WHERE feature = 'agent') as tasks,
                count(*) FILTER (WHERE feature = 'chat') as chat_msgs
         FROM public.terminal_events
-        WHERE created_at > now() - interval '14 days'
         GROUP BY day
         ORDER BY day DESC
       ) t
@@ -51,7 +50,6 @@ BEGIN
                count(DISTINCT s.user_id) as unique_users
         FROM public.chat_messages m
         JOIN public.chat_sessions s ON s.id = m.session_id
-        WHERE m.created_at > now() - interval '14 days'
         GROUP BY day
         ORDER BY day DESC
       ) t
@@ -62,7 +60,6 @@ BEGIN
         SELECT usage_date as day,
                sum(request_count) as requests
         FROM public.proxy_daily_usage
-        WHERE usage_date > (now() - interval '14 days')::date
         GROUP BY usage_date
         ORDER BY usage_date DESC
       ) t
@@ -102,7 +99,6 @@ BEGIN
                count(*) as logins,
                count(DISTINCT user_id) as unique_users
         FROM public.user_login_events
-        WHERE login_at > now() - interval '14 days'
         GROUP BY day
         ORDER BY day DESC
       ) t

@@ -35,7 +35,6 @@ BEGIN
                count(*) as events,
                count(DISTINCT user_id) as dau
         FROM public.usage_events
-        WHERE event_ts > now() - interval '30 days'
         GROUP BY day
         ORDER BY day DESC
       ) t
@@ -101,7 +100,6 @@ BEGIN
         SELECT date_trunc('day', created_at)::date as day,
                count(*) as downloads
         FROM public.report_downloads
-        WHERE created_at > now() - interval '30 days'
         GROUP BY day
         ORDER BY day DESC
       ) t
