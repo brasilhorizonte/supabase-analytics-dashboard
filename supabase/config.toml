@@ -1,0 +1,5 @@
+[project]
+id = "llqhmywodxzstjlrulcw"
+
+[functions.analytics-dashboard]
+verify_jwt = false

@@ -1,0 +1,1540 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supabase Analytics Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #0f1117;
+            --c: #1a1d2e;
+            --bd: #2a2d3e;
+            --t: #e2e8f0;
+            --m: #94a3b8;
+            --g: #3ecf8e;
+            --p: #6366f1;
+            --a: #f59e0b;
+            --r: #ef4444;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: var(--bg);
+            color: var(--t);
+            overflow-x: hidden;
+        }
+
+        /* ===== LOGIN PAGE ===== */
+        .login-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0f1117 0%, #1a1d2e 100%);
+        }
+
+        .login-card {
+            background: var(--c);
+            border: 1px solid var(--bd);
+            border-radius: 12px;
+            padding: 48px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .login-icon {
+            font-size: 48px;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .login-title {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(90deg, var(--g), var(--p));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .login-subtitle {
+            font-size: 14px;
+            color: var(--m);
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: var(--t);
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg);
+            border: 1px solid var(--bd);
+            border-radius: 6px;
+            color: var(--t);
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--g);
+            box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.1);
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 12px;
+            margin-top: 24px;
+            background: linear-gradient(90deg, var(--g), var(--p));
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .login-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(62, 207, 142, 0.3);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            color: var(--r);
+            font-size: 14px;
+            margin-top: 16px;
+            padding: 12px;
+            background: rgba(239, 68, 68, 0.1);
+            border-radius: 6px;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        /* ===== DASHBOARD ===== */
+        .dashboard {
+            display: none;
+            min-height: 100vh;
+        }
+
+        .dashboard.show {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .dashboard-header {
+            background: linear-gradient(90deg, var(--c) 0%, #1f2937 100%);
+            border-bottom: 1px solid var(--bd);
+            padding: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .header-title {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(90deg, var(--g), var(--p));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .live-dot {
+            width: 12px;
+            height: 12px;
+            background: var(--g);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .header-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .timestamp {
+            font-size: 12px;
+            color: var(--m);
+            font-family: 'Courier New', monospace;
+        }
+
+        .admin-badge {
+            background: var(--p);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .logout-btn {
+            padding: 8px 16px;
+            background: var(--r);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .logout-btn:hover {
+            background: #dc2626;
+        }
+
+        .tabs {
+            background: var(--c);
+            border-bottom: 1px solid var(--bd);
+            display: flex;
+            padding: 0 24px;
+            gap: 8px;
+            overflow-x: auto;
+        }
+
+        .tab-btn {
+            padding: 16px 20px;
+            background: none;
+            border: none;
+            color: var(--m);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+
+        .tab-btn:hover {
+            color: var(--t);
+        }
+
+        .tab-btn.active {
+            color: var(--g);
+            border-bottom-color: var(--g);
+        }
+
+        .dashboard-content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.show {
+            display: block;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            display: none;
+        }
+
+        .loading-overlay.show {
+            display: flex;
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top-color: var(--g);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        /* ===== KPI CARDS ===== */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .kpi-card {
+            background: var(--c);
+            border: 1px solid var(--bd);
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .kpi-card:hover {
+            border-color: var(--g);
+            box-shadow: 0 4px 12px rgba(62, 207, 142, 0.15);
+        }
+
+        .kpi-label {
+            font-size: 12px;
+            color: var(--m);
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .kpi-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--t);
+            margin-bottom: 8px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .kpi-change {
+            font-size: 12px;
+            color: var(--m);
+        }
+
+        .kpi-change.positive {
+            color: var(--g);
+        }
+
+        .kpi-change.negative {
+            color: var(--r);
+        }
+
+        /* ===== CHARTS ===== */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .chart-container {
+            background: var(--c);
+            border: 1px solid var(--bd);
+            border-radius: 8px;
+            padding: 20px;
+            position: relative;
+            min-height: 400px;
+        }
+
+        .chart-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--t);
+            margin-bottom: 16px;
+        }
+
+        canvas {
+            max-height: 350px;
+        }
+
+        /* ===== TABLES ===== */
+        .table-container {
+            background: var(--c);
+            border: 1px solid var(--bd);
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 24px;
+        }
+
+        .table-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--t);
+            padding: 20px 20px 16px;
+            border-bottom: 1px solid var(--bd);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th {
+            background: var(--bg);
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--m);
+            border-bottom: 1px solid var(--bd);
+            position: sticky;
+            top: 0;
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--bd);
+            color: var(--t);
+        }
+
+        tr:hover {
+            background: rgba(62, 207, 142, 0.05);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-active {
+            background: rgba(62, 207, 142, 0.2);
+            color: var(--g);
+        }
+
+        .status-inactive {
+            background: rgba(148, 163, 184, 0.2);
+            color: var(--m);
+        }
+
+        /* ===== PANELS ===== */
+        .panels-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .panel {
+            background: var(--c);
+            border: 1px solid var(--bd);
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--t);
+            margin-bottom: 16px;
+        }
+
+        .list-item {
+            padding: 8px 0;
+            border-bottom: 1px solid var(--bd);
+            font-size: 13px;
+            color: var(--m);
+        }
+
+        .list-item:last-child {
+            border-bottom: none;
+        }
+
+        .list-item-value {
+            color: var(--g);
+            font-weight: 600;
+        }
+
+        /* ===== FUNNEL ===== */
+        .funnel {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .funnel-step {
+            background: linear-gradient(90deg, var(--p), var(--g));
+            padding: 16px;
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .funnel-step-label {
+            font-weight: 600;
+            color: white;
+        }
+
+        .funnel-step-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: white;
+            font-family: 'Courier New', monospace;
+        }
+
+        /* ===== COMPARISON TABLE ===== */
+        .comparison-table {
+            margin-bottom: 24px;
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 768px) {
+            .login-card {
+                padding: 32px 20px;
+                margin: 20px;
+            }
+
+            .dashboard-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .header-info {
+                width: 100%;
+                flex-direction: column;
+            }
+
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .panels-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .kpi-grid {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            }
+
+            .kpi-value {
+                font-size: 20px;
+            }
+
+            .dashboard-content {
+                padding: 16px;
+            }
+
+            .chart-container {
+                padding: 16px;
+            }
+        }
+
+        /* ===== UTILITY ===== */
+        .hidden {
+            display: none !important;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .mt-2 {
+            margin-top: 16px;
+        }
+
+        .mb-2 {
+            margin-bottom: 16px;
+        }
+
+        /* ===== SCROLLBAR ===== */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--bd);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--m);
+        }
+    </style>
+</head>
+<body>
+    <!-- LOGIN PAGE -->
+    <div class="login-container" id="loginContainer">
+        <div class="login-card">
+            <div class="login-icon">🔒</div>
+            <h1 class="login-title">Analytics Dashboard</h1>
+            <p class="login-subtitle">Acesso restrito a administradores</p>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="email">E-mail</label>
+                    <input type="email" id="email" placeholder="seu@email.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Senha</label>
+                    <input type="password" id="password" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="login-btn" id="loginBtn">
+                    <span>Entrar</span>
+                </button>
+                <div class="error-message" id="errorMessage"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- DASHBOARD PAGE -->
+    <div class="dashboard" id="dashboard">
+        <div class="dashboard-header">
+            <h1 class="header-title">
+                <span class="live-dot"></span>
+                Supabase Analytics — Live Dashboard
+            </h1>
+            <div class="header-info">
+                <div class="timestamp" id="timestamp">--:--:--</div>
+                <div class="admin-badge" id="adminBadge">admin@example.com</div>
+                <button class="logout-btn" id="logoutBtn">Sair</button>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="overview">Visão Geral</button>
+            <button class="tab-btn" data-tab="bh">brasilhorizonte</button>
+            <button class="tab-btn" data-tab="hta">Horizon Terminal</button>
+            <button class="tab-btn" data-tab="tickers">Tickers</button>
+        </div>
+
+        <div class="dashboard-content">
+            <!-- OVERVIEW TAB -->
+            <div class="tab-content show" id="overview">
+                <div class="kpi-grid" id="overviewKpis"></div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Atividade diária - BH (últimos 30 dias)</div>
+                        <canvas id="bhActivityChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Atividade diária - HTA (últimos 14 dias)</div>
+                        <canvas id="htaActivityChart"></canvas>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <div class="table-title">Comparação BH vs HTA</div>
+                    <table id="comparisonTable"></table>
+                </div>
+            </div>
+
+            <!-- BH TAB -->
+            <div class="tab-content" id="bh">
+                <div class="kpi-grid" id="bhKpis"></div>
+                <div class="chart-container mb-2">
+                    <div class="chart-title">Funil de Conversão</div>
+                    <div class="funnel" id="conversionFunnel"></div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Uso de Recursos</div>
+                        <canvas id="bhFeaturesChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Eventos Resumidos</div>
+                        <canvas id="bhEventsChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Downloads de Relatório (diário)</div>
+                        <canvas id="reportDownloadsChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Distribuição por Setor</div>
+                        <canvas id="sectorChart"></canvas>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <div class="table-title">Top 20 Tickers - Mercado</div>
+                    <table id="topTickersTable"></table>
+                </div>
+            </div>
+
+            <!-- HTA TAB -->
+            <div class="tab-content" id="hta">
+                <div class="kpi-grid" id="htaKpis"></div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Atividade Diária (últimos 14 dias)</div>
+                        <canvas id="htaDailyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Chat Diário (últimos 14 dias)</div>
+                        <canvas id="chatDailyChart"></canvas>
+                    </div>
+                </div>
+                <div class="panels-grid">
+                    <div class="panel">
+                        <div class="panel-title">Documentos por Tipo</div>
+                        <canvas id="documentsChart"></canvas>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-title">Watchlist (Tickers Favoritos)</div>
+                        <div id="watchlistPanel"></div>
+                    </div>
+                </div>
+                <div class="chart-container mb-2">
+                    <div class="chart-title">Login Diário (últimos 14 dias)</div>
+                    <canvas id="loginDailyChart"></canvas>
+                </div>
+                <div class="table-container">
+                    <div class="table-title">Resumo de Eventos - Terminal</div>
+                    <table id="terminalEventsTable"></table>
+                </div>
+                <div class="table-container">
+                    <div class="table-title">Perfis de Usuário</div>
+                    <table id="userProfilesTable"></table>
+                </div>
+            </div>
+
+            <!-- TICKERS TAB -->
+            <div class="tab-content" id="tickers">
+                <div class="chart-container mb-2">
+                    <div class="chart-title">Tickers por Setor</div>
+                    <canvas id="tickersPerSectorChart"></canvas>
+                </div>
+                <div class="table-container">
+                    <div class="table-title">Tickers - Dados Mercado</div>
+                    <table id="tickersMarketTable"></table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOADING OVERLAY -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <script>
+        // ===== CONFIG =====
+        const HTA_URL = 'https://llqhmywodxzstjlrulcw.supabase.co';
+        const HTA_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxscWhteXdvZHh6c3RqbHJ1bGN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5MTI1MTAsImV4cCI6MjA4NDQ4ODUxMH0.30Q5ZEbEat5uld9S24pjyJj6ULXUA6-d1b99nHJA9OM';
+        const API_ENDPOINT = 'https://llqhmywodxzstjlrulcw.supabase.co/functions/v1/analytics-dashboard';
+
+        // ===== STATE =====
+        let currentToken = null;
+        let currentAdmin = null;
+        let dashboardData = null;
+        let charts = {};
+        let refreshInterval = null;
+
+        // ===== CHART SETUP =====
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.borderColor = '#2a2d3e';
+
+        const COLORS = ['#3ecf8e', '#6366f1', '#f59e0b', '#3b82f6', '#ec4899', '#22c55e', '#818cf8', '#fbbf24', '#a78bfa', '#fb923c', '#ef4444', '#94a3b8'];
+
+        // ===== HELPER FUNCTIONS =====
+        function fmt(n) {
+            if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
+            if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+            if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+            return n.toString();
+        }
+
+        function fmtBytes(b) {
+            if (b >= 1e9) return (b / 1e9).toFixed(1) + " GB";
+            if (b >= 1e6) return (b / 1e6).toFixed(0) + " MB";
+            if (b >= 1e3) return (b / 1e3).toFixed(0) + " KB";
+            return b + " B";
+        }
+
+        function fmtDate(d) {
+            return new Date(d).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        function updateTimestamp() {
+            const now = new Date().toLocaleTimeString('pt-BR');
+            document.getElementById('timestamp').textContent = now;
+        }
+
+        function showLoading(show = true) {
+            document.getElementById('loadingOverlay').classList.toggle('show', show);
+        }
+
+        function destroyChart(chartId) {
+            if (charts[chartId]) {
+                charts[chartId].destroy();
+                delete charts[chartId];
+            }
+        }
+
+        // ===== AUTHENTICATION =====
+        async function login(email, password) {
+            showLoading(true);
+            try {
+                const response = await fetch(`${HTA_URL}/auth/v1/token?grant_type=password`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': HTA_ANON_KEY
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Credenciais inválidas');
+                }
+
+                const data = await response.json();
+                currentToken = data.access_token;
+                localStorage.setItem('dashToken', currentToken);
+
+                showLoading(false);
+                await loadDashboard();
+            } catch (error) {
+                showLoading(false);
+                showError(error.message || 'Erro ao fazer login');
+            }
+        }
+
+        function logout() {
+            currentToken = null;
+            currentAdmin = null;
+            dashboardData = null;
+            localStorage.removeItem('dashToken');
+            Object.keys(charts).forEach(key => destroyChart(key));
+            charts = {};
+            if (refreshInterval) clearInterval(refreshInterval);
+
+            document.getElementById('loginContainer').classList.remove('hidden');
+            document.getElementById('dashboard').classList.remove('show');
+            document.getElementById('email').value = '';
+            document.getElementById('password').value = '';
+            clearError();
+        }
+
+        function showError(msg) {
+            const err = document.getElementById('errorMessage');
+            err.textContent = msg;
+            err.classList.add('show');
+        }
+
+        function clearError() {
+            document.getElementById('errorMessage').classList.remove('show');
+        }
+
+        // ===== API CALLS =====
+        async function fetchAnalytics() {
+            try {
+                const response = await fetch(API_ENDPOINT, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+
+                if (response.status === 403) {
+                    showLoading(false);
+                    document.getElementById('dashboard').innerHTML += `
+                        <div style="padding: 40px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: 700; color: #ef4444; margin-bottom: 16px;">Acesso Negado</div>
+                            <div style="color: #94a3b8;">Usuário: ${currentAdmin}</div>
+                        </div>
+                    `;
+                    return null;
+                }
+
+                if (!response.ok) {
+                    throw new Error(`Erro ${response.status} ao buscar dados`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error('API Error:', error);
+                throw error;
+            }
+        }
+
+        // ===== KPI CARDS =====
+        function createKpiCard(label, value, change = null) {
+            const isPositive = change !== null && change >= 0;
+            return `
+                <div class="kpi-card">
+                    <div class="kpi-label">${label}</div>
+                    <div class="kpi-value">${value}</div>
+                    ${change !== null ? `<div class="kpi-change ${isPositive ? 'positive' : 'negative'}">${isPositive ? '↑' : '↓'} ${Math.abs(change)}%</div>` : ''}
+                </div>
+            `;
+        }
+
+        // ===== RENDER OVERVIEW TAB =====
+        function renderOverviewTab() {
+            const bh = dashboardData.bh;
+            const hta = dashboardData.hta;
+
+            // KPIs (combined)
+            const totalUsers = (bh.overview.total_users || 0) + (hta.overview.total_users || 0);
+            const totalSessions = (bh.overview.active_sessions || 0) + (hta.overview.active_sessions || 0);
+            const totalStorage = (bh.overview.db_size_bytes || 0) + (hta.overview.db_size_bytes || 0);
+            const totalObjects = (bh.overview.storage_objects || 0) + (hta.overview.storage_objects || 0);
+
+            const kpisHtml = `
+                ${createKpiCard('DB Total', fmtBytes(totalStorage))}
+                ${createKpiCard('Usuários', fmt(totalUsers))}
+                ${createKpiCard('Sessões', fmt(totalSessions))}
+                ${createKpiCard('Storage', fmt(totalObjects))}
+            `;
+            document.getElementById('overviewKpis').innerHTML = kpisHtml;
+
+            // BH Activity Chart (30 days)
+            destroyChart('bhActivityChart');
+            const bhDaily = bh.daily_activity || [];
+            charts.bhActivityChart = new Chart(document.getElementById('bhActivityChart'), {
+                type: 'line',
+                data: {
+                    labels: bhDaily.map(d => d.day || ''),
+                    datasets: [
+                        {
+                            label: 'Eventos',
+                            data: bhDaily.map(d => d.events || 0),
+                            borderColor: '#3ecf8e',
+                            backgroundColor: 'rgba(62, 207, 142, 0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            pointBackgroundColor: '#3ecf8e'
+                        },
+                        {
+                            label: 'DAU',
+                            data: bhDaily.map(d => d.dau || 0),
+                            borderColor: '#6366f1',
+                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            pointBackgroundColor: '#6366f1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top' } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // HTA Activity Chart (14 days)
+            destroyChart('htaActivityChart');
+            const htaDaily = hta.terminal_daily || [];
+            charts.htaActivityChart = new Chart(document.getElementById('htaActivityChart'), {
+                type: 'bar',
+                data: {
+                    labels: htaDaily.map(d => d.day || ''),
+                    datasets: [
+                        {
+                            label: 'Sessões',
+                            data: htaDaily.map(d => d.sessions || 0),
+                            backgroundColor: '#3ecf8e'
+                        },
+                        {
+                            label: 'Tasks',
+                            data: htaDaily.map(d => d.tasks || 0),
+                            backgroundColor: '#6366f1'
+                        },
+                        {
+                            label: 'Chat Msgs',
+                            data: htaDaily.map(d => d.chat_msgs || 0),
+                            backgroundColor: '#f59e0b'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top' } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // Comparison Table
+            const comparisonHtml = `
+                <thead>
+                    <tr>
+                        <th>Métrica</th>
+                        <th>brasilhorizonte</th>
+                        <th>Horizon Terminal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Usuários</td>
+                        <td>${fmt(bh.overview.total_users || 0)}</td>
+                        <td>${fmt(hta.overview.total_users || 0)}</td>
+                    </tr>
+                    <tr>
+                        <td>Sessões Ativas</td>
+                        <td>${fmt(bh.overview.active_sessions || 0)}</td>
+                        <td>${fmt(hta.overview.active_sessions || 0)}</td>
+                    </tr>
+                    <tr>
+                        <td>Tamanho DB</td>
+                        <td>${fmtBytes(bh.overview.db_size_bytes || 0)}</td>
+                        <td>${fmtBytes(hta.overview.db_size_bytes || 0)}</td>
+                    </tr>
+                    <tr>
+                        <td>Objetos Storage</td>
+                        <td>${fmt(bh.overview.storage_objects || 0)}</td>
+                        <td>${fmt(hta.overview.storage_objects || 0)}</td>
+                    </tr>
+                </tbody>
+            `;
+            document.getElementById('comparisonTable').innerHTML = comparisonHtml;
+        }
+
+        // ===== RENDER BH TAB =====
+        function renderBhTab() {
+            const bh = dashboardData.bh;
+
+            // KPIs
+            const kpisHtml = `
+                ${createKpiCard('Usuários', fmt(bh.overview.total_users || 0))}
+                ${createKpiCard('Sessões Auth', fmt(bh.overview.active_sessions || 0))}
+                ${createKpiCard('DB Size', fmtBytes(bh.overview.db_size_bytes || 0))}
+                ${createKpiCard('Eventos', fmt((bh.daily_activity || []).reduce((s, d) => s + (d.events || 0), 0)))}
+            `;
+            document.getElementById('bhKpis').innerHTML = kpisHtml;
+
+            // Conversion Funnel
+            const funnel = bh.conversion_funnel || {};
+            const funnelHtml = `
+                <div class="funnel-step"><span class="funnel-step-label">Sessions</span><span class="funnel-step-value">${fmt(funnel.sessions || 0)}</span></div>
+                <div class="funnel-step"><span class="funnel-step-label">Logins</span><span class="funnel-step-value">${fmt(funnel.logins || 0)}</span></div>
+                <div class="funnel-step"><span class="funnel-step-label">Paywall Blocks</span><span class="funnel-step-value">${fmt(funnel.paywall_blocks || 0)}</span></div>
+                <div class="funnel-step"><span class="funnel-step-label">Checkout Starts</span><span class="funnel-step-value">${fmt(funnel.checkout_starts || 0)}</span></div>
+                <div class="funnel-step"><span class="funnel-step-label">Payments</span><span class="funnel-step-value">${fmt(funnel.payments || 0)}</span></div>
+                <div class="funnel-step"><span class="funnel-step-label">Cancels</span><span class="funnel-step-value">${fmt(funnel.cancels || 0)}</span></div>
+            `;
+            document.getElementById('conversionFunnel').innerHTML = funnelHtml;
+
+            // Features Chart
+            destroyChart('bhFeaturesChart');
+            const features = (bh.feature_usage || []).sort((a, b) => (b.cnt || 0) - (a.cnt || 0)).slice(0, 10);
+            charts.bhFeaturesChart = new Chart(document.getElementById('bhFeaturesChart'), {
+                type: 'barH',
+                data: {
+                    labels: features.map(f => f.feature || 'Unknown'),
+                    datasets: [{
+                        label: 'Uso',
+                        data: features.map(f => f.cnt || 0),
+                        backgroundColor: '#3ecf8e'
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // Events Doughnut
+            destroyChart('bhEventsChart');
+            const events = (bh.usage_events_summary || []).slice(0, 8);
+            charts.bhEventsChart = new Chart(document.getElementById('bhEventsChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: events.map(e => e.event_name || 'Unknown'),
+                    datasets: [{
+                        data: events.map(e => e.cnt || 0),
+                        backgroundColor: COLORS
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'right' } }
+                }
+            });
+
+            // Report Downloads Chart
+            destroyChart('reportDownloadsChart');
+            const downloads = bh.report_downloads_daily || [];
+            charts.reportDownloadsChart = new Chart(document.getElementById('reportDownloadsChart'), {
+                type: 'bar',
+                data: {
+                    labels: downloads.map(d => d.day || ''),
+                    datasets: [{
+                        label: 'Downloads',
+                        data: downloads.map(d => d.downloads || 0),
+                        backgroundColor: '#f59e0b'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // Sectors Chart
+            destroyChart('sectorChart');
+            const sectors = (bh.sector_distribution || []).sort((a, b) => (b.tickers || '').split(',').length - (a.tickers || '').split(',').length).slice(0, 10);
+            charts.sectorChart = new Chart(document.getElementById('sectorChart'), {
+                type: 'bar',
+                data: {
+                    labels: sectors.map(s => s.sector || 'Unknown'),
+                    datasets: [{
+                        label: 'Tickers',
+                        data: sectors.map(s => (s.tickers || '').split(',').filter(t => t).length),
+                        backgroundColor: '#6366f1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // Top Tickers Table
+            const tickers = (bh.top_tickers_market || []).slice(0, 20);
+            const tickersHtml = `
+                <thead>
+                    <tr>
+                        <th>Ticker</th>
+                        <th>Setor</th>
+                        <th>Preço</th>
+                        <th>MktCap</th>
+                        <th>Volume</th>
+                        <th>Var%</th>
+                        <th>Div Yield</th>
+                        <th>P/L</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tickers.map(t => `
+                        <tr>
+                            <td><strong>${t.ticker || '-'}</strong></td>
+                            <td>${t.sector || '-'}</td>
+                            <td>${t.price ? '$' + t.price.toFixed(2) : '-'}</td>
+                            <td>${t.market_cap ? fmtBytes(t.market_cap) : '-'}</td>
+                            <td>${t.regular_market_volume ? fmt(t.regular_market_volume) : '-'}</td>
+                            <td style="color: ${(t.regular_market_change_percent || 0) >= 0 ? '#3ecf8e' : '#ef4444'}">${t.regular_market_change_percent ? t.regular_market_change_percent.toFixed(2) : '-'}%</td>
+                            <td>${t.dividend_yield ? t.dividend_yield.toFixed(2) : '-'}%</td>
+                            <td>${t.pl ? t.pl.toFixed(2) : '-'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            `;
+            document.getElementById('topTickersTable').innerHTML = tickersHtml;
+        }
+
+        // ===== RENDER HTA TAB =====
+        function renderHtaTab() {
+            const hta = dashboardData.hta;
+            const terminalDaily = hta.terminal_daily || [];
+
+            // Calculate success rate (tasks / total events)
+            const totalTasks = terminalDaily.reduce((s, d) => s + (d.tasks || 0), 0);
+            const totalEvents = terminalDaily.reduce((s, d) => s + ((d.tasks || 0) + (d.chat_msgs || 0)), 0);
+            const successRate = totalEvents > 0 ? ((totalTasks / totalEvents) * 100).toFixed(0) : 0;
+
+            // Average duration from terminal events summary
+            const terminalEvents = hta.terminal_events_summary || [];
+            const avgDuration = terminalEvents.length > 0
+                ? (terminalEvents.reduce((s, e) => s + (e.avg_duration_ms || 0), 0) / terminalEvents.length).toFixed(0)
+                : 0;
+
+            // Count CVM documents
+            const cvmDocs = (hta.documents_by_type || []).reduce((s, d) => d.doc_type === 'CVM' ? s + (d.total || 0) : s, 0);
+
+            // KPIs
+            const kpisHtml = `
+                ${createKpiCard('Usuários', fmt(hta.overview.total_users || 0))}
+                ${createKpiCard('Tasks IA', fmt(totalTasks) + ' (' + successRate + '%)')}
+                ${createKpiCard('Erros', fmt(terminalEvents.filter(e => e.action === 'error').reduce((s, e) => s + (e.event_count || 0), 0)))}
+                ${createKpiCard('Tempo Médio', avgDuration + 'ms')}
+                ${createKpiCard('Docs CVM', fmt(cvmDocs))}
+            `;
+            document.getElementById('htaKpis').innerHTML = kpisHtml;
+
+            // Daily Activity Chart
+            destroyChart('htaDailyChart');
+            charts.htaDailyChart = new Chart(document.getElementById('htaDailyChart'), {
+                type: 'bar',
+                data: {
+                    labels: terminalDaily.map(d => d.day || ''),
+                    datasets: [
+                        {
+                            label: 'Sessões',
+                            data: terminalDaily.map(d => d.sessions || 0),
+                            backgroundColor: '#3ecf8e'
+                        },
+                        {
+                            label: 'Tasks',
+                            data: terminalDaily.map(d => d.tasks || 0),
+                            backgroundColor: '#6366f1'
+                        },
+                        {
+                            label: 'Chat Msgs',
+                            data: terminalDaily.map(d => d.chat_msgs || 0),
+                            backgroundColor: '#f59e0b'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top' } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // Chat Daily Chart
+            destroyChart('chatDailyChart');
+            const chatDaily = hta.chat_daily || [];
+            charts.chatDailyChart = new Chart(document.getElementById('chatDailyChart'), {
+                type: 'line',
+                data: {
+                    labels: chatDaily.map(d => d.day || ''),
+                    datasets: [
+                        {
+                            label: 'Mensagens',
+                            data: chatDaily.map(d => d.messages || 0),
+                            borderColor: '#3ecf8e',
+                            backgroundColor: 'rgba(62, 207, 142, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        },
+                        {
+                            label: 'Usuários Únicos',
+                            data: chatDaily.map(d => d.unique_users || 0),
+                            borderColor: '#6366f1',
+                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top' } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // Documents by Type (Doughnut)
+            destroyChart('documentsChart');
+            const docs = hta.documents_by_type || [];
+            charts.documentsChart = new Chart(document.getElementById('documentsChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: docs.map(d => d.doc_type || 'Unknown'),
+                    datasets: [{
+                        data: docs.map(d => d.total || 0),
+                        backgroundColor: COLORS
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'bottom' } }
+                }
+            });
+
+            // Watchlist Panel
+            const watchlist = (hta.watchlist || []).slice(0, 10);
+            const watchlistHtml = watchlist.length > 0
+                ? watchlist.map(w => `<div class="list-item"><span class="list-item-value">${w.ticker}</span></div>`).join('')
+                : '<div class="list-item" style="color: #94a3b8;">Nenhum ticker favorito</div>';
+            document.getElementById('watchlistPanel').innerHTML = watchlistHtml;
+
+            // Login Daily Chart
+            destroyChart('loginDailyChart');
+            const loginDaily = hta.login_daily || [];
+            charts.loginDailyChart = new Chart(document.getElementById('loginDailyChart'), {
+                type: 'bar',
+                data: {
+                    labels: loginDaily.map(d => d.day || ''),
+                    datasets: [
+                        {
+                            label: 'Logins',
+                            data: loginDaily.map(d => d.logins || 0),
+                            backgroundColor: '#3ecf8e'
+                        },
+                        {
+                            label: 'Usuários Únicos',
+                            data: loginDaily.map(d => d.unique_users || 0),
+                            backgroundColor: '#6366f1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top' } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // Terminal Events Table
+            const terminalEventsHtml = `
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                        <th>Ação</th>
+                        <th>Eventos</th>
+                        <th>Tempo Médio (ms)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${terminalEvents.map(e => `
+                        <tr>
+                            <td>${e.feature || '-'}</td>
+                            <td>${e.action || '-'}</td>
+                            <td>${fmt(e.event_count || 0)}</td>
+                            <td>${(e.avg_duration_ms || 0).toFixed(0)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            `;
+            document.getElementById('terminalEventsTable').innerHTML = terminalEventsHtml;
+
+            // User Profiles Table
+            const profiles = hta.user_profiles_summary || [];
+            const profilesHtml = `
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>Tipo Cliente</th>
+                        <th>Quantidade</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${profiles.map(p => `
+                        <tr>
+                            <td><span class="status-badge ${p.status === 'active' ? 'status-active' : 'status-inactive'}">${p.status}</span></td>
+                            <td>${p.client_type || '-'}</td>
+                            <td>${fmt(p.cnt || 0)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            `;
+            document.getElementById('userProfilesTable').innerHTML = profilesHtml;
+        }
+
+        // ===== RENDER TICKERS TAB =====
+        function renderTickersTab() {
+            const bh = dashboardData.bh;
+
+            // Tickers per Sector Chart
+            destroyChart('tickersPerSectorChart');
+            const sectors = (bh.sector_distribution || []).sort((a, b) => (b.tickers || '').split(',').length - (a.tickers || '').split(',').length).slice(0, 12);
+            charts.tickersPerSectorChart = new Chart(document.getElementById('tickersPerSectorChart'), {
+                type: 'bar',
+                data: {
+                    labels: sectors.map(s => s.sector || 'Unknown'),
+                    datasets: [{
+                        label: 'Quantidade de Tickers',
+                        data: sectors.map(s => (s.tickers || '').split(',').filter(t => t).length),
+                        backgroundColor: '#6366f1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // Tickers Market Data Table
+            const tickers = (bh.top_tickers_market || []);
+            const tickersHtml = `
+                <thead>
+                    <tr>
+                        <th>Ticker</th>
+                        <th>Setor</th>
+                        <th>Preço</th>
+                        <th>MktCap</th>
+                        <th>Volume</th>
+                        <th>Var%</th>
+                        <th>Div Yield</th>
+                        <th>P/L</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tickers.map(t => `
+                        <tr>
+                            <td><strong>${t.ticker || '-'}</strong></td>
+                            <td>${t.sector || '-'}</td>
+                            <td>${t.price ? '$' + t.price.toFixed(2) : '-'}</td>
+                            <td>${t.market_cap ? fmtBytes(t.market_cap) : '-'}</td>
+                            <td>${t.regular_market_volume ? fmt(t.regular_market_volume) : '-'}</td>
+                            <td style="color: ${(t.regular_market_change_percent || 0) >= 0 ? '#3ecf8e' : '#ef4444'}">${t.regular_market_change_percent ? t.regular_market_change_percent.toFixed(2) : '-'}%</td>
+                            <td>${t.dividend_yield ? t.dividend_yield.toFixed(2) : '-'}%</td>
+                            <td>${t.pl ? t.pl.toFixed(2) : '-'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            `;
+            document.getElementById('tickersMarketTable').innerHTML = tickersHtml;
+        }
+
+        // ===== TAB NAVIGATION =====
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('show'));
+
+            document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+            document.getElementById(tabName).classList.add('show');
+
+            // Trigger chart resize on tab switch
+            setTimeout(() => {
+                Object.values(charts).forEach(chart => chart.resize());
+            }, 100);
+        }
+
+        // ===== LOAD DASHBOARD =====
+        async function loadDashboard() {
+            showLoading(true);
+            try {
+                dashboardData = await fetchAnalytics();
+
+                if (!dashboardData) {
+                    return;
+                }
+
+                currentAdmin = dashboardData.admin;
+                document.getElementById('adminBadge').textContent = currentAdmin;
+                document.getElementById('loginContainer').classList.add('hidden');
+                document.getElementById('dashboard').classList.add('show');
+
+                renderOverviewTab();
+                renderBhTab();
+                renderHtaTab();
+                renderTickersTab();
+
+                // Set up auto-refresh (every 5 minutes)
+                if (refreshInterval) clearInterval(refreshInterval);
+                refreshInterval = setInterval(async () => {
+                    dashboardData = await fetchAnalytics();
+                    if (dashboardData) {
+                        const currentTab = document.querySelector('.tab-btn.active').dataset.tab;
+                        if (currentTab === 'overview') renderOverviewTab();
+                        else if (currentTab === 'bh') renderBhTab();
+                        else if (currentTab === 'hta') renderHtaTab();
+                        else if (currentTab === 'tickers') renderTickersTab();
+                    }
+                }, 5 * 60 * 1000);
+
+                showLoading(false);
+            } catch (error) {
+                showLoading(false);
+                console.error('Dashboard Error:', error);
+                logout();
+            }
+        }
+
+        // ===== EVENT LISTENERS =====
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            clearError();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            document.getElementById('loginBtn').disabled = true;
+            document.getElementById('loginBtn').innerHTML = '<span class="spinner"></span><span>Entrando...</span>';
+            await login(email, password);
+            document.getElementById('loginBtn').disabled = false;
+            document.getElementById('loginBtn').innerHTML = 'Entrar';
+        });
+
+        document.getElementById('logoutBtn').addEventListener('click', logout);
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+        });
+
+        // Update timestamp every second
+        updateTimestamp();
+        setInterval(updateTimestamp, 1000);
+
+        // Check for stored token on page load
+        window.addEventListener('load', () => {
+            const storedToken = localStorage.getItem('dashToken');
+            if (storedToken) {
+                currentToken = storedToken;
+                loadDashboard();
+            }
+        });
+    </script>
+</body>
+</html>
