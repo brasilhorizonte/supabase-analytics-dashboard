@@ -36,7 +36,7 @@ BEGIN
                count(DISTINCT user_id) as dau
         FROM public.usage_events
         GROUP BY day
-        ORDER BY day DESC
+        ORDER BY day ASC
       ) t
     ),
     'feature_usage', (
@@ -101,7 +101,7 @@ BEGIN
                count(*) as downloads
         FROM public.report_downloads
         GROUP BY day
-        ORDER BY day DESC
+        ORDER BY day ASC
       ) t
     ),
     'top_tickers_searched', (

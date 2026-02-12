@@ -39,7 +39,7 @@ BEGIN
                count(*) FILTER (WHERE feature = 'chat') as chat_msgs
         FROM public.terminal_events
         GROUP BY day
-        ORDER BY day DESC
+        ORDER BY day ASC
       ) t
     ),
     'chat_daily', (
@@ -51,7 +51,7 @@ BEGIN
         FROM public.chat_messages m
         JOIN public.chat_sessions s ON s.id = m.session_id
         GROUP BY day
-        ORDER BY day DESC
+        ORDER BY day ASC
       ) t
     ),
     'daily_usage', (
@@ -61,7 +61,7 @@ BEGIN
                sum(request_count) as requests
         FROM public.proxy_daily_usage
         GROUP BY usage_date
-        ORDER BY usage_date DESC
+        ORDER BY usage_date ASC
       ) t
     ),
     'watchlist', (
@@ -100,7 +100,7 @@ BEGIN
                count(DISTINCT user_id) as unique_users
         FROM public.user_login_events
         GROUP BY day
-        ORDER BY day DESC
+        ORDER BY day ASC
       ) t
     ),
     'top_tickers_searched', (
