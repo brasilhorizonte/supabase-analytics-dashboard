@@ -659,6 +659,51 @@
             margin-bottom: 16px;
         }
 
+        /* ===== SECTION TITLE ===== */
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--t);
+            margin: 32px 0 16px;
+            padding-top: 24px;
+            border-top: 1px solid var(--bd);
+        }
+
+        .filter-bar select {
+            background: var(--bg);
+            border: 1px solid var(--bd);
+            color: var(--t);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        .filter-bar select:focus {
+            outline: none;
+            border-color: var(--g);
+        }
+
+        .retention-table {
+            overflow-x: auto;
+            margin-bottom: 24px;
+        }
+
+        .retention-table td.ret-good {
+            color: var(--g);
+            font-weight: 600;
+        }
+
+        .retention-table td.ret-mid {
+            color: var(--a);
+            font-weight: 600;
+        }
+
+        .retention-table td.ret-low {
+            color: var(--r);
+            font-weight: 600;
+        }
+
         /* ===== SCROLLBAR ===== */
         ::-webkit-scrollbar {
             width: 8px;
@@ -765,6 +810,12 @@
                         <canvas id="htaChatOverviewChart"></canvas>
                     </div>
                 </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Novos Cadastros BH (diário)</div>
+                        <canvas id="signupsOverviewChart"></canvas>
+                    </div>
+                </div>
                 <div class="table-container">
                     <div class="table-title">Comparação BH vs HTA</div>
                     <table id="comparisonTable"></table>
@@ -819,6 +870,57 @@
                         <div class="chart-title">Tickers Mais Buscados no Dashboard</div>
                         <canvas id="bhTickersSearchedChart"></canvas>
                     </div>
+                </div>
+                <h3 class="section-title">Assinantes & Retenção</h3>
+                <div class="kpi-grid" id="subsKpis"></div>
+                <div class="filter-bar" data-tab="bh-subs">
+                    <select class="filter-plan">
+                        <option value="">Todos os Planos</option>
+                        <option value="essencial">Essencial</option>
+                        <option value="fundamentalista">Fundamentalista</option>
+                        <option value="ianalista">iAnalista</option>
+                        <option value="valor">Valor</option>
+                    </select>
+                    <select class="filter-period">
+                        <option value="">Todos os Períodos</option>
+                        <option value="monthly">Mensal</option>
+                        <option value="yearly">Anual</option>
+                        <option value="lifetime">Vitalício</option>
+                    </select>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Novos Cadastros (diário)</div>
+                        <canvas id="signupsBhChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Eventos de Assinatura (diário)</div>
+                        <canvas id="subEventsBhChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Distribuição por Plano</div>
+                        <canvas id="planDistChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Distribuição por Período</div>
+                        <canvas id="periodDistChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Retenção por Coorte</div>
+                        <canvas id="retentionChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Cancelamentos ao Longo do Tempo</div>
+                        <canvas id="churnChart"></canvas>
+                    </div>
+                </div>
+                <div class="table-container retention-table">
+                    <div class="table-title">Retenção por Coorte</div>
+                    <table id="retentionTable"></table>
                 </div>
             </div>
 
@@ -919,7 +1021,7 @@
         let refreshInterval = null;
         const tabFilters = {
             overview: { gran: 'daily', from: '', to: '' },
-            bh:       { gran: 'daily', from: '', to: '' },
+            bh:       { gran: 'daily', from: '', to: '', plan: '', period: '' },
             hta:      { gran: 'daily', from: '', to: '' }
         };
 
@@ -1133,11 +1235,18 @@
             const totalStorage = (bh.overview.db_size_bytes || 0) + (hta.overview.db_size_bytes || 0);
             const totalObjects = (bh.overview.storage_objects || 0) + (hta.overview.storage_objects || 0);
 
+            const subsOv = (bh.subscribers_overview || {});
+            const activeSubscribers = subsOv.active || 0;
+            const totalProfiles = subsOv.total_profiles || 0;
+            const convRate = totalProfiles > 0 ? ((activeSubscribers / totalProfiles) * 100).toFixed(1) : '0';
+
             const kpisHtml = `
                 ${createKpiCard('DB Total', fmtBytes(totalStorage))}
                 ${createKpiCard('Usuários', fmt(totalUsers))}
                 ${createKpiCard('Sessões', fmt(totalSessions))}
                 ${createKpiCard('Storage', fmt(totalObjects))}
+                ${createKpiCard('Assinantes Ativos', fmt(activeSubscribers))}
+                ${createKpiCard('Taxa Conversão', convRate + '%')}
             `;
             document.getElementById('overviewKpis').innerHTML = kpisHtml;
 
@@ -1245,6 +1354,28 @@
                         label: 'Chat Msgs',
                         data: htaPrep.data.map(d => d.chat_msgs || 0),
                         backgroundColor: '#f59e0b'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Signups Chart (Overview)
+            destroyChart('signupsOverviewChart');
+            const signupsDaily = bh.signups_daily || [];
+            const signupsPrep = prepareTimeSeries(signupsDaily, ovF, ['signups']);
+            charts.signupsOverviewChart = new Chart(document.getElementById('signupsOverviewChart'), {
+                type: 'bar',
+                data: {
+                    labels: signupsPrep.labels,
+                    datasets: [{
+                        label: 'Cadastros',
+                        data: signupsPrep.data.map(d => d.signups || 0),
+                        backgroundColor: '#22c55e'
                     }]
                 },
                 options: {
@@ -1457,6 +1588,212 @@
                     }
                 }
             });
+
+            // Subscribers & Retention section
+            renderSubscribersSection();
+        }
+
+        // ===== RENDER SUBSCRIBERS SECTION (inside BH tab) =====
+        function renderSubscribersSection() {
+            const bh = dashboardData.bh;
+            const bhF = tabFilters.bh;
+            const subsOv = bh.subscribers_overview || {};
+            const subsByPlan = bh.subscribers_by_plan || [];
+
+            // Filter subscribers_by_plan by plan/period filters
+            let filteredSubs = subsByPlan;
+            if (bhF.plan) filteredSubs = filteredSubs.filter(s => s.plan === bhF.plan);
+            if (bhF.period) filteredSubs = filteredSubs.filter(s => s.billing_period === bhF.period);
+
+            // Compute filtered KPIs
+            const filteredTotal = filteredSubs.reduce((s, r) => s + (r.cnt || 0), 0);
+            const filteredActive = filteredSubs.filter(s => s.status === 'active').reduce((s, r) => s + (r.cnt || 0), 0);
+            const filteredInactive = filteredSubs.filter(s => s.status === 'inactive').reduce((s, r) => s + (r.cnt || 0), 0);
+
+            // Use global values for churn and special (not affected by plan/period filter)
+            const churnRate = subsOv.churn_rate || 0;
+            const specialClients = subsOv.special_clients || 0;
+
+            // KPIs
+            document.getElementById('subsKpis').innerHTML = `
+                ${createKpiCard('Total Cadastros', fmt(bhF.plan || bhF.period ? filteredTotal : (subsOv.total_profiles || 0)))}
+                ${createKpiCard('Assinantes Ativos', fmt(bhF.plan || bhF.period ? filteredActive : (subsOv.active || 0)))}
+                ${createKpiCard('Inativos', fmt(bhF.plan || bhF.period ? filteredInactive : (subsOv.inactive || 0)))}
+                ${createKpiCard('Churn Rate', churnRate + '%')}
+                ${createKpiCard('Clientes Especiais', fmt(specialClients))}
+            `;
+
+            // Signups Daily Chart
+            destroyChart('signupsBhChart');
+            const signupsDaily = bh.signups_daily || [];
+            const signupsPrep = prepareTimeSeries(signupsDaily, bhF, ['signups']);
+            charts.signupsBhChart = new Chart(document.getElementById('signupsBhChart'), {
+                type: 'bar',
+                data: {
+                    labels: signupsPrep.labels,
+                    datasets: [{
+                        label: 'Cadastros',
+                        data: signupsPrep.data.map(d => d.signups || 0),
+                        backgroundColor: '#22c55e'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Subscription Events Daily Chart (multi-line)
+            destroyChart('subEventsBhChart');
+            const subEvents = bh.subscription_events_daily || [];
+            const subEvPrep = prepareTimeSeries(subEvents, bhF, ['paywall_blocks', 'checkout_starts', 'checkout_completes', 'payments', 'cancels']);
+            charts.subEventsBhChart = new Chart(document.getElementById('subEventsBhChart'), {
+                type: 'line',
+                data: {
+                    labels: subEvPrep.labels,
+                    datasets: [
+                        { label: 'Paywall', data: subEvPrep.data.map(d => d.paywall_blocks || 0), borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.1)', tension: 0.4, fill: false },
+                        { label: 'Checkout Start', data: subEvPrep.data.map(d => d.checkout_starts || 0), borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0.1)', tension: 0.4, fill: false },
+                        { label: 'Checkout Complete', data: subEvPrep.data.map(d => d.checkout_completes || 0), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', tension: 0.4, fill: false },
+                        { label: 'Pagamento', data: subEvPrep.data.map(d => d.payments || 0), borderColor: '#3ecf8e', backgroundColor: 'rgba(62, 207, 142, 0.1)', tension: 0.4, fill: false },
+                        { label: 'Cancelamento', data: subEvPrep.data.map(d => d.cancels || 0), borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', tension: 0.4, fill: false }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Plan Distribution Doughnut
+            destroyChart('planDistChart');
+            const planGroups = {};
+            filteredSubs.forEach(s => {
+                const p = s.plan || 'free';
+                planGroups[p] = (planGroups[p] || 0) + (s.cnt || 0);
+            });
+            const planLabels = Object.keys(planGroups);
+            const planValues = Object.values(planGroups);
+            charts.planDistChart = new Chart(document.getElementById('planDistChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: planLabels,
+                    datasets: [{ data: planValues, backgroundColor: COLORS }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'right' } }
+                }
+            });
+
+            // Period Distribution Doughnut
+            destroyChart('periodDistChart');
+            const periodGroups = {};
+            filteredSubs.forEach(s => {
+                const p = s.billing_period || 'N/A';
+                periodGroups[p] = (periodGroups[p] || 0) + (s.cnt || 0);
+            });
+            const periodLabels = Object.keys(periodGroups);
+            const periodValues = Object.values(periodGroups);
+            charts.periodDistChart = new Chart(document.getElementById('periodDistChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: periodLabels,
+                    datasets: [{ data: periodValues, backgroundColor: COLORS.slice(3) }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'right' } }
+                }
+            });
+
+            // Retention Cohort Chart (grouped bar)
+            destroyChart('retentionChart');
+            const cohorts = bh.retention_cohorts || [];
+            charts.retentionChart = new Chart(document.getElementById('retentionChart'), {
+                type: 'bar',
+                data: {
+                    labels: cohorts.map(c => c.cohort),
+                    datasets: [
+                        { label: '7d', data: cohorts.map(c => c.cohort_size > 0 ? Math.round(c.retained_7d / c.cohort_size * 100) : 0), backgroundColor: '#3ecf8e' },
+                        { label: '30d', data: cohorts.map(c => c.cohort_size > 0 ? Math.round(c.retained_30d / c.cohort_size * 100) : 0), backgroundColor: '#6366f1' },
+                        { label: '60d', data: cohorts.map(c => c.cohort_size > 0 ? Math.round(c.retained_60d / c.cohort_size * 100) : 0), backgroundColor: '#f59e0b' },
+                        { label: '90d', data: cohorts.map(c => c.cohort_size > 0 ? Math.round(c.retained_90d / c.cohort_size * 100) : 0), backgroundColor: '#ef4444' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: {
+                        y: { beginAtZero: true, max: 100, grid: { color: '#2a2d3e' }, ticks: { callback: v => v + '%' } }
+                    }
+                }
+            });
+
+            // Churn Chart (line - cancels over time)
+            destroyChart('churnChart');
+            const churnPrep = prepareTimeSeries(subEvents, bhF, ['cancels']);
+            charts.churnChart = new Chart(document.getElementById('churnChart'), {
+                type: 'line',
+                data: {
+                    labels: churnPrep.labels,
+                    datasets: [{
+                        label: 'Cancelamentos',
+                        data: churnPrep.data.map(d => d.cancels || 0),
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: '#ef4444'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Retention Cohort Table
+            const retClass = (pct) => pct >= 50 ? 'ret-good' : pct >= 20 ? 'ret-mid' : 'ret-low';
+            const retentionHtml = `
+                <thead>
+                    <tr>
+                        <th>Coorte</th>
+                        <th>Tamanho</th>
+                        <th>Ret 7d</th>
+                        <th>Ret 30d</th>
+                        <th>Ret 60d</th>
+                        <th>Ret 90d</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${cohorts.map(c => {
+                        const s = c.cohort_size || 1;
+                        const r7 = Math.round((c.retained_7d || 0) / s * 100);
+                        const r30 = Math.round((c.retained_30d || 0) / s * 100);
+                        const r60 = Math.round((c.retained_60d || 0) / s * 100);
+                        const r90 = Math.round((c.retained_90d || 0) / s * 100);
+                        return `<tr>
+                            <td>${c.cohort}</td>
+                            <td>${c.cohort_size}</td>
+                            <td class="${retClass(r7)}">${r7}%</td>
+                            <td class="${retClass(r30)}">${r30}%</td>
+                            <td class="${retClass(r60)}">${r60}%</td>
+                            <td class="${retClass(r90)}">${r90}%</td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            `;
+            document.getElementById('retentionTable').innerHTML = retentionHtml;
         }
 
         // ===== RENDER HTA TAB =====
@@ -1832,6 +2169,14 @@
                 tabFilters[tabName].from = bar.querySelector('.filter-from').value;
                 tabFilters[tabName].to = bar.querySelector('.filter-to').value;
                 reRenderTab(tabName);
+            }
+            if (e.target.classList.contains('filter-plan')) {
+                tabFilters.bh.plan = e.target.value;
+                renderSubscribersSection();
+            }
+            if (e.target.classList.contains('filter-period')) {
+                tabFilters.bh.period = e.target.value;
+                renderSubscribersSection();
             }
         });
 

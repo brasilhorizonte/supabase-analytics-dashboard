@@ -56,7 +56,7 @@ BEGIN
         'logins', (SELECT count(*) FROM public.usage_events WHERE event_name = 'login'),
         'paywall_blocks', (SELECT count(*) FROM public.usage_events WHERE event_name = 'paywall_block'),
         'checkout_starts', (SELECT count(*) FROM public.usage_events WHERE event_name = 'checkout_start'),
-        'payments', (SELECT count(*) FROM public.usage_events WHERE event_name = 'payment_success'),
+        'payments', (SELECT count(*) FROM public.usage_events WHERE event_name = 'payment_succeeded'),
         'cancels', (SELECT count(*) FROM public.usage_events WHERE event_name = 'subscription_cancel')
       )
     ),
@@ -111,6 +111,76 @@ BEGIN
         FROM public.usage_events
         WHERE ticker IS NOT NULL AND ticker != ''
         GROUP BY ticker ORDER BY cnt DESC LIMIT 15
+      ) t
+    ),
+    'subscribers_overview', (
+      SELECT jsonb_build_object(
+        'total_profiles', (SELECT count(*) FROM public.profiles),
+        'active', (SELECT count(*) FROM public.profiles WHERE subscription_status = 'active'),
+        'inactive', (SELECT count(*) FROM public.profiles WHERE subscription_status = 'inactive'),
+        'free', (SELECT count(*) FROM public.profiles WHERE subscription_status IS NULL OR subscription_status = 'free'),
+        'special_clients', (SELECT count(*) FROM public.profiles WHERE is_special_client = true),
+        'churn_rate', (
+          SELECT round(
+            (SELECT count(*)::numeric FROM public.usage_events WHERE event_name = 'subscription_cancel')
+            / nullif(
+              (SELECT count(*) FROM public.profiles WHERE subscription_status = 'active')
+              + (SELECT count(*) FROM public.usage_events WHERE event_name = 'subscription_cancel'),
+              0
+            ) * 100, 1
+          )
+        )
+      )
+    ),
+    'subscribers_by_plan', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT coalesce(plan, 'free') as plan,
+               coalesce(subscription_status, 'free') as status,
+               billing_period,
+               count(*) as cnt
+        FROM public.profiles
+        GROUP BY plan, subscription_status, billing_period
+        ORDER BY cnt DESC
+      ) t
+    ),
+    'signups_daily', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT created_at::date as day, count(*) as signups
+        FROM public.profiles
+        GROUP BY day
+        ORDER BY day ASC
+      ) t
+    ),
+    'subscription_events_daily', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT event_ts::date as day,
+          count(*) FILTER (WHERE event_name = 'paywall_block') as paywall_blocks,
+          count(*) FILTER (WHERE event_name = 'checkout_start') as checkout_starts,
+          count(*) FILTER (WHERE event_name = 'checkout_complete') as checkout_completes,
+          count(*) FILTER (WHERE event_name = 'payment_succeeded') as payments,
+          count(*) FILTER (WHERE event_name = 'subscription_cancel') as cancels
+        FROM public.usage_events
+        WHERE event_name IN ('paywall_block', 'checkout_start', 'checkout_complete', 'payment_succeeded', 'subscription_cancel')
+        GROUP BY day
+        ORDER BY day ASC
+      ) t
+    ),
+    'retention_cohorts', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT to_char(p.created_at, 'YYYY-MM') as cohort,
+          count(DISTINCT p.user_id) as cohort_size,
+          count(DISTINCT CASE WHEN ue.event_ts >= p.created_at + interval '7 days' THEN p.user_id END) as retained_7d,
+          count(DISTINCT CASE WHEN ue.event_ts >= p.created_at + interval '30 days' THEN p.user_id END) as retained_30d,
+          count(DISTINCT CASE WHEN ue.event_ts >= p.created_at + interval '60 days' THEN p.user_id END) as retained_60d,
+          count(DISTINCT CASE WHEN ue.event_ts >= p.created_at + interval '90 days' THEN p.user_id END) as retained_90d
+        FROM public.profiles p
+        LEFT JOIN public.usage_events ue ON ue.user_id = p.user_id
+        GROUP BY cohort
+        ORDER BY cohort ASC
       ) t
     )
   ) INTO result;
