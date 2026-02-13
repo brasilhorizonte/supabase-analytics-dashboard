@@ -123,6 +123,45 @@ BEGIN
         ORDER BY n_live_tup DESC
         LIMIT 20
       ) t
+    ),
+    'token_usage_daily', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT usage_date as day, proxy_name,
+          SUM(request_count) as requests,
+          SUM(input_tokens) as input_tokens,
+          SUM(output_tokens) as output_tokens,
+          bool_or(estimated) as has_estimates
+        FROM public.proxy_daily_usage
+        GROUP BY usage_date, proxy_name
+        ORDER BY usage_date ASC
+      ) t
+    ),
+    'token_usage_summary', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT proxy_name,
+          SUM(request_count) as total_requests,
+          SUM(input_tokens) as total_input_tokens,
+          SUM(output_tokens) as total_output_tokens,
+          COUNT(DISTINCT user_id) as unique_users
+        FROM public.proxy_daily_usage
+        GROUP BY proxy_name
+      ) t
+    ),
+    'token_usage_by_user', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT p.user_id, coalesce(u.email, p.user_id::text) as email,
+          p.proxy_name,
+          SUM(p.request_count) as total_requests,
+          SUM(p.input_tokens) as total_input_tokens,
+          SUM(p.output_tokens) as total_output_tokens
+        FROM public.proxy_daily_usage p
+        LEFT JOIN auth.users u ON u.id = p.user_id
+        GROUP BY p.user_id, u.email, p.proxy_name
+        ORDER BY SUM(p.input_tokens) + SUM(p.output_tokens) DESC
+      ) t
     )
   ) INTO result;
 

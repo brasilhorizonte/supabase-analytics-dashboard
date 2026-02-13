@@ -890,6 +890,16 @@
                 </div>
                 <div class="charts-grid">
                     <div class="chart-container">
+                        <div class="chart-title">Usuários Ativos por Plano</div>
+                        <canvas id="activeByPlanChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Ativos vs Inativos por Plano</div>
+                        <canvas id="statusByPlanChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
                         <div class="chart-title">Novos Cadastros (diário)</div>
                         <canvas id="signupsBhChart"></canvas>
                     </div>
@@ -989,6 +999,32 @@
                         <div id="watchlistPanel"></div>
                     </div>
                 </div>
+                <h3 class="section-title">Consumo de Tokens (IA)</h3>
+                <div class="kpi-grid" id="tokenKpis"></div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Tokens por Dia</div>
+                        <canvas id="tokensDailyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Custo Estimado por Dia (USD)</div>
+                        <canvas id="tokenCostDailyChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Requests por Proxy (diário)</div>
+                        <canvas id="proxyRequestsDailyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Distribuição de Tokens por Proxy</div>
+                        <canvas id="tokenDistributionChart"></canvas>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <div class="table-title">Consumo por Usuário</div>
+                    <table id="tokenUserTable"></table>
+                </div>
                 <div class="table-container">
                     <div class="table-title">Resumo de Eventos - Terminal</div>
                     <table id="terminalEventsTable"></table>
@@ -1044,6 +1080,19 @@
             if (b >= 1e6) return (b / 1e6).toFixed(0) + " MB";
             if (b >= 1e3) return (b / 1e3).toFixed(0) + " KB";
             return b + " B";
+        }
+
+        // ===== TOKEN PRICING =====
+        const TOKEN_PRICING = {
+            'anthropic': { input: 3.00, output: 15.00, label: 'Claude Sonnet 4' },
+            'gemini': { input: 1.25, output: 10.00, label: 'Gemini 2.5 Pro' },
+            'gemini-market': { input: 0.15, output: 0.60, label: 'Gemini 2.5 Flash' },
+        };
+        const PROXY_COLORS = { 'anthropic': '#f59e0b', 'gemini': '#3ecf8e', 'gemini-market': '#6366f1' };
+
+        function calcTokenCost(proxy, input, output) {
+            const p = TOKEN_PRICING[proxy] || TOKEN_PRICING['gemini'];
+            return (input / 1e6) * p.input + (output / 1e6) * p.output;
         }
 
         function fmtDate(d) {
@@ -1623,6 +1672,66 @@
                 ${createKpiCard('Clientes Especiais', fmt(specialClients))}
             `;
 
+            // Active Users by Plan (horizontal bar)
+            destroyChart('activeByPlanChart');
+            const activeSubs = filteredSubs.filter(s => s.status === 'active');
+            const activeByPlan = {};
+            activeSubs.forEach(s => {
+                const p = s.plan || 'free';
+                activeByPlan[p] = (activeByPlan[p] || 0) + (s.cnt || 0);
+            });
+            const abpLabels = Object.keys(activeByPlan).sort((a, b) => activeByPlan[b] - activeByPlan[a]);
+            const abpValues = abpLabels.map(l => activeByPlan[l]);
+            const planColors = { 'essencial': '#3ecf8e', 'fundamentalista': '#6366f1', 'ianalista': '#f59e0b', 'valor': '#3b82f6', 'free': '#94a3b8' };
+            charts.activeByPlanChart = new Chart(document.getElementById('activeByPlanChart'), {
+                type: 'bar',
+                data: {
+                    labels: abpLabels.map(l => l.charAt(0).toUpperCase() + l.slice(1)),
+                    datasets: [{
+                        label: 'Ativos',
+                        data: abpValues,
+                        backgroundColor: abpLabels.map(l => planColors[l] || COLORS[abpLabels.indexOf(l) % COLORS.length]),
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Active vs Inactive by Plan (stacked bar)
+            destroyChart('statusByPlanChart');
+            const inactiveSubs = filteredSubs.filter(s => s.status !== 'active');
+            const inactiveByPlan = {};
+            inactiveSubs.forEach(s => {
+                const p = s.plan || 'free';
+                inactiveByPlan[p] = (inactiveByPlan[p] || 0) + (s.cnt || 0);
+            });
+            const allPlans = [...new Set([...Object.keys(activeByPlan), ...Object.keys(inactiveByPlan)])].sort((a, b) => ((activeByPlan[b] || 0) + (inactiveByPlan[b] || 0)) - ((activeByPlan[a] || 0) + (inactiveByPlan[a] || 0)));
+            charts.statusByPlanChart = new Chart(document.getElementById('statusByPlanChart'), {
+                type: 'bar',
+                data: {
+                    labels: allPlans.map(l => l.charAt(0).toUpperCase() + l.slice(1)),
+                    datasets: [
+                        { label: 'Ativos', data: allPlans.map(p => activeByPlan[p] || 0), backgroundColor: '#3ecf8e', borderRadius: 4 },
+                        { label: 'Inativos', data: allPlans.map(p => inactiveByPlan[p] || 0), backgroundColor: '#ef4444', borderRadius: 4 },
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
             // Signups Daily Chart
             destroyChart('signupsBhChart');
             const signupsDaily = bh.signups_daily || [];
@@ -2076,6 +2185,203 @@
                 </tbody>
             `;
             document.getElementById('userProfilesTable').innerHTML = profilesHtml;
+
+            // Render token usage section
+            renderTokenUsageSection();
+        }
+
+        // ===== RENDER TOKEN USAGE SECTION (inside HTA tab) =====
+        function renderTokenUsageSection() {
+            const hta = dashboardData.hta;
+            const htaF = tabFilters.hta;
+            const tokenDaily = hta.token_usage_daily || [];
+            const tokenSummary = hta.token_usage_summary || [];
+            const tokenByUser = hta.token_usage_by_user || [];
+
+            // KPIs
+            const totalRequests = tokenSummary.reduce((s, r) => s + (Number(r.total_requests) || 0), 0);
+            const totalInput = tokenSummary.reduce((s, r) => s + (Number(r.total_input_tokens) || 0), 0);
+            const totalOutput = tokenSummary.reduce((s, r) => s + (Number(r.total_output_tokens) || 0), 0);
+            const totalCost = tokenSummary.reduce((s, r) => s + calcTokenCost(r.proxy_name, Number(r.total_input_tokens) || 0, Number(r.total_output_tokens) || 0), 0);
+
+            document.getElementById('tokenKpis').innerHTML = `
+                ${createKpiCard('Total Requests', fmt(totalRequests))}
+                ${createKpiCard('Input Tokens', fmt(totalInput))}
+                ${createKpiCard('Output Tokens', fmt(totalOutput))}
+                ${createKpiCard('Custo Estimado', '$' + totalCost.toFixed(2))}
+            `;
+
+            // Get unique proxies and days
+            const proxies = [...new Set(tokenDaily.map(d => d.proxy_name))];
+            const allDays = [...new Set(tokenDaily.map(d => d.day))].sort();
+
+            // Filter days by date range
+            const filteredDays = allDays.filter(day => {
+                if (htaF.from && day < htaF.from) return false;
+                if (htaF.to && day > htaF.to) return false;
+                return true;
+            });
+
+            const dayLabels = filteredDays.map(d => {
+                const parts = d.split('-');
+                return parts[2] + '/' + parts[1];
+            });
+
+            // Build per-proxy data maps
+            const proxyDayMap = {};
+            tokenDaily.forEach(d => {
+                const key = d.proxy_name + '|' + d.day;
+                proxyDayMap[key] = d;
+            });
+
+            // 1. Tokens Daily (stacked bar: input+output per proxy)
+            destroyChart('tokensDailyChart');
+            const tokenDailyDatasets = [];
+            proxies.forEach(proxy => {
+                const color = PROXY_COLORS[proxy] || '#94a3b8';
+                tokenDailyDatasets.push({
+                    label: (TOKEN_PRICING[proxy]?.label || proxy) + ' Input',
+                    data: filteredDays.map(day => Number((proxyDayMap[proxy + '|' + day] || {}).input_tokens) || 0),
+                    backgroundColor: color,
+                    stack: proxy,
+                });
+                tokenDailyDatasets.push({
+                    label: (TOKEN_PRICING[proxy]?.label || proxy) + ' Output',
+                    data: filteredDays.map(day => Number((proxyDayMap[proxy + '|' + day] || {}).output_tokens) || 0),
+                    backgroundColor: color + '80',
+                    stack: proxy,
+                });
+            });
+            charts.tokensDailyChart = new Chart(document.getElementById('tokensDailyChart'), {
+                type: 'bar',
+                data: { labels: dayLabels, datasets: tokenDailyDatasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // 2. Cost Daily (line per proxy + total)
+            destroyChart('tokenCostDailyChart');
+            const costDatasets = proxies.map(proxy => {
+                const color = PROXY_COLORS[proxy] || '#94a3b8';
+                return {
+                    label: TOKEN_PRICING[proxy]?.label || proxy,
+                    data: filteredDays.map(day => {
+                        const d = proxyDayMap[proxy + '|' + day] || {};
+                        return calcTokenCost(proxy, Number(d.input_tokens) || 0, Number(d.output_tokens) || 0);
+                    }),
+                    borderColor: color,
+                    backgroundColor: color + '20',
+                    tension: 0.4,
+                    fill: false,
+                    pointBackgroundColor: color,
+                };
+            });
+            // Total line
+            costDatasets.push({
+                label: 'Total',
+                data: filteredDays.map(day => {
+                    return proxies.reduce((s, proxy) => {
+                        const d = proxyDayMap[proxy + '|' + day] || {};
+                        return s + calcTokenCost(proxy, Number(d.input_tokens) || 0, Number(d.output_tokens) || 0);
+                    }, 0);
+                }),
+                borderColor: '#ef4444',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                borderDash: [5, 5],
+                tension: 0.4,
+                fill: false,
+                pointBackgroundColor: '#ef4444',
+            });
+            charts.tokenCostDailyChart = new Chart(document.getElementById('tokenCostDailyChart'), {
+                type: 'line',
+                data: { labels: dayLabels, datasets: costDatasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: '#2a2d3e' },
+                            ticks: { callback: v => '$' + v.toFixed(2) }
+                        }
+                    }
+                }
+            });
+
+            // 3. Requests Daily (stacked bar per proxy)
+            destroyChart('proxyRequestsDailyChart');
+            const reqDatasets = proxies.map(proxy => ({
+                label: TOKEN_PRICING[proxy]?.label || proxy,
+                data: filteredDays.map(day => Number((proxyDayMap[proxy + '|' + day] || {}).requests) || 0),
+                backgroundColor: PROXY_COLORS[proxy] || '#94a3b8',
+            }));
+            charts.proxyRequestsDailyChart = new Chart(document.getElementById('proxyRequestsDailyChart'), {
+                type: 'bar',
+                data: { labels: dayLabels, datasets: reqDatasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // 4. Token Distribution (doughnut per proxy)
+            destroyChart('tokenDistributionChart');
+            const distLabels = tokenSummary.map(s => TOKEN_PRICING[s.proxy_name]?.label || s.proxy_name);
+            const distValues = tokenSummary.map(s => (Number(s.total_input_tokens) || 0) + (Number(s.total_output_tokens) || 0));
+            const distColors = tokenSummary.map(s => PROXY_COLORS[s.proxy_name] || '#94a3b8');
+            charts.tokenDistributionChart = new Chart(document.getElementById('tokenDistributionChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: distLabels,
+                    datasets: [{ data: distValues, backgroundColor: distColors }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'right' } }
+                }
+            });
+
+            // 5. User Table
+            const userTableHtml = `
+                <thead>
+                    <tr>
+                        <th>Usuário</th>
+                        <th>Proxy</th>
+                        <th>Requests</th>
+                        <th>Input Tokens</th>
+                        <th>Output Tokens</th>
+                        <th>Custo Est. (USD)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tokenByUser.map(u => {
+                        const cost = calcTokenCost(u.proxy_name, Number(u.total_input_tokens) || 0, Number(u.total_output_tokens) || 0);
+                        return `<tr>
+                            <td>${u.email || '-'}</td>
+                            <td>${TOKEN_PRICING[u.proxy_name]?.label || u.proxy_name}</td>
+                            <td>${fmt(Number(u.total_requests) || 0)}</td>
+                            <td>${fmt(Number(u.total_input_tokens) || 0)}</td>
+                            <td>${fmt(Number(u.total_output_tokens) || 0)}</td>
+                            <td>$${cost.toFixed(2)}</td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            `;
+            document.getElementById('tokenUserTable').innerHTML = userTableHtml;
         }
 
         // ===== TAB NAVIGATION =====
