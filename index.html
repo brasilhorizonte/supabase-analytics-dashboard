@@ -771,6 +771,18 @@
         <div class="dashboard-content">
             <!-- OVERVIEW TAB -->
             <div class="tab-content show" id="overview">
+                <h3 class="section-title" style="margin-top:0;border-top:none;padding-top:0">Últimas 24 Horas</h3>
+                <div class="panels-grid">
+                    <div class="panel">
+                        <div class="panel-title">brasilhorizonte</div>
+                        <div class="kpi-grid" id="bh24hKpis" style="margin-bottom:0"></div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-title">Horizon Terminal</div>
+                        <div class="kpi-grid" id="hta24hKpis" style="margin-bottom:0"></div>
+                    </div>
+                </div>
+                <h3 class="section-title">Visão Geral</h3>
                 <div class="kpi-grid" id="overviewKpis"></div>
                 <div class="filter-bar" data-tab="overview">
                     <div class="gran-toggle">
@@ -1096,12 +1108,12 @@
         }
 
         function fmtDate(d) {
-            return new Date(d).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            return new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
         }
 
         function updateTimestamp() {
-            const now = new Date().toLocaleTimeString('pt-BR');
-            document.getElementById('timestamp').textContent = now;
+            const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            document.getElementById('timestamp').textContent = now + ' (BRT)';
         }
 
         function showLoading(show = true) {
@@ -1277,6 +1289,30 @@
         function renderOverviewTab() {
             const bh = dashboardData.bh;
             const hta = dashboardData.hta;
+
+            // Last 24h KPIs
+            const bh24 = bh.last_24h || {};
+            document.getElementById('bh24hKpis').innerHTML = `
+                ${createKpiCard('Eventos', fmt(bh24.events || 0))}
+                ${createKpiCard('Usuários Ativos', fmt(bh24.dau || 0))}
+                ${createKpiCard('Cadastros', fmt(bh24.signups || 0))}
+                ${createKpiCard('Logins', fmt(bh24.logins || 0))}
+                ${createKpiCard('Paywall', fmt(bh24.paywall_blocks || 0))}
+                ${createKpiCard('Pagamentos', fmt(bh24.payments || 0))}
+            `;
+
+            const hta24 = hta.last_24h || {};
+            const hta24Cost = calcTokenCost('gemini', Number(hta24.input_tokens) || 0, Number(hta24.output_tokens) || 0);
+            document.getElementById('hta24hKpis').innerHTML = `
+                ${createKpiCard('Sessões', fmt(hta24.sessions || 0))}
+                ${createKpiCard('Usuários', fmt(hta24.unique_users || 0))}
+                ${createKpiCard('Tasks IA', fmt(hta24.tasks || 0))}
+                ${createKpiCard('Chat Msgs', fmt(hta24.chat_messages || 0))}
+                ${createKpiCard('Logins', fmt(hta24.logins || 0))}
+                ${createKpiCard('Requests IA', fmt(Number(hta24.requests) || 0))}
+                ${createKpiCard('Tokens IA', fmt((Number(hta24.input_tokens) || 0) + (Number(hta24.output_tokens) || 0)))}
+                ${createKpiCard('Custo IA (24h)', '$' + hta24Cost.toFixed(2))}
+            `;
 
             // KPIs (combined)
             const totalUsers = (bh.overview.total_users || 0) + (hta.overview.total_users || 0);

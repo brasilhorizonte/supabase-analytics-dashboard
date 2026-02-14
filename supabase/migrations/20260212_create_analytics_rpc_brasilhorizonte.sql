@@ -18,6 +18,18 @@ BEGIN
         'db_size_bytes', (SELECT pg_database_size(current_database()))
       )
     ),
+    'last_24h', (
+      SELECT jsonb_build_object(
+        'events', (SELECT count(*) FROM public.usage_events WHERE event_ts >= now() - interval '24 hours'),
+        'dau', (SELECT count(DISTINCT user_id) FROM public.usage_events WHERE event_ts >= now() - interval '24 hours'),
+        'signups', (SELECT count(*) FROM public.profiles WHERE created_at >= now() - interval '24 hours'),
+        'logins', (SELECT count(*) FROM public.usage_events WHERE event_name = 'login' AND event_ts >= now() - interval '24 hours'),
+        'paywall_blocks', (SELECT count(*) FROM public.usage_events WHERE event_name = 'paywall_block' AND event_ts >= now() - interval '24 hours'),
+        'payments', (SELECT count(*) FROM public.usage_events WHERE event_name = 'payment_succeeded' AND event_ts >= now() - interval '24 hours'),
+        'cancels', (SELECT count(*) FROM public.usage_events WHERE event_name = 'subscription_cancel' AND event_ts >= now() - interval '24 hours'),
+        'report_downloads', (SELECT count(*) FROM public.report_downloads WHERE created_at >= now() - interval '24 hours')
+      )
+    ),
     'usage_events_summary', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
@@ -31,7 +43,7 @@ BEGIN
     'daily_activity', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
-        SELECT date_trunc('day', event_ts)::date as day,
+        SELECT date_trunc('day', event_ts AT TIME ZONE 'America/Sao_Paulo')::date as day,
                count(*) as events,
                count(DISTINCT user_id) as dau
         FROM public.usage_events
@@ -97,7 +109,7 @@ BEGIN
     'report_downloads_daily', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
-        SELECT date_trunc('day', created_at)::date as day,
+        SELECT date_trunc('day', created_at AT TIME ZONE 'America/Sao_Paulo')::date as day,
                count(*) as downloads
         FROM public.report_downloads
         GROUP BY day
@@ -147,7 +159,7 @@ BEGIN
     'signups_daily', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
-        SELECT created_at::date as day, count(*) as signups
+        SELECT (created_at AT TIME ZONE 'America/Sao_Paulo')::date as day, count(*) as signups
         FROM public.profiles
         GROUP BY day
         ORDER BY day ASC
@@ -156,7 +168,7 @@ BEGIN
     'subscription_events_daily', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
-        SELECT event_ts::date as day,
+        SELECT date_trunc('day', event_ts AT TIME ZONE 'America/Sao_Paulo')::date as day,
           count(*) FILTER (WHERE event_name = 'paywall_block') as paywall_blocks,
           count(*) FILTER (WHERE event_name = 'checkout_start') as checkout_starts,
           count(*) FILTER (WHERE event_name = 'checkout_complete') as checkout_completes,
@@ -171,7 +183,7 @@ BEGIN
     'retention_cohorts', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
-        SELECT to_char(p.created_at, 'YYYY-MM') as cohort,
+        SELECT to_char(p.created_at AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM') as cohort,
           count(DISTINCT p.user_id) as cohort_size,
           count(DISTINCT CASE WHEN ue.event_ts >= p.created_at + interval '7 days' THEN p.user_id END) as retained_7d,
           count(DISTINCT CASE WHEN ue.event_ts >= p.created_at + interval '30 days' THEN p.user_id END) as retained_30d,

@@ -18,6 +18,19 @@ BEGIN
         'db_size_bytes', (SELECT pg_database_size(current_database()))
       )
     ),
+    'last_24h', (
+      SELECT jsonb_build_object(
+        'sessions', (SELECT count(DISTINCT session_id) FROM public.terminal_events WHERE created_at >= now() - interval '24 hours'),
+        'tasks', (SELECT count(*) FROM public.terminal_events WHERE feature = 'agent' AND created_at >= now() - interval '24 hours'),
+        'chat_msgs', (SELECT count(*) FROM public.terminal_events WHERE feature = 'chat' AND created_at >= now() - interval '24 hours'),
+        'logins', (SELECT count(*) FROM public.user_login_events WHERE login_at >= now() - interval '24 hours'),
+        'unique_users', (SELECT count(DISTINCT user_id) FROM public.terminal_events WHERE created_at >= now() - interval '24 hours'),
+        'chat_messages', (SELECT count(*) FROM public.chat_messages WHERE created_at >= now() - interval '24 hours'),
+        'requests', (SELECT coalesce(sum(request_count), 0) FROM public.proxy_daily_usage WHERE usage_date >= (now() AT TIME ZONE 'America/Sao_Paulo')::date),
+        'input_tokens', (SELECT coalesce(sum(input_tokens), 0) FROM public.proxy_daily_usage WHERE usage_date >= (now() AT TIME ZONE 'America/Sao_Paulo')::date),
+        'output_tokens', (SELECT coalesce(sum(output_tokens), 0) FROM public.proxy_daily_usage WHERE usage_date >= (now() AT TIME ZONE 'America/Sao_Paulo')::date)
+      )
+    ),
     'terminal_events_summary', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
@@ -33,7 +46,7 @@ BEGIN
     'terminal_daily', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
-        SELECT date_trunc('day', created_at)::date as day,
+        SELECT date_trunc('day', created_at AT TIME ZONE 'America/Sao_Paulo')::date as day,
                count(DISTINCT session_id) as sessions,
                count(*) FILTER (WHERE feature = 'agent') as tasks,
                count(*) FILTER (WHERE feature = 'chat') as chat_msgs
@@ -45,7 +58,7 @@ BEGIN
     'chat_daily', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
-        SELECT date_trunc('day', m.created_at)::date as day,
+        SELECT date_trunc('day', m.created_at AT TIME ZONE 'America/Sao_Paulo')::date as day,
                count(*) as messages,
                count(DISTINCT s.user_id) as unique_users
         FROM public.chat_messages m
@@ -95,7 +108,7 @@ BEGIN
     'login_daily', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
       FROM (
-        SELECT date_trunc('day', login_at)::date as day,
+        SELECT date_trunc('day', login_at AT TIME ZONE 'America/Sao_Paulo')::date as day,
                count(*) as logins,
                count(DISTINCT user_id) as unique_users
         FROM public.user_login_events
