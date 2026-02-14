@@ -175,6 +175,49 @@ BEGIN
         GROUP BY p.user_id, u.email, p.proxy_name
         ORDER BY SUM(p.input_tokens) + SUM(p.output_tokens) DESC
       ) t
+    ),
+    'device_summary', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT device_type, count(*) as cnt, count(DISTINCT user_id) as unique_users
+        FROM public.terminal_events
+        WHERE device_type IS NOT NULL
+        GROUP BY device_type
+        ORDER BY cnt DESC
+      ) t
+    ),
+    'device_daily', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT date_trunc('day', created_at AT TIME ZONE 'America/Sao_Paulo')::date as day,
+               device_type,
+               count(*) as cnt,
+               count(DISTINCT user_id) as unique_users
+        FROM public.terminal_events
+        WHERE device_type IS NOT NULL
+        GROUP BY day, device_type
+        ORDER BY day ASC
+      ) t
+    ),
+    'os_summary', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT os, count(*) as cnt
+        FROM public.terminal_events
+        WHERE os IS NOT NULL
+        GROUP BY os
+        ORDER BY cnt DESC
+      ) t
+    ),
+    'browser_summary', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT browser, count(*) as cnt
+        FROM public.terminal_events
+        WHERE browser IS NOT NULL
+        GROUP BY browser
+        ORDER BY cnt DESC
+      ) t
     )
   ) INTO result;
 

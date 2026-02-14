@@ -62,6 +62,18 @@ BEGIN
         LIMIT 10
       ) t
     ),
+    'feature_usage_daily', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT date_trunc('day', event_ts AT TIME ZONE 'America/Sao_Paulo')::date as day,
+               feature,
+               count(*) as cnt
+        FROM public.usage_events
+        WHERE feature IS NOT NULL
+        GROUP BY day, feature
+        ORDER BY day ASC
+      ) t
+    ),
     'conversion_funnel', (
       SELECT jsonb_build_object(
         'sessions', (SELECT count(*) FROM public.usage_events WHERE event_name = 'session_start'),
@@ -71,6 +83,49 @@ BEGIN
         'payments', (SELECT count(*) FROM public.usage_events WHERE event_name = 'payment_succeeded'),
         'cancels', (SELECT count(*) FROM public.usage_events WHERE event_name = 'subscription_cancel')
       )
+    ),
+    'device_summary', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT device_type, count(*) as cnt, count(DISTINCT user_id) as unique_users
+        FROM public.usage_events
+        WHERE device_type IS NOT NULL
+        GROUP BY device_type
+        ORDER BY cnt DESC
+      ) t
+    ),
+    'device_daily', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT date_trunc('day', event_ts AT TIME ZONE 'America/Sao_Paulo')::date as day,
+               device_type,
+               count(*) as cnt,
+               count(DISTINCT user_id) as unique_users
+        FROM public.usage_events
+        WHERE device_type IS NOT NULL
+        GROUP BY day, device_type
+        ORDER BY day ASC
+      ) t
+    ),
+    'os_summary', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT os, count(*) as cnt
+        FROM public.usage_events
+        WHERE os IS NOT NULL
+        GROUP BY os
+        ORDER BY cnt DESC
+      ) t
+    ),
+    'browser_summary', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT browser, count(*) as cnt
+        FROM public.usage_events
+        WHERE browser IS NOT NULL
+        GROUP BY browser
+        ORDER BY cnt DESC
+      ) t
     ),
     'top_tickers_market', (
       SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)

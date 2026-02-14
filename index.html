@@ -883,6 +883,32 @@
                         <canvas id="bhTickersSearchedChart"></canvas>
                     </div>
                 </div>
+                <h3 class="section-title">Uso de Recursos ao Longo do Tempo</h3>
+                <div class="chart-container mb-2">
+                    <div class="chart-title">Uso de Recursos (diário)</div>
+                    <canvas id="featureUsageDailyChart"></canvas>
+                </div>
+                <h3 class="section-title">Dispositivos & Plataformas</h3>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Mobile vs Desktop (diário)</div>
+                        <canvas id="bhDeviceDailyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Dispositivos</div>
+                        <canvas id="bhDeviceChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Sistema Operacional</div>
+                        <canvas id="bhOsChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Navegador</div>
+                        <canvas id="bhBrowserChart"></canvas>
+                    </div>
+                </div>
                 <h3 class="section-title">Assinantes & Retenção</h3>
                 <div class="kpi-grid" id="subsKpis"></div>
                 <div class="filter-bar" data-tab="bh-subs">
@@ -1009,6 +1035,27 @@
                     <div class="panel">
                         <div class="panel-title">Watchlist (Tickers Favoritos)</div>
                         <div id="watchlistPanel"></div>
+                    </div>
+                </div>
+                <h3 class="section-title">Dispositivos & Plataformas</h3>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Mobile vs Desktop (diário)</div>
+                        <canvas id="htaDeviceDailyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Dispositivos</div>
+                        <canvas id="htaDeviceChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Sistema Operacional</div>
+                        <canvas id="htaOsChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Navegador</div>
+                        <canvas id="htaBrowserChart"></canvas>
                     </div>
                 </div>
                 <h3 class="section-title">Consumo de Tokens (IA)</h3>
@@ -1674,6 +1721,43 @@
                 }
             });
 
+            // Feature Usage Daily (line chart per feature)
+            destroyChart('featureUsageDailyChart');
+            const featureDaily = bh.feature_usage_daily || [];
+            const fdFeatures = [...new Set(featureDaily.map(d => d.feature))].slice(0, 8);
+            const fdDays = [...new Set(featureDaily.map(d => d.day))].sort();
+            const fdFiltered = fdDays.filter(day => {
+                if (bhF.from && day < bhF.from) return false;
+                if (bhF.to && day > bhF.to) return false;
+                return true;
+            });
+            const fdMap = {};
+            featureDaily.forEach(d => { fdMap[d.feature + '|' + d.day] = d.cnt || 0; });
+            charts.featureUsageDailyChart = new Chart(document.getElementById('featureUsageDailyChart'), {
+                type: 'line',
+                data: {
+                    labels: fdFiltered.map(d => { const p = d.split('-'); return p[2] + '/' + p[1]; }),
+                    datasets: fdFeatures.map((f, i) => ({
+                        label: f,
+                        data: fdFiltered.map(day => fdMap[f + '|' + day] || 0),
+                        borderColor: COLORS[i % COLORS.length],
+                        backgroundColor: COLORS[i % COLORS.length] + '20',
+                        tension: 0.4,
+                        fill: false,
+                        pointRadius: 2,
+                    }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Device & Platform charts (BH)
+            renderDeviceCharts(bh, 'bh', bhF);
+
             // Subscribers & Retention section
             renderSubscribersSection();
         }
@@ -1939,6 +2023,76 @@
                 </tbody>
             `;
             document.getElementById('retentionTable').innerHTML = retentionHtml;
+        }
+
+        // ===== RENDER DEVICE CHARTS (reusable for BH and HTA) =====
+        function renderDeviceCharts(data, prefix, filters) {
+            const deviceDaily = data.device_daily || [];
+            const deviceSummary = data.device_summary || [];
+            const osSummary = data.os_summary || [];
+            const browserSummary = data.browser_summary || [];
+
+            // 1. Device Daily stacked bar (Mobile vs Desktop)
+            destroyChart(prefix + 'DeviceDailyChart');
+            const ddDays = [...new Set(deviceDaily.map(d => d.day))].sort();
+            const ddFiltered = ddDays.filter(day => {
+                if (filters.from && day < filters.from) return false;
+                if (filters.to && day > filters.to) return false;
+                return true;
+            });
+            const ddTypes = [...new Set(deviceDaily.map(d => d.device_type))];
+            const ddMap = {};
+            deviceDaily.forEach(d => { ddMap[d.device_type + '|' + d.day] = d.cnt || 0; });
+            const deviceColors = { desktop: '#3b82f6', mobile: '#f59e0b', tablet: '#3ecf8e' };
+            charts[prefix + 'DeviceDailyChart'] = new Chart(document.getElementById(prefix + 'DeviceDailyChart'), {
+                type: 'bar',
+                data: {
+                    labels: ddFiltered.map(d => { const p = d.split('-'); return p[2] + '/' + p[1]; }),
+                    datasets: ddTypes.map(t => ({
+                        label: t.charAt(0).toUpperCase() + t.slice(1),
+                        data: ddFiltered.map(day => ddMap[t + '|' + day] || 0),
+                        backgroundColor: deviceColors[t] || '#94a3b8',
+                    }))
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // 2. Device doughnut
+            destroyChart(prefix + 'DeviceChart');
+            charts[prefix + 'DeviceChart'] = new Chart(document.getElementById(prefix + 'DeviceChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: deviceSummary.map(d => (d.device_type || 'unknown').charAt(0).toUpperCase() + (d.device_type || 'unknown').slice(1)),
+                    datasets: [{ data: deviceSummary.map(d => d.cnt), backgroundColor: deviceSummary.map(d => deviceColors[d.device_type] || '#94a3b8') }]
+                },
+                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
+            });
+
+            // 3. OS doughnut
+            destroyChart(prefix + 'OsChart');
+            charts[prefix + 'OsChart'] = new Chart(document.getElementById(prefix + 'OsChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: osSummary.map(d => d.os || 'unknown'),
+                    datasets: [{ data: osSummary.map(d => d.cnt), backgroundColor: COLORS.slice(0, osSummary.length) }]
+                },
+                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
+            });
+
+            // 4. Browser doughnut
+            destroyChart(prefix + 'BrowserChart');
+            charts[prefix + 'BrowserChart'] = new Chart(document.getElementById(prefix + 'BrowserChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: browserSummary.map(d => d.browser || 'unknown'),
+                    datasets: [{ data: browserSummary.map(d => d.cnt), backgroundColor: COLORS.slice(2, 2 + browserSummary.length) }]
+                },
+                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
+            });
         }
 
         // ===== RENDER HTA TAB =====
@@ -2221,6 +2375,9 @@
                 </tbody>
             `;
             document.getElementById('userProfilesTable').innerHTML = profilesHtml;
+
+            // Device & Platform charts (HTA)
+            renderDeviceCharts(hta, 'hta', htaF);
 
             // Render token usage section
             renderTokenUsageSection();
