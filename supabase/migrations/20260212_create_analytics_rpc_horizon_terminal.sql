@@ -218,6 +218,97 @@ BEGIN
         GROUP BY browser
         ORDER BY cnt DESC
       ) t
+    ),
+    'agent_success_daily', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT date_trunc('day', event_ts AT TIME ZONE 'America/Sao_Paulo')::date as day,
+               count(*) FILTER (WHERE action = 'task_start') as started,
+               count(*) FILTER (WHERE action = 'task_end') as completed,
+               count(*) FILTER (WHERE action = 'answer_done') as answered,
+               count(*) FILTER (WHERE action IN ('task_error', 'workflow_error', 'aborted')) as failed,
+               round(
+                 count(*) FILTER (WHERE action = 'task_end')::numeric /
+                 nullif(count(*) FILTER (WHERE action = 'task_start'), 0) * 100, 1
+               ) as success_rate
+        FROM public.terminal_events
+        WHERE feature = 'agent'
+        GROUP BY day
+        ORDER BY day ASC
+      ) t
+    ),
+    'agent_duration_daily', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT date_trunc('day', event_ts AT TIME ZONE 'America/Sao_Paulo')::date as day,
+               round((avg(duration_ms) / 1000)::numeric, 1) as avg_duration_sec,
+               round((percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_ms) / 1000)::numeric, 1) as median_duration_sec,
+               round((max(duration_ms) / 1000)::numeric, 1) as max_duration_sec,
+               count(*) as tasks
+        FROM public.terminal_events
+        WHERE feature = 'agent' AND action = 'answer_done'
+          AND duration_ms IS NOT NULL AND duration_ms > 0
+        GROUP BY day
+        ORDER BY day ASC
+      ) t
+    ),
+    'response_mode_summary', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT response_mode, count(*) as cnt,
+               count(DISTINCT user_id) as unique_users
+        FROM public.terminal_events
+        WHERE response_mode IS NOT NULL
+        GROUP BY response_mode
+        ORDER BY cnt DESC
+      ) t
+    ),
+    'response_mode_daily', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT date_trunc('day', event_ts AT TIME ZONE 'America/Sao_Paulo')::date as day,
+               response_mode,
+               count(*) as cnt
+        FROM public.terminal_events
+        WHERE response_mode IS NOT NULL
+        GROUP BY day, response_mode
+        ORDER BY day ASC
+      ) t
+    ),
+    'chat_depth_distribution', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        WITH session_msg_count AS (
+          SELECT session_id, count(*) as msgs
+          FROM public.chat_messages
+          GROUP BY session_id
+        )
+        SELECT
+          CASE
+            WHEN msgs <= 2 THEN '1-2 msgs'
+            WHEN msgs <= 4 THEN '3-4 msgs'
+            WHEN msgs <= 6 THEN '5-6 msgs'
+            WHEN msgs <= 8 THEN '7-8 msgs'
+            ELSE '9+ msgs'
+          END as bucket,
+          count(*) as sessions,
+          round(avg(msgs)::numeric, 1) as avg_msgs
+        FROM session_msg_count
+        GROUP BY bucket
+        ORDER BY min(msgs)
+      ) t
+    ),
+    'questions_daily', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT usage_date as day,
+               sum(question_count) as total_questions,
+               count(DISTINCT user_id) as active_users,
+               round(avg(question_count)::numeric, 1) as avg_per_user
+        FROM public.user_daily_usage
+        GROUP BY usage_date
+        ORDER BY usage_date ASC
+      ) t
     )
   ) INTO result;
 

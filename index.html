@@ -909,6 +909,68 @@
                         <canvas id="bhBrowserChart"></canvas>
                     </div>
                 </div>
+                <h3 class="section-title">Navegação & Tráfego</h3>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Rotas Mais Visitadas</div>
+                        <canvas id="bhTopRoutesChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Landing Pages</div>
+                        <canvas id="bhLandingPagesChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Origem do Tráfego</div>
+                        <canvas id="bhReferrerChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Resolução de Tela</div>
+                        <canvas id="bhScreenChart"></canvas>
+                    </div>
+                </div>
+                <h3 class="section-title">Engajamento de Usuários</h3>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Eventos por Sessão (média)</div>
+                        <canvas id="bhEventsPerSessionChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Duração de Sessão (min)</div>
+                        <canvas id="bhSessionDurationChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Stickiness: DAU/WAU e DAU/MAU (%)</div>
+                        <canvas id="bhStickinessChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Novos vs Retornantes</div>
+                        <canvas id="bhNewVsReturningChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-container mb-2">
+                    <div class="chart-title">Mapa de Calor de Atividade (BRT)</div>
+                    <div id="bhActivityHeatmap" style="overflow-x:auto"></div>
+                </div>
+                <h3 class="section-title">Seções ao Longo do Tempo</h3>
+                <div class="chart-container mb-2">
+                    <div class="chart-title">Uso de Seções (diário)</div>
+                    <canvas id="bhSectionDailyChart"></canvas>
+                </div>
+                <h3 class="section-title">Análise de Conversão</h3>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Tempo até Conversão</div>
+                        <canvas id="bhTimeToConvertChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Features que Levam ao Paywall</div>
+                        <canvas id="bhFeaturePaywallChart"></canvas>
+                    </div>
+                </div>
                 <h3 class="section-title">Assinantes & Retenção</h3>
                 <div class="kpi-grid" id="subsKpis"></div>
                 <div class="filter-bar" data-tab="bh-subs">
@@ -969,6 +1031,13 @@
                 <div class="table-container retention-table">
                     <div class="table-title">Retenção por Coorte</div>
                     <table id="retentionTable"></table>
+                </div>
+                <div class="kpi-grid" id="mrrKpis"></div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Idade das Assinaturas</div>
+                        <canvas id="bhSubAgeChart"></canvas>
+                    </div>
                 </div>
             </div>
 
@@ -1056,6 +1125,37 @@
                     <div class="chart-container">
                         <div class="chart-title">Navegador</div>
                         <canvas id="htaBrowserChart"></canvas>
+                    </div>
+                </div>
+                <h3 class="section-title">Inteligência do Agente</h3>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Taxa de Sucesso do Agente</div>
+                        <canvas id="htaAgentSuccessChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Duração de Tasks (seg)</div>
+                        <canvas id="htaAgentDurationChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Modo de Resposta</div>
+                        <canvas id="htaResponseModeChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Modo de Resposta (diário)</div>
+                        <canvas id="htaResponseModeDailyChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Profundidade do Chat</div>
+                        <canvas id="htaChatDepthChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Perguntas por Dia</div>
+                        <canvas id="htaQuestionsDailyChart"></canvas>
                     </div>
                 </div>
                 <h3 class="section-title">Consumo de Tokens (IA)</h3>
@@ -1372,6 +1472,10 @@
             const totalProfiles = subsOv.total_profiles || 0;
             const convRate = totalProfiles > 0 ? ((activeSubscribers / totalProfiles) * 100).toFixed(1) : '0';
 
+            // Stickiness KPIs (most recent day)
+            const stickinessData = bh.stickiness || [];
+            const lastStick = stickinessData.length > 0 ? stickinessData[stickinessData.length - 1] : {};
+
             const kpisHtml = `
                 ${createKpiCard('DB Total', fmtBytes(totalStorage))}
                 ${createKpiCard('Usuários', fmt(totalUsers))}
@@ -1379,6 +1483,8 @@
                 ${createKpiCard('Storage', fmt(totalObjects))}
                 ${createKpiCard('Assinantes Ativos', fmt(activeSubscribers))}
                 ${createKpiCard('Taxa Conversão', convRate + '%')}
+                ${createKpiCard('DAU/WAU', (lastStick.dau_wau_pct || 0) + '%')}
+                ${createKpiCard('DAU/MAU', (lastStick.dau_mau_pct || 0) + '%')}
             `;
             document.getElementById('overviewKpis').innerHTML = kpisHtml;
 
@@ -1758,6 +1864,18 @@
             // Device & Platform charts (BH)
             renderDeviceCharts(bh, 'bh', bhF);
 
+            // Navigation & Traffic section
+            renderTrafficSection(bh, bhF);
+
+            // Engagement section
+            renderEngagementSection(bh, bhF);
+
+            // Section daily chart
+            renderSectionDailyChart(bh, bhF);
+
+            // Conversion analysis
+            renderConversionAnalysis(bh);
+
             // Subscribers & Retention section
             renderSubscribersSection();
         }
@@ -2023,6 +2141,540 @@
                 </tbody>
             `;
             document.getElementById('retentionTable').innerHTML = retentionHtml;
+
+            // MRR Estimate KPIs
+            const mrr = bh.mrr_estimate || {};
+            document.getElementById('mrrKpis').innerHTML = `
+                ${createKpiCard('Assinantes Mensal', fmt(mrr.monthly_subs || 0))}
+                ${createKpiCard('Assinantes Anual', fmt(mrr.yearly_subs || 0))}
+                ${createKpiCard('Assinantes Vitalício', fmt(mrr.lifetime_subs || 0))}
+                ${createKpiCard('Total Pagamentos', fmt(mrr.total_payments || 0))}
+                ${createKpiCard('Pagantes Únicos', fmt(mrr.total_paying_users || 0))}
+                ${createKpiCard('Idade Média (dias)', fmt(mrr.avg_subscription_age_days || 0))}
+            `;
+
+            // Subscription Age Chart
+            destroyChart('bhSubAgeChart');
+            const subAge = bh.subscription_age || [];
+            charts.bhSubAgeChart = new Chart(document.getElementById('bhSubAgeChart'), {
+                type: 'bar',
+                data: {
+                    labels: subAge.map(s => s.age_bucket),
+                    datasets: [
+                        { label: 'Ativos', data: subAge.map(s => s.active || 0), backgroundColor: '#3ecf8e', borderRadius: 4 },
+                        { label: 'Churned', data: subAge.map(s => s.churned || 0), backgroundColor: '#ef4444', borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+        }
+
+        // ===== RENDER TRAFFIC SECTION (BH) =====
+        function renderTrafficSection(bh, bhF) {
+            // Top Routes
+            destroyChart('bhTopRoutesChart');
+            const routes = bh.top_routes || [];
+            charts.bhTopRoutesChart = new Chart(document.getElementById('bhTopRoutesChart'), {
+                type: 'bar',
+                data: {
+                    labels: routes.map(r => r.page_path || '/'),
+                    datasets: [{
+                        label: 'Views',
+                        data: routes.map(r => r.views || 0),
+                        backgroundColor: '#3ecf8e'
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Landing Pages
+            destroyChart('bhLandingPagesChart');
+            const landings = bh.top_landing_pages || [];
+            charts.bhLandingPagesChart = new Chart(document.getElementById('bhLandingPagesChart'), {
+                type: 'bar',
+                data: {
+                    labels: landings.map(l => l.landing || '/'),
+                    datasets: [{
+                        label: 'Entradas',
+                        data: landings.map(l => l.entries || 0),
+                        backgroundColor: '#6366f1'
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Referrer Summary (Doughnut)
+            destroyChart('bhReferrerChart');
+            const referrers = bh.referrer_summary || [];
+            charts.bhReferrerChart = new Chart(document.getElementById('bhReferrerChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: referrers.map(r => r.source || 'Outro'),
+                    datasets: [{
+                        data: referrers.map(r => r.visits || 0),
+                        backgroundColor: COLORS
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'right' } }
+                }
+            });
+
+            // Screen Summary (Doughnut)
+            destroyChart('bhScreenChart');
+            const screens = bh.screen_summary || [];
+            charts.bhScreenChart = new Chart(document.getElementById('bhScreenChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: screens.map(s => s.screen || 'N/A'),
+                    datasets: [{
+                        data: screens.map(s => s.cnt || 0),
+                        backgroundColor: COLORS.slice(2)
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'right' } }
+                }
+            });
+        }
+
+        // ===== RENDER ENGAGEMENT SECTION (BH) =====
+        function renderEngagementSection(bh, bhF) {
+            // Events per Session
+            destroyChart('bhEventsPerSessionChart');
+            const sessionMetrics = bh.session_metrics_daily || [];
+            const smPrep = prepareTimeSeries(sessionMetrics, bhF, ['avg_events_per_session', 'total_sessions']);
+            charts.bhEventsPerSessionChart = new Chart(document.getElementById('bhEventsPerSessionChart'), {
+                type: 'line',
+                data: {
+                    labels: smPrep.labels,
+                    datasets: [{
+                        label: 'Média eventos/sessão',
+                        data: smPrep.data.map(d => d.avg_events_per_session || 0),
+                        borderColor: '#3ecf8e',
+                        backgroundColor: 'rgba(62, 207, 142, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: '#3ecf8e'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Session Duration
+            destroyChart('bhSessionDurationChart');
+            charts.bhSessionDurationChart = new Chart(document.getElementById('bhSessionDurationChart'), {
+                type: 'line',
+                data: {
+                    labels: smPrep.labels,
+                    datasets: [
+                        {
+                            label: 'Média (min)',
+                            data: smPrep.data.map(d => d.avg_duration_min || 0),
+                            borderColor: '#6366f1',
+                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                            tension: 0.4,
+                            fill: false,
+                            pointBackgroundColor: '#6366f1'
+                        },
+                        {
+                            label: 'Mediana (min)',
+                            data: smPrep.data.map(d => d.median_duration_min || 0),
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            tension: 0.4,
+                            fill: false,
+                            pointBackgroundColor: '#f59e0b'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Stickiness
+            destroyChart('bhStickinessChart');
+            const stickiness = bh.stickiness || [];
+            const stPrep = prepareTimeSeries(stickiness, bhF, ['dau_wau_pct', 'dau_mau_pct']);
+            charts.bhStickinessChart = new Chart(document.getElementById('bhStickinessChart'), {
+                type: 'line',
+                data: {
+                    labels: stPrep.labels,
+                    datasets: [
+                        {
+                            label: 'DAU/WAU %',
+                            data: stPrep.data.map(d => d.dau_wau_pct || 0),
+                            borderColor: '#3ecf8e',
+                            backgroundColor: 'rgba(62, 207, 142, 0.1)',
+                            tension: 0.4,
+                            fill: false,
+                            pointBackgroundColor: '#3ecf8e'
+                        },
+                        {
+                            label: 'DAU/MAU %',
+                            data: stPrep.data.map(d => d.dau_mau_pct || 0),
+                            borderColor: '#6366f1',
+                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                            tension: 0.4,
+                            fill: false,
+                            pointBackgroundColor: '#6366f1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: {
+                        y: { beginAtZero: true, max: 100, grid: { color: '#2a2d3e' }, ticks: { callback: v => v + '%' } }
+                    }
+                }
+            });
+
+            // New vs Returning
+            destroyChart('bhNewVsReturningChart');
+            const nvr = bh.new_vs_returning_daily || [];
+            const nvrPrep = prepareTimeSeries(nvr, bhF, ['new_users', 'returning_users']);
+            charts.bhNewVsReturningChart = new Chart(document.getElementById('bhNewVsReturningChart'), {
+                type: 'bar',
+                data: {
+                    labels: nvrPrep.labels,
+                    datasets: [
+                        { label: 'Retornantes', data: nvrPrep.data.map(d => d.returning_users || 0), backgroundColor: '#3ecf8e' },
+                        { label: 'Novos', data: nvrPrep.data.map(d => d.new_users || 0), backgroundColor: '#3b82f6' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // Activity Heatmap
+            renderHeatmap('bhActivityHeatmap', bh.activity_heatmap || []);
+        }
+
+        // ===== HEATMAP HELPER =====
+        function renderHeatmap(containerId, data) {
+            const dows = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+            const maxVal = Math.max(...data.map(d => d.events), 1);
+            const grid = {};
+            data.forEach(d => { grid[d.dow + '|' + d.hour] = d.events; });
+            let html = '<table style="width:100%;font-size:11px;border-collapse:collapse">';
+            html += '<tr><th></th>';
+            for (let h = 0; h < 24; h++) html += '<th style="padding:2px 4px;color:var(--m)">' + h + '</th>';
+            html += '</tr>';
+            for (let dow = 0; dow < 7; dow++) {
+                html += '<tr><td style="padding:4px;font-weight:600;color:var(--m)">' + dows[dow] + '</td>';
+                for (let h = 0; h < 24; h++) {
+                    const v = grid[dow + '|' + h] || 0;
+                    const op = v > 0 ? (0.15 + (v / maxVal) * 0.85).toFixed(2) : '0.05';
+                    html += '<td style="padding:2px 4px;text-align:center;background:rgba(62,207,142,' + op + ');color:' + (op > 0.5 ? '#fff' : 'var(--m)') + ';border-radius:2px">' + (v || '') + '</td>';
+                }
+                html += '</tr>';
+            }
+            html += '</table>';
+            document.getElementById(containerId).innerHTML = html;
+        }
+
+        // ===== RENDER SECTION DAILY CHART (BH) =====
+        function renderSectionDailyChart(bh, bhF) {
+            destroyChart('bhSectionDailyChart');
+            const sectionDaily = bh.section_daily || [];
+            // Get top 6 sections by total count
+            const sectionTotals = {};
+            sectionDaily.forEach(d => { sectionTotals[d.section] = (sectionTotals[d.section] || 0) + (d.cnt || 0); });
+            const topSections = Object.entries(sectionTotals).sort((a, b) => b[1] - a[1]).slice(0, 6).map(e => e[0]);
+            const sdDays = [...new Set(sectionDaily.map(d => d.day))].sort();
+            const sdFiltered = sdDays.filter(day => {
+                if (bhF.from && day < bhF.from) return false;
+                if (bhF.to && day > bhF.to) return false;
+                return true;
+            });
+            const sdMap = {};
+            sectionDaily.forEach(d => { sdMap[d.section + '|' + d.day] = d.cnt || 0; });
+            charts.bhSectionDailyChart = new Chart(document.getElementById('bhSectionDailyChart'), {
+                type: 'line',
+                data: {
+                    labels: sdFiltered.map(d => { const p = d.split('-'); return p[2] + '/' + p[1]; }),
+                    datasets: topSections.map((s, i) => ({
+                        label: s,
+                        data: sdFiltered.map(day => sdMap[s + '|' + day] || 0),
+                        borderColor: COLORS[i % COLORS.length],
+                        backgroundColor: COLORS[i % COLORS.length] + '20',
+                        tension: 0.4,
+                        fill: false,
+                        pointRadius: 2,
+                    }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+        }
+
+        // ===== RENDER CONVERSION ANALYSIS (BH) =====
+        function renderConversionAnalysis(bh) {
+            // Time to Convert
+            destroyChart('bhTimeToConvertChart');
+            const ttc = bh.time_to_convert || [];
+            charts.bhTimeToConvertChart = new Chart(document.getElementById('bhTimeToConvertChart'), {
+                type: 'bar',
+                data: {
+                    labels: ttc.map(t => t.bucket),
+                    datasets: [{
+                        label: 'Conversões',
+                        data: ttc.map(t => t.conversions || 0),
+                        backgroundColor: '#3ecf8e',
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Feature Paywall
+            destroyChart('bhFeaturePaywallChart');
+            const fp = bh.feature_paywall || [];
+            charts.bhFeaturePaywallChart = new Chart(document.getElementById('bhFeaturePaywallChart'), {
+                type: 'bar',
+                data: {
+                    labels: fp.map(f => f.feature || 'N/A'),
+                    datasets: [{
+                        label: 'Paywall Hits',
+                        data: fp.map(f => f.paywall_hits || 0),
+                        backgroundColor: '#f59e0b',
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+        }
+
+        // ===== RENDER AGENT INTELLIGENCE (HTA) =====
+        function renderAgentIntelligence(hta, htaF) {
+            // Agent Success Daily (bar + line overlay)
+            destroyChart('htaAgentSuccessChart');
+            const agentSuccess = hta.agent_success_daily || [];
+            const asPrep = prepareTimeSeries(agentSuccess, htaF, ['started', 'completed', 'failed']);
+            // For success rate, compute from aggregated data
+            const asRateData = asPrep.data.map(d => d.started > 0 ? Math.round(d.completed / d.started * 100) : 0);
+            charts.htaAgentSuccessChart = new Chart(document.getElementById('htaAgentSuccessChart'), {
+                type: 'bar',
+                data: {
+                    labels: asPrep.labels,
+                    datasets: [
+                        { label: 'Iniciadas', data: asPrep.data.map(d => d.started || 0), backgroundColor: '#3b82f6', order: 2 },
+                        { label: 'Concluídas', data: asPrep.data.map(d => d.completed || 0), backgroundColor: '#3ecf8e', order: 2 },
+                        { label: 'Falhas', data: asPrep.data.map(d => d.failed || 0), backgroundColor: '#ef4444', order: 2 },
+                        {
+                            label: 'Taxa Sucesso %',
+                            data: asRateData,
+                            type: 'line',
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'transparent',
+                            tension: 0.4,
+                            pointBackgroundColor: '#f59e0b',
+                            yAxisID: 'y1',
+                            order: 1,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } },
+                        y1: { position: 'right', beginAtZero: true, max: 100, grid: { display: false }, ticks: { callback: v => v + '%' } }
+                    }
+                }
+            });
+
+            // Agent Duration Daily (multi-line)
+            destroyChart('htaAgentDurationChart');
+            const agentDuration = hta.agent_duration_daily || [];
+            const adPrep = prepareTimeSeries(agentDuration, htaF, ['avg_duration_sec', 'median_duration_sec', 'max_duration_sec']);
+            charts.htaAgentDurationChart = new Chart(document.getElementById('htaAgentDurationChart'), {
+                type: 'line',
+                data: {
+                    labels: adPrep.labels,
+                    datasets: [
+                        { label: 'Média', data: adPrep.data.map(d => d.avg_duration_sec || 0), borderColor: '#3ecf8e', tension: 0.4, fill: false, pointBackgroundColor: '#3ecf8e' },
+                        { label: 'Mediana', data: adPrep.data.map(d => d.median_duration_sec || 0), borderColor: '#6366f1', tension: 0.4, fill: false, pointBackgroundColor: '#6366f1' },
+                        { label: 'Máximo', data: adPrep.data.map(d => d.max_duration_sec || 0), borderColor: '#ef4444', tension: 0.4, fill: false, pointBackgroundColor: '#ef4444', borderDash: [5, 5] }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Response Mode (Doughnut)
+            destroyChart('htaResponseModeChart');
+            const rmSummary = hta.response_mode_summary || [];
+            const modeColors = { 'deep': '#6366f1', 'pro': '#3ecf8e', 'fast': '#f59e0b' };
+            charts.htaResponseModeChart = new Chart(document.getElementById('htaResponseModeChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: rmSummary.map(r => (r.response_mode || 'N/A').charAt(0).toUpperCase() + (r.response_mode || 'N/A').slice(1)),
+                    datasets: [{
+                        data: rmSummary.map(r => r.cnt || 0),
+                        backgroundColor: rmSummary.map(r => modeColors[r.response_mode] || '#94a3b8')
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'right' } }
+                }
+            });
+
+            // Response Mode Daily (stacked bar)
+            destroyChart('htaResponseModeDailyChart');
+            const rmDaily = hta.response_mode_daily || [];
+            const rmModes = [...new Set(rmDaily.map(d => d.response_mode))];
+            const rmDays = [...new Set(rmDaily.map(d => d.day))].sort();
+            const rmFiltered = rmDays.filter(day => {
+                if (htaF.from && day < htaF.from) return false;
+                if (htaF.to && day > htaF.to) return false;
+                return true;
+            });
+            const rmMap = {};
+            rmDaily.forEach(d => { rmMap[d.response_mode + '|' + d.day] = d.cnt || 0; });
+            charts.htaResponseModeDailyChart = new Chart(document.getElementById('htaResponseModeDailyChart'), {
+                type: 'bar',
+                data: {
+                    labels: rmFiltered.map(d => { const p = d.split('-'); return p[2] + '/' + p[1]; }),
+                    datasets: rmModes.map(m => ({
+                        label: m.charAt(0).toUpperCase() + m.slice(1),
+                        data: rmFiltered.map(day => rmMap[m + '|' + day] || 0),
+                        backgroundColor: modeColors[m] || '#94a3b8',
+                    }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // Chat Depth Distribution (bar)
+            destroyChart('htaChatDepthChart');
+            const chatDepth = hta.chat_depth_distribution || [];
+            charts.htaChatDepthChart = new Chart(document.getElementById('htaChatDepthChart'), {
+                type: 'bar',
+                data: {
+                    labels: chatDepth.map(d => d.bucket),
+                    datasets: [{
+                        label: 'Sessões',
+                        data: chatDepth.map(d => d.sessions || 0),
+                        backgroundColor: '#6366f1',
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Questions Daily (bar + line overlay)
+            destroyChart('htaQuestionsDailyChart');
+            const qDaily = hta.questions_daily || [];
+            const qPrep = prepareTimeSeries(qDaily, htaF, ['total_questions', 'active_users']);
+            // For avg_per_user, recompute from aggregated data
+            const qAvgData = qPrep.data.map(d => d.active_users > 0 ? Math.round(d.total_questions / d.active_users * 10) / 10 : 0);
+            charts.htaQuestionsDailyChart = new Chart(document.getElementById('htaQuestionsDailyChart'), {
+                type: 'bar',
+                data: {
+                    labels: qPrep.labels,
+                    datasets: [
+                        { label: 'Total Perguntas', data: qPrep.data.map(d => d.total_questions || 0), backgroundColor: '#3ecf8e', order: 2 },
+                        {
+                            label: 'Média/Usuário',
+                            data: qAvgData,
+                            type: 'line',
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'transparent',
+                            tension: 0.4,
+                            pointBackgroundColor: '#f59e0b',
+                            yAxisID: 'y1',
+                            order: 1,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } },
+                        y1: { position: 'right', beginAtZero: true, grid: { display: false } }
+                    }
+                }
+            });
         }
 
         // ===== RENDER DEVICE CHARTS (reusable for BH and HTA) =====
@@ -2378,6 +3030,9 @@
 
             // Device & Platform charts (HTA)
             renderDeviceCharts(hta, 'hta', htaF);
+
+            // Agent Intelligence section
+            renderAgentIntelligence(hta, htaF);
 
             // Render token usage section
             renderTokenUsageSection();
