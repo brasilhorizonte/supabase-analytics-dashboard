@@ -1180,9 +1180,24 @@
                         <canvas id="tokenDistributionChart"></canvas>
                     </div>
                 </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Tokens por Modo</div>
+                        <div id="tokenByModeFallback" style="display:none; color: var(--m); font-size: 13px; text-align: center; padding: 40px 0;">Dados de modo ainda não disponíveis</div>
+                        <canvas id="tokenByModeChart"></canvas>
+                    </div>
+                    <div class="chart-container" style="display:flex; flex-direction:column; justify-content:center;">
+                        <div id="tokenStatsBox" style="display:flex; flex-wrap:wrap; gap:16px; justify-content:center;"></div>
+                    </div>
+                </div>
                 <div class="table-container">
                     <div class="table-title">Consumo por Usuário</div>
                     <table id="tokenUserTable"></table>
+                </div>
+                <div class="table-container">
+                    <div class="table-title">Top Queries por Token</div>
+                    <div id="topQueriesFallback" style="display:none; color: var(--m); font-size: 13px; padding: 20px 0;">Tracking por query ainda não ativo</div>
+                    <table id="topQueriesTable"></table>
                 </div>
                 <div class="table-container">
                     <div class="table-title">Resumo de Eventos - Terminal</div>
@@ -1245,7 +1260,7 @@
         const TOKEN_PRICING = {
             'anthropic': { input: 3.00, output: 15.00, label: 'Claude Sonnet 4' },
             'gemini': { input: 1.25, output: 10.00, label: 'Gemini 2.5 Pro' },
-            'gemini-market': { input: 0.15, output: 0.60, label: 'Gemini 2.5 Flash' },
+            'gemini-market': { input: 0.30, output: 2.50, label: 'Gemini 2.5 Flash' },
         };
         const PROXY_COLORS = { 'anthropic': '#f59e0b', 'gemini': '#3ecf8e', 'gemini-market': '#6366f1' };
 
@@ -3045,6 +3060,9 @@
             const tokenDaily = hta.token_usage_daily || [];
             const tokenSummary = hta.token_usage_summary || [];
             const tokenByUser = hta.token_usage_by_user || [];
+            const tokenStats = hta.token_stats || {};
+            const tokenByMode = hta.token_by_mode || [];
+            const topQueries = hta.top_queries_by_token || [];
 
             // KPIs
             const totalRequests = tokenSummary.reduce((s, r) => s + (Number(r.total_requests) || 0), 0);
@@ -3052,11 +3070,31 @@
             const totalOutput = tokenSummary.reduce((s, r) => s + (Number(r.total_output_tokens) || 0), 0);
             const totalCost = tokenSummary.reduce((s, r) => s + calcTokenCost(r.proxy_name, Number(r.total_input_tokens) || 0, Number(r.total_output_tokens) || 0), 0);
 
+            // Avg tokens per query from token_stats
+            const avgPerQuery = Number(tokenStats.avg_tokens_per_query) || 0;
+
+            // Monthly projection: avg daily cost over last 7 days * 30
+            const last7Days = [...new Set(tokenDaily.map(d => d.day))].sort().slice(-7);
+            let projectionMonthly = 0;
+            if (last7Days.length > 0) {
+                const last7Cost = last7Days.reduce((sum, day) => {
+                    return sum + tokenDaily.filter(d => d.day === day).reduce((s, d) => {
+                        return s + calcTokenCost(d.proxy_name, Number(d.input_tokens) || 0, Number(d.output_tokens) || 0);
+                    }, 0);
+                }, 0);
+                projectionMonthly = (last7Cost / last7Days.length) * 30;
+            }
+
+            // Check if any data has estimates
+            const hasEstimates = tokenDaily.some(d => d.has_estimates === true);
+
             document.getElementById('tokenKpis').innerHTML = `
                 ${createKpiCard('Total Requests', fmt(totalRequests))}
-                ${createKpiCard('Input Tokens', fmt(totalInput))}
+                ${createKpiCard('Input Tokens', fmt(totalInput) + (hasEstimates ? ' <span style="font-size:10px;color:#f59e0b;">inclui estimativas</span>' : ''))}
                 ${createKpiCard('Output Tokens', fmt(totalOutput))}
                 ${createKpiCard('Custo Estimado', '$' + totalCost.toFixed(2))}
+                ${createKpiCard('Média por Query', avgPerQuery > 0 ? fmt(avgPerQuery) + ' tokens' : '-')}
+                ${createKpiCard('Projeção Mensal', projectionMonthly > 0 ? '$' + projectionMonthly.toFixed(2) : '-')}
             `;
 
             // Get unique proxies and days
@@ -3230,6 +3268,110 @@
                 </tbody>
             `;
             document.getElementById('tokenUserTable').innerHTML = userTableHtml;
+
+            // 6. Token by Mode (Doughnut)
+            destroyChart('tokenByModeChart');
+            const modeCanvas = document.getElementById('tokenByModeChart');
+            const modeFallback = document.getElementById('tokenByModeFallback');
+            const modeData = tokenByMode.filter(m => m.mode !== 'unknown' || tokenByMode.length === 1);
+            const hasModeData = modeData.length > 0 && modeData.some(m => Number(m.query_count) > 0);
+
+            if (hasModeData) {
+                modeCanvas.style.display = '';
+                modeFallback.style.display = 'none';
+                const modeColors = { 'deep': '#f59e0b', 'fast': '#3ecf8e', 'pro': '#6366f1', 'unknown': '#94a3b8' };
+                charts.tokenByModeChart = new Chart(modeCanvas, {
+                    type: 'doughnut',
+                    data: {
+                        labels: modeData.map(m => (m.mode || 'unknown').charAt(0).toUpperCase() + (m.mode || 'unknown').slice(1)),
+                        datasets: [{
+                            data: modeData.map(m => Number(m.query_count) || 0),
+                            backgroundColor: modeData.map(m => modeColors[m.mode] || '#94a3b8'),
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            legend: { position: 'right' },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(ctx) {
+                                        const item = modeData[ctx.dataIndex];
+                                        return `${ctx.label}: ${fmt(item.query_count)} queries, avg ${fmt(item.avg_tokens)} tokens`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            } else {
+                modeCanvas.style.display = 'none';
+                modeFallback.style.display = '';
+            }
+
+            // Token stats box (next to mode chart)
+            const statsBox = document.getElementById('tokenStatsBox');
+            if (tokenStats.total_queries > 0) {
+                statsBox.innerHTML = `
+                    <div style="text-align:center; padding:12px;">
+                        <div style="color:var(--m); font-size:12px;">Total Queries IA</div>
+                        <div style="font-size:24px; font-weight:700; color:var(--t);">${fmt(tokenStats.total_queries)}</div>
+                    </div>
+                    <div style="text-align:center; padding:12px;">
+                        <div style="color:var(--m); font-size:12px;">Com Token Count</div>
+                        <div style="font-size:24px; font-weight:700; color:var(--g);">${fmt(tokenStats.queries_with_tokens)}</div>
+                    </div>
+                    <div style="text-align:center; padding:12px;">
+                        <div style="color:var(--m); font-size:12px;">Tokens (terminal)</div>
+                        <div style="font-size:24px; font-weight:700; color:var(--a);">${fmt(tokenStats.total_tokens)}</div>
+                    </div>
+                `;
+            } else {
+                statsBox.innerHTML = '<div style="color:var(--m); font-size:13px; text-align:center;">Dados de token_stats ainda não disponíveis</div>';
+            }
+
+            // 7. Top Queries by Token table
+            const topQueriesTable = document.getElementById('topQueriesTable');
+            const topQueriesFallback = document.getElementById('topQueriesFallback');
+
+            if (topQueries.length > 0) {
+                topQueriesTable.style.display = '';
+                topQueriesFallback.style.display = 'none';
+                topQueriesTable.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Ticker</th>
+                            <th>Modo</th>
+                            <th>Tokens</th>
+                            <th>Prompt</th>
+                            <th>Completion</th>
+                            <th>Chamadas</th>
+                            <th>Duração</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${topQueries.map(q => {
+                            const dt = q.event_ts ? new Date(q.event_ts).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
+                            const durSec = q.duration_ms ? (q.duration_ms / 1000).toFixed(1) + 's' : '-';
+                            return `<tr>
+                                <td>${dt}</td>
+                                <td>${q.ticker || '-'}</td>
+                                <td>${q.response_mode || '-'}</td>
+                                <td>${fmt(Number(q.token_count) || 0)}</td>
+                                <td>${q.prompt_tokens != null ? fmt(q.prompt_tokens) : '-'}</td>
+                                <td>${q.completion_tokens != null ? fmt(q.completion_tokens) : '-'}</td>
+                                <td>${q.call_count != null ? q.call_count : '-'}</td>
+                                <td>${durSec}</td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                `;
+            } else {
+                topQueriesTable.style.display = 'none';
+                topQueriesFallback.style.display = '';
+            }
         }
 
         // ===== TAB NAVIGATION =====
