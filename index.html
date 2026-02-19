@@ -771,7 +771,7 @@
         <div class="dashboard-content">
             <!-- OVERVIEW TAB -->
             <div class="tab-content show" id="overview">
-                <h3 class="section-title" style="margin-top:0;border-top:none;padding-top:0">Últimas 24 Horas</h3>
+                <h3 class="section-title" style="margin-top:0;border-top:none;padding-top:0">Hoje (BRT)</h3>
                 <div class="panels-grid">
                     <div class="panel">
                         <div class="panel-title">brasilhorizonte</div>
@@ -1473,7 +1473,7 @@
                 ${createKpiCard('Logins', fmt(hta24.logins || 0))}
                 ${createKpiCard('Requests IA', fmt(Number(hta24.requests) || 0))}
                 ${createKpiCard('Tokens IA', fmt((Number(hta24.input_tokens) || 0) + (Number(hta24.output_tokens) || 0)))}
-                ${createKpiCard('Custo IA (24h)', '$' + hta24Cost.toFixed(2))}
+                ${createKpiCard('Custo IA (hoje)', '$' + hta24Cost.toFixed(2))}
             `;
 
             // KPIs (combined)

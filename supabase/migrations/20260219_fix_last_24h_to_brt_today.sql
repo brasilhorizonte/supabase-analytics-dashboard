@@ -1,0 +1,18 @@
+-- Fix: Standardize last_24h to use "today in BRT" instead of mixed approaches
+--
+-- Problem: HTA mixed rolling 24h UTC window (for terminal_events/logins) with
+-- BRT today (for proxy_daily_usage). BH used rolling 24h UTC for everything.
+-- This caused inconsistent numbers in the overview cards.
+--
+-- Solution: All last_24h queries now use BRT day boundaries:
+--   brt_today_start = midnight BRT today as UTC timestamptz
+--   brt_tomorrow_start = midnight BRT tomorrow as UTC timestamptz
+-- This is index-friendly and consistent across all metrics.
+--
+-- Applied to both projects:
+--   - BH (dawvgbopyemcayavcatd)
+--   - HTA (llqhmywodxzstjlrulcw)
+--
+-- Note: proxy_daily_usage.usage_date is stored as UTC date by the app.
+-- Between 21:00-23:59 BRT, the UTC date advances to the next day, causing
+-- a slight mismatch. This is an app-level concern, not fixable in the RPC.
