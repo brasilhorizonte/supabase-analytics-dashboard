@@ -1,0 +1,11 @@
+-- Fix: BH usage_events uses event_name = 'auth_login' not 'login'
+-- Add: top_reports_downloaded metric (JOIN report_downloads with research_reports)
+--
+-- Changes to get_analytics_data() RPC:
+-- 1. last_24h.logins: event_name = 'login' → 'auth_login'
+-- 2. conversion_funnel.logins: event_name = 'login' → 'auth_login'
+-- 3. New field: top_reports_downloaded (top 15 by download count with title, type, unique_users)
+
+-- Full function recreation applied via Supabase migrations:
+-- 20260220055600_fix_login_event_name_to_auth_login
+-- 20260220055700_add_top_reports_downloaded

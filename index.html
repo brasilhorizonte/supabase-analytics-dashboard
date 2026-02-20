@@ -879,6 +879,12 @@
                         <canvas id="reportDownloadsChart"></canvas>
                     </div>
                     <div class="chart-container">
+                        <div class="chart-title">Relatórios Mais Baixados</div>
+                        <canvas id="topReportsChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
                         <div class="chart-title">Tickers Mais Buscados no Dashboard</div>
                         <canvas id="bhTickersSearchedChart"></canvas>
                     </div>
@@ -1814,6 +1820,44 @@
                     plugins: { legend: { display: false } },
                     scales: {
                         y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // Relatórios Mais Baixados
+            destroyChart('topReportsChart');
+            const topReports = (bh.top_reports_downloaded || []).slice(0, 10);
+            const reportTypeColors = { exclusive: '#f59e0b', strategy: '#6366f1', equity: '#3ecf8e', macroeconomics: '#ef4444' };
+            charts.topReportsChart = new Chart(document.getElementById('topReportsChart'), {
+                type: 'bar',
+                data: {
+                    labels: topReports.map(r => {
+                        const t = r.title || 'Sem título';
+                        return t.length > 35 ? t.substring(0, 32) + '...' : t;
+                    }),
+                    datasets: [{
+                        label: 'Downloads',
+                        data: topReports.map(r => r.downloads || 0),
+                        backgroundColor: topReports.map(r => reportTypeColors[r.report_type] || '#8b5cf6')
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                afterLabel: (ctx) => {
+                                    const r = topReports[ctx.dataIndex];
+                                    return `Tipo: ${r.report_type || '?'} | Usuários: ${r.unique_users || 0}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { beginAtZero: true, grid: { color: '#2a2d3e' } }
                     }
                 }
             });
