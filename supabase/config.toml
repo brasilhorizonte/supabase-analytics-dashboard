@@ -1,5 +1,4 @@
-[project]
-id = "llqhmywodxzstjlrulcw"
+project_id = "llqhmywodxzstjlrulcw"
 
 [functions.analytics-dashboard]
 verify_jwt = false
