@@ -135,17 +135,20 @@ supabase db push --project-ref dawvgbopyemcayavcatd   # BH
 supabase db push --project-ref llqhmywodxzstjlrulcw   # HTA
 ```
 
-## Token Pricing (frontend)
+## Token Pricing (frontend, keyed por model_name)
 
 ```javascript
 const TOKEN_PRICING = {
-    'anthropic': { input: 3.00, output: 15.00, label: 'Claude Sonnet 4' },
-    'gemini': { input: 1.25, output: 10.00, label: 'Gemini 2.5 Pro' },
-    'gemini-market': { input: 0.30, output: 2.50, label: 'Gemini 2.5 Flash' },
+    'claude-sonnet-4-20250514': { input: 3.00, output: 15.00, label: 'Claude Sonnet 4' },
+    'claude-opus-4-20250514':   { input: 15.00, output: 75.00, label: 'Claude Opus 4' },
+    'gemini-3.1-pro-preview':   { input: 2.00, output: 12.00, label: 'Gemini 3.1 Pro' },
+    'gemini-2.5-pro':           { input: 1.25, output: 10.00, label: 'Gemini 2.5 Pro' },
+    'gemini-2.5-flash':         { input: 0.30, output: 2.50, label: 'Gemini 2.5 Flash' },
+    'gemini-2.0-flash-lite':    { input: 0.10, output: 0.40, label: 'Gemini 2.0 Flash Lite' },
 };
 ```
 
-Custo calculado por `(input_tokens / 1M) * input_price + (output_tokens / 1M) * output_price`. Os `proxy_name` usados sao `anthropic`, `gemini` e `gemini-market`.
+Custo calculado por `(input_tokens / 1M) * input_price + (output_tokens / 1M) * output_price`. A tabela `proxy_daily_usage` agora tem `model_name` alem de `proxy_name`. Os `proxy_name` usados sao `anthropic`, `gemini` e `gemini-market`. Os `model_name` sao os nomes reais dos modelos (ex: `gemini-2.5-pro`, `claude-sonnet-4-20250514`). Tokens sao persistidos server-side pelas Edge Functions.
 
 ## Stack
 

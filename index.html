@@ -1262,16 +1262,26 @@
             return b + " B";
         }
 
-        // ===== TOKEN PRICING =====
+        // ===== TOKEN PRICING (keyed by model_name) =====
         const TOKEN_PRICING = {
-            'anthropic': { input: 3.00, output: 15.00, label: 'Claude Sonnet 4' },
-            'gemini': { input: 1.25, output: 10.00, label: 'Gemini 2.5 Pro' },
-            'gemini-market': { input: 0.30, output: 2.50, label: 'Gemini 2.5 Flash' },
+            'claude-sonnet-4-20250514': { input: 3.00, output: 15.00, label: 'Claude Sonnet 4' },
+            'claude-opus-4-20250514':   { input: 15.00, output: 75.00, label: 'Claude Opus 4' },
+            'gemini-3.1-pro-preview':   { input: 2.00, output: 12.00, label: 'Gemini 3.1 Pro' },
+            'gemini-2.5-pro':           { input: 1.25, output: 10.00, label: 'Gemini 2.5 Pro' },
+            'gemini-2.5-flash':         { input: 0.30, output: 2.50, label: 'Gemini 2.5 Flash' },
+            'gemini-2.0-flash-lite':    { input: 0.10, output: 0.40, label: 'Gemini 2.0 Flash Lite' },
         };
-        const PROXY_COLORS = { 'anthropic': '#f59e0b', 'gemini': '#3ecf8e', 'gemini-market': '#6366f1' };
+        const MODEL_COLORS = {
+            'claude-sonnet-4-20250514': '#f59e0b',
+            'claude-opus-4-20250514':   '#ef4444',
+            'gemini-3.1-pro-preview':   '#10b981',
+            'gemini-2.5-pro':           '#3ecf8e',
+            'gemini-2.5-flash':         '#6366f1',
+            'gemini-2.0-flash-lite':    '#8b5cf6',
+        };
 
-        function calcTokenCost(proxy, input, output) {
-            const p = TOKEN_PRICING[proxy] || TOKEN_PRICING['gemini'];
+        function calcTokenCost(model, input, output) {
+            const p = TOKEN_PRICING[model] || { input: 1.25, output: 10.00 };
             return (input / 1e6) * p.input + (output / 1e6) * p.output;
         }
 
@@ -1470,7 +1480,23 @@
             `;
 
             const hta24 = hta.last_24h || {};
-            const hta24Cost = calcTokenCost('gemini', Number(hta24.input_tokens) || 0, Number(hta24.output_tokens) || 0);
+            // last_24h tokens are aggregated across all models; use weighted avg from token_usage_summary
+            const todaySummary = (hta.token_usage_summary || []);
+            const hta24Cost = todaySummary.reduce((s, r) => s + calcTokenCost(r.model_name, Number(r.total_input_tokens) || 0, Number(r.total_output_tokens) || 0), 0) > 0
+                ? (() => {
+                    // Estimate today's cost proportionally from summary ratios
+                    const totalSumInput = todaySummary.reduce((s, r) => s + (Number(r.total_input_tokens) || 0), 0);
+                    const totalSumOutput = todaySummary.reduce((s, r) => s + (Number(r.total_output_tokens) || 0), 0);
+                    const todayInput = Number(hta24.input_tokens) || 0;
+                    const todayOutput = Number(hta24.output_tokens) || 0;
+                    if (totalSumInput + totalSumOutput === 0) return calcTokenCost('gemini-2.5-pro', todayInput, todayOutput);
+                    return todaySummary.reduce((cost, r) => {
+                        const inputShare = totalSumInput > 0 ? (Number(r.total_input_tokens) || 0) / totalSumInput : 0;
+                        const outputShare = totalSumOutput > 0 ? (Number(r.total_output_tokens) || 0) / totalSumOutput : 0;
+                        return cost + calcTokenCost(r.model_name, todayInput * inputShare, todayOutput * outputShare);
+                    }, 0);
+                })()
+                : calcTokenCost('gemini-2.5-pro', Number(hta24.input_tokens) || 0, Number(hta24.output_tokens) || 0);
             document.getElementById('hta24hKpis').innerHTML = `
                 ${createKpiCard('Sessões', fmt(hta24.sessions || 0))}
                 ${createKpiCard('Usuários', fmt(hta24.unique_users || 0))}
@@ -3112,7 +3138,7 @@
             const totalRequests = tokenSummary.reduce((s, r) => s + (Number(r.total_requests) || 0), 0);
             const totalInput = tokenSummary.reduce((s, r) => s + (Number(r.total_input_tokens) || 0), 0);
             const totalOutput = tokenSummary.reduce((s, r) => s + (Number(r.total_output_tokens) || 0), 0);
-            const totalCost = tokenSummary.reduce((s, r) => s + calcTokenCost(r.proxy_name, Number(r.total_input_tokens) || 0, Number(r.total_output_tokens) || 0), 0);
+            const totalCost = tokenSummary.reduce((s, r) => s + calcTokenCost(r.model_name, Number(r.total_input_tokens) || 0, Number(r.total_output_tokens) || 0), 0);
 
             // Avg tokens per query from token_stats
             const avgPerQuery = Number(tokenStats.avg_tokens_per_query) || 0;
@@ -3123,7 +3149,7 @@
             if (last7Days.length > 0) {
                 const last7Cost = last7Days.reduce((sum, day) => {
                     return sum + tokenDaily.filter(d => d.day === day).reduce((s, d) => {
-                        return s + calcTokenCost(d.proxy_name, Number(d.input_tokens) || 0, Number(d.output_tokens) || 0);
+                        return s + calcTokenCost(d.model_name, Number(d.input_tokens) || 0, Number(d.output_tokens) || 0);
                     }, 0);
                 }, 0);
                 projectionMonthly = (last7Cost / last7Days.length) * 30;
@@ -3141,8 +3167,8 @@
                 ${createKpiCard('Projeção Mensal', projectionMonthly > 0 ? '$' + projectionMonthly.toFixed(2) : '-')}
             `;
 
-            // Get unique proxies and days
-            const proxies = [...new Set(tokenDaily.map(d => d.proxy_name))];
+            // Get unique models and days
+            const models = [...new Set(tokenDaily.map(d => d.model_name))];
             const allDays = [...new Set(tokenDaily.map(d => d.day))].sort();
 
             // Filter days by date range
@@ -3157,29 +3183,34 @@
                 return parts[2] + '/' + parts[1];
             });
 
-            // Build per-proxy data maps
-            const proxyDayMap = {};
+            // Build per-model data maps
+            const modelDayMap = {};
             tokenDaily.forEach(d => {
-                const key = d.proxy_name + '|' + d.day;
-                proxyDayMap[key] = d;
+                const key = d.model_name + '|' + d.day;
+                if (!modelDayMap[key]) {
+                    modelDayMap[key] = { input_tokens: 0, output_tokens: 0, requests: 0 };
+                }
+                modelDayMap[key].input_tokens += Number(d.input_tokens) || 0;
+                modelDayMap[key].output_tokens += Number(d.output_tokens) || 0;
+                modelDayMap[key].requests += Number(d.requests) || 0;
             });
 
-            // 1. Tokens Daily (stacked bar: input+output per proxy)
+            // 1. Tokens Daily (stacked bar: input+output per model)
             destroyChart('tokensDailyChart');
             const tokenDailyDatasets = [];
-            proxies.forEach(proxy => {
-                const color = PROXY_COLORS[proxy] || '#94a3b8';
+            models.forEach(model => {
+                const color = MODEL_COLORS[model] || '#94a3b8';
                 tokenDailyDatasets.push({
-                    label: (TOKEN_PRICING[proxy]?.label || proxy) + ' Input',
-                    data: filteredDays.map(day => Number((proxyDayMap[proxy + '|' + day] || {}).input_tokens) || 0),
+                    label: (TOKEN_PRICING[model]?.label || model) + ' Input',
+                    data: filteredDays.map(day => (modelDayMap[model + '|' + day] || {}).input_tokens || 0),
                     backgroundColor: color,
-                    stack: proxy,
+                    stack: model,
                 });
                 tokenDailyDatasets.push({
-                    label: (TOKEN_PRICING[proxy]?.label || proxy) + ' Output',
-                    data: filteredDays.map(day => Number((proxyDayMap[proxy + '|' + day] || {}).output_tokens) || 0),
+                    label: (TOKEN_PRICING[model]?.label || model) + ' Output',
+                    data: filteredDays.map(day => (modelDayMap[model + '|' + day] || {}).output_tokens || 0),
                     backgroundColor: color + '80',
-                    stack: proxy,
+                    stack: model,
                 });
             });
             charts.tokensDailyChart = new Chart(document.getElementById('tokensDailyChart'), {
@@ -3196,15 +3227,15 @@
                 }
             });
 
-            // 2. Cost Daily (line per proxy + total)
+            // 2. Cost Daily (line per model + total)
             destroyChart('tokenCostDailyChart');
-            const costDatasets = proxies.map(proxy => {
-                const color = PROXY_COLORS[proxy] || '#94a3b8';
+            const costDatasets = models.map(model => {
+                const color = MODEL_COLORS[model] || '#94a3b8';
                 return {
-                    label: TOKEN_PRICING[proxy]?.label || proxy,
+                    label: TOKEN_PRICING[model]?.label || model,
                     data: filteredDays.map(day => {
-                        const d = proxyDayMap[proxy + '|' + day] || {};
-                        return calcTokenCost(proxy, Number(d.input_tokens) || 0, Number(d.output_tokens) || 0);
+                        const d = modelDayMap[model + '|' + day] || {};
+                        return calcTokenCost(model, d.input_tokens || 0, d.output_tokens || 0);
                     }),
                     borderColor: color,
                     backgroundColor: color + '20',
@@ -3217,9 +3248,9 @@
             costDatasets.push({
                 label: 'Total',
                 data: filteredDays.map(day => {
-                    return proxies.reduce((s, proxy) => {
-                        const d = proxyDayMap[proxy + '|' + day] || {};
-                        return s + calcTokenCost(proxy, Number(d.input_tokens) || 0, Number(d.output_tokens) || 0);
+                    return models.reduce((s, model) => {
+                        const d = modelDayMap[model + '|' + day] || {};
+                        return s + calcTokenCost(model, d.input_tokens || 0, d.output_tokens || 0);
                     }, 0);
                 }),
                 borderColor: '#ef4444',
@@ -3246,12 +3277,12 @@
                 }
             });
 
-            // 3. Requests Daily (stacked bar per proxy)
+            // 3. Requests Daily (stacked bar per model)
             destroyChart('proxyRequestsDailyChart');
-            const reqDatasets = proxies.map(proxy => ({
-                label: TOKEN_PRICING[proxy]?.label || proxy,
-                data: filteredDays.map(day => Number((proxyDayMap[proxy + '|' + day] || {}).requests) || 0),
-                backgroundColor: PROXY_COLORS[proxy] || '#94a3b8',
+            const reqDatasets = models.map(model => ({
+                label: TOKEN_PRICING[model]?.label || model,
+                data: filteredDays.map(day => (modelDayMap[model + '|' + day] || {}).requests || 0),
+                backgroundColor: MODEL_COLORS[model] || '#94a3b8',
             }));
             charts.proxyRequestsDailyChart = new Chart(document.getElementById('proxyRequestsDailyChart'), {
                 type: 'bar',
@@ -3267,11 +3298,11 @@
                 }
             });
 
-            // 4. Token Distribution (doughnut per proxy)
+            // 4. Token Distribution (doughnut per model)
             destroyChart('tokenDistributionChart');
-            const distLabels = tokenSummary.map(s => TOKEN_PRICING[s.proxy_name]?.label || s.proxy_name);
+            const distLabels = tokenSummary.map(s => TOKEN_PRICING[s.model_name]?.label || s.model_name);
             const distValues = tokenSummary.map(s => (Number(s.total_input_tokens) || 0) + (Number(s.total_output_tokens) || 0));
-            const distColors = tokenSummary.map(s => PROXY_COLORS[s.proxy_name] || '#94a3b8');
+            const distColors = tokenSummary.map(s => MODEL_COLORS[s.model_name] || '#94a3b8');
             charts.tokenDistributionChart = new Chart(document.getElementById('tokenDistributionChart'), {
                 type: 'doughnut',
                 data: {
@@ -3290,7 +3321,7 @@
                 <thead>
                     <tr>
                         <th>Usuário</th>
-                        <th>Proxy</th>
+                        <th>Modelo</th>
                         <th>Requests</th>
                         <th>Input Tokens</th>
                         <th>Output Tokens</th>
@@ -3299,10 +3330,10 @@
                 </thead>
                 <tbody>
                     ${tokenByUser.map(u => {
-                        const cost = calcTokenCost(u.proxy_name, Number(u.total_input_tokens) || 0, Number(u.total_output_tokens) || 0);
+                        const cost = calcTokenCost(u.model_name, Number(u.total_input_tokens) || 0, Number(u.total_output_tokens) || 0);
                         return `<tr>
                             <td>${u.email || '-'}</td>
-                            <td>${TOKEN_PRICING[u.proxy_name]?.label || u.proxy_name}</td>
+                            <td>${TOKEN_PRICING[u.model_name]?.label || u.model_name}</td>
                             <td>${fmt(Number(u.total_requests) || 0)}</td>
                             <td>${fmt(Number(u.total_input_tokens) || 0)}</td>
                             <td>${fmt(Number(u.total_output_tokens) || 0)}</td>
