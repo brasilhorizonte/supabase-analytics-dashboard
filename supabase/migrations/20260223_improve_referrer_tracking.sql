@@ -1,7 +1,8 @@
 -- Migration: Improve referrer tracking in BH get_analytics_data()
 -- Apply to: brasilhorizonte (dawvgbopyemcayavcatd)
 -- Applied via Supabase MCP as: improve_referrer_tracking, fix_referrer_tracking_v2,
---   fix_referrer_tracking_v3, restore_full_analytics_rpc, fix_top_reports_downloaded
+--   fix_referrer_tracking_v3, restore_full_analytics_rpc, fix_top_reports_downloaded,
+--   fix_referrer_tco_pattern, fix_referrer_session_start_only
 --
 -- Changes to referrer_summary:
 --   - Separate Gmail from Google Search (Email vs Google)
@@ -17,6 +18,11 @@
 -- Fixes:
 --   - Restored all 37 sections (previous broken deploy only had 12)
 --   - Fixed top_reports_downloaded to JOIN companies for ticker (research_reports has no ticker col)
+--   - Fixed %t.co% pattern matching lovableproject.com (1135 false Twitter/X hits)
+--     Changed to %://t.co/% and %://x.com% for precise matching
+--     Reordered CASE WHEN: Lovable/Localhost/Interno/Stripe now checked BEFORE social media
+--   - Fixed inflated "Direto" count: was counting ALL events (6946), now only session_start (384)
+--     referrer_summary, referrer_detail, referrer_daily all filtered by event_name = 'session_start'
 --
 -- Key referrer categories:
 --   Direto, Email, Google, Facebook, Instagram, Twitter/X, LinkedIn, Reddit,

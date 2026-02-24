@@ -938,7 +938,10 @@
                 </div>
                 <div class="charts-grid">
                     <div class="chart-container" style="grid-column: span 2;">
-                        <div class="chart-title">Origem do Tráfego ao Longo do Tempo</div>
+                        <div class="chart-title" style="display:flex;align-items:center;justify-content:space-between;">
+                            Origem do Tráfego ao Longo do Tempo
+                            <button id="bhRefDailyToggle" onclick="toggleRefDailyView()" style="font-size:0.7rem;padding:3px 10px;border-radius:4px;border:1px solid #3b82f6;background:transparent;color:#3b82f6;cursor:pointer;">Consolidado</button>
+                        </div>
                         <canvas id="bhReferrerDailyChart"></canvas>
                     </div>
                 </div>
@@ -2274,6 +2277,60 @@
             });
         }
 
+        // ===== REFERRER DAILY TOGGLE =====
+        function buildRefDailyChart(consolidated) {
+            destroyChart('bhReferrerDailyChart');
+            const { refSources, refDays, refDayMap, REF_COLORS } = window._refDailyData;
+            let datasets, stacked;
+            if (consolidated) {
+                const totals = refDays.map(d => refSources.reduce((sum, s) => sum + (refDayMap[d + '|' + s] || 0), 0));
+                datasets = [{
+                    label: 'Total',
+                    data: totals,
+                    borderColor: '#3b82f6',
+                    backgroundColor: '#3b82f633',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 2
+                }];
+                stacked = false;
+            } else {
+                datasets = refSources.map(source => ({
+                    label: source,
+                    data: refDays.map(d => refDayMap[d + '|' + source] || 0),
+                    borderColor: REF_COLORS[source] || '#6b7280',
+                    backgroundColor: (REF_COLORS[source] || '#6b7280') + '33',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 1
+                }));
+                stacked = true;
+            }
+            charts.bhReferrerDailyChart = new Chart(document.getElementById('bhReferrerDailyChart'), {
+                type: 'line',
+                data: { labels: refDays, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: { grid: { color: '#2a2d3e' }, ticks: { color: '#94a3b8', maxRotation: 45 } },
+                        y: { stacked, grid: { color: '#2a2d3e' }, ticks: { color: '#94a3b8' }, beginAtZero: true }
+                    },
+                    plugins: {
+                        legend: { position: 'top', labels: { color: '#e2e8f0', boxWidth: 12 } },
+                        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} visitas` } }
+                    }
+                }
+            });
+        }
+        function toggleRefDailyView() {
+            window._refDailyConsolidated = !window._refDailyConsolidated;
+            const btn = document.getElementById('bhRefDailyToggle');
+            if (btn) btn.textContent = window._refDailyConsolidated ? 'Por Fonte' : 'Consolidado';
+            buildRefDailyChart(window._refDailyConsolidated);
+        }
+
         // ===== RENDER TRAFFIC SECTION (BH) =====
         function renderTrafficSection(bh, bhF) {
             // Top Routes
@@ -2371,38 +2428,15 @@
                 'Interno': '#3ecf8e', 'Lovable (Dev)': '#a78bfa', 'Localhost (Dev)': '#94a3b8',
                 'Outro': '#6b7280'
             };
-            // Excluir Dev e Interno do gráfico de tendência
             const refExclude = new Set(['Lovable (Dev)', 'Localhost (Dev)', 'Interno', 'Stripe']);
             const refSources = [...new Set(refDaily.map(r => r.source))].filter(s => !refExclude.has(s));
             const refDays = [...new Set(refDaily.map(r => r.day))].sort();
             const refDayMap = {};
             refDaily.forEach(r => { refDayMap[r.day + '|' + r.source] = r.visits; });
-            const refDatasets = refSources.map(source => ({
-                label: source,
-                data: refDays.map(d => refDayMap[d + '|' + source] || 0),
-                borderColor: REF_COLORS[source] || '#6b7280',
-                backgroundColor: (REF_COLORS[source] || '#6b7280') + '33',
-                fill: true,
-                tension: 0.3,
-                pointRadius: 1
-            }));
-            charts.bhReferrerDailyChart = new Chart(document.getElementById('bhReferrerDailyChart'), {
-                type: 'line',
-                data: { labels: refDays, datasets: refDatasets },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    interaction: { mode: 'index', intersect: false },
-                    scales: {
-                        x: { grid: { color: '#2a2d3e' }, ticks: { color: '#94a3b8', maxRotation: 45 } },
-                        y: { stacked: true, grid: { color: '#2a2d3e' }, ticks: { color: '#94a3b8' }, beginAtZero: true }
-                    },
-                    plugins: {
-                        legend: { position: 'top', labels: { color: '#e2e8f0', boxWidth: 12 } },
-                        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} visitas` } }
-                    }
-                }
-            });
+            // Store data for toggle
+            window._refDailyData = { refSources, refDays, refDayMap, REF_COLORS };
+            window._refDailyConsolidated = false;
+            buildRefDailyChart(false);
 
             // Referrer Detail Table
             const refDetail = bh.referrer_detail || [];
