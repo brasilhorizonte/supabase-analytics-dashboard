@@ -1,15 +1,23 @@
 -- Migration: Improve referrer tracking in BH get_analytics_data()
 -- Apply to: brasilhorizonte (dawvgbopyemcayavcatd)
--- Changes:
+-- Applied via Supabase MCP as: improve_referrer_tracking, fix_referrer_tracking_v2,
+--   fix_referrer_tracking_v3, restore_full_analytics_rpc, fix_top_reports_downloaded
+--
+-- Changes to referrer_summary:
 --   - Separate Gmail from Google Search (Email vs Google)
 --   - Add categories: Stripe, Lovable (Dev), Localhost (Dev), Email
 --   - Add social media: Reddit, LinkedIn, Twitter/X, Facebook, Instagram, YouTube, WhatsApp, Telegram
---   - Add referrer_detail: top raw URLs (excluding dev/internal)
---   - Add referrer_daily: daily breakdown by source for trend analysis
---   - Fix top_tickers_market and sector_distribution to use brapi_quotes table
 --   - Use GROUP BY 1 for CASE alias compatibility
-
--- See full RPC in apply_migration call (too large to duplicate here)
+--
+-- New sections added:
+--   - referrer_detail: top raw URLs (excluding dev/internal)
+--   - referrer_daily: daily breakdown by source for trend analysis
+--   - top_reports_downloaded: top reports by download count (via companies.ticker)
+--
+-- Fixes:
+--   - Restored all 37 sections (previous broken deploy only had 12)
+--   - Fixed top_reports_downloaded to JOIN companies for ticker (research_reports has no ticker col)
+--
 -- Key referrer categories:
 --   Direto, Email, Google, Facebook, Instagram, Twitter/X, LinkedIn, Reddit,
 --   YouTube, WhatsApp, Telegram, Stripe, Lovable (Dev), Localhost (Dev), Interno, Outro
