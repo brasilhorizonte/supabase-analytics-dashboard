@@ -936,6 +936,18 @@
                         <canvas id="bhScreenChart"></canvas>
                     </div>
                 </div>
+                <div class="charts-grid">
+                    <div class="chart-container" style="grid-column: span 2;">
+                        <div class="chart-title">Origem do Tráfego ao Longo do Tempo</div>
+                        <canvas id="bhReferrerDailyChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Top Referrers (URLs)</div>
+                        <div id="bhReferrerDetailTable"></div>
+                    </div>
+                </div>
                 <h3 class="section-title">Engajamento de Usuários</h3>
                 <div class="charts-grid">
                     <div class="chart-container">
@@ -2308,9 +2320,11 @@
                 }
             });
 
-            // Referrer Summary (Doughnut)
+            // Referrer Summary (Doughnut) - excluir tráfego dev
             destroyChart('bhReferrerChart');
-            const referrers = bh.referrer_summary || [];
+            const referrers = (bh.referrer_summary || []).filter(r =>
+                !['Lovable (Dev)', 'Localhost (Dev)'].includes(r.source)
+            );
             charts.bhReferrerChart = new Chart(document.getElementById('bhReferrerChart'), {
                 type: 'doughnut',
                 data: {
@@ -2345,6 +2359,71 @@
                     plugins: { legend: { position: 'right' } }
                 }
             });
+
+            // Referrer Daily (stacked area chart)
+            destroyChart('bhReferrerDailyChart');
+            const refDaily = bh.referrer_daily || [];
+            const REF_COLORS = {
+                'Direto': '#3b82f6', 'Google': '#ef4444', 'Twitter/X': '#1da1f2',
+                'LinkedIn': '#0a66c2', 'Reddit': '#ff4500', 'Facebook': '#1877f2',
+                'Instagram': '#e4405f', 'YouTube': '#ff0000', 'WhatsApp': '#25d366',
+                'Telegram': '#0088cc', 'Email': '#f59e0b', 'Stripe': '#635bff',
+                'Interno': '#3ecf8e', 'Lovable (Dev)': '#a78bfa', 'Localhost (Dev)': '#94a3b8',
+                'Outro': '#6b7280'
+            };
+            // Excluir Dev e Interno do gráfico de tendência
+            const refExclude = new Set(['Lovable (Dev)', 'Localhost (Dev)', 'Interno', 'Stripe']);
+            const refSources = [...new Set(refDaily.map(r => r.source))].filter(s => !refExclude.has(s));
+            const refDays = [...new Set(refDaily.map(r => r.day))].sort();
+            const refDayMap = {};
+            refDaily.forEach(r => { refDayMap[r.day + '|' + r.source] = r.visits; });
+            const refDatasets = refSources.map(source => ({
+                label: source,
+                data: refDays.map(d => refDayMap[d + '|' + source] || 0),
+                borderColor: REF_COLORS[source] || '#6b7280',
+                backgroundColor: (REF_COLORS[source] || '#6b7280') + '33',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 1
+            }));
+            charts.bhReferrerDailyChart = new Chart(document.getElementById('bhReferrerDailyChart'), {
+                type: 'line',
+                data: { labels: refDays, datasets: refDatasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: { grid: { color: '#2a2d3e' }, ticks: { color: '#94a3b8', maxRotation: 45 } },
+                        y: { stacked: true, grid: { color: '#2a2d3e' }, ticks: { color: '#94a3b8' }, beginAtZero: true }
+                    },
+                    plugins: {
+                        legend: { position: 'top', labels: { color: '#e2e8f0', boxWidth: 12 } },
+                        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} visitas` } }
+                    }
+                }
+            });
+
+            // Referrer Detail Table
+            const refDetail = bh.referrer_detail || [];
+            const detailEl = document.getElementById('bhReferrerDetailTable');
+            if (detailEl && refDetail.length > 0) {
+                detailEl.innerHTML = `
+                    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                        <thead><tr style="border-bottom:1px solid #2a2d3e;">
+                            <th style="text-align:left;padding:6px;color:#94a3b8;">URL</th>
+                            <th style="text-align:right;padding:6px;color:#94a3b8;">Visitas</th>
+                            <th style="text-align:right;padding:6px;color:#94a3b8;">Usuários</th>
+                        </tr></thead>
+                        <tbody>${refDetail.map(r => `<tr style="border-bottom:1px solid #1e2030;">
+                            <td style="padding:6px;color:#e2e8f0;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.referrer_clean}">${r.referrer_clean}</td>
+                            <td style="text-align:right;padding:6px;color:#e2e8f0;">${(r.visits || 0).toLocaleString()}</td>
+                            <td style="text-align:right;padding:6px;color:#e2e8f0;">${r.unique_users || 0}</td>
+                        </tr>`).join('')}</tbody>
+                    </table>`;
+            } else if (detailEl) {
+                detailEl.innerHTML = '<p style="color:#94a3b8;font-size:0.85rem;">Sem dados de referrer detail</p>';
+            }
         }
 
         // ===== RENDER ENGAGEMENT SECTION (BH) =====
