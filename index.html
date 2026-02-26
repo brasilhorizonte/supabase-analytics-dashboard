@@ -1220,6 +1220,23 @@
                     <div id="topQueriesFallback" style="display:none; color: var(--m); font-size: 13px; padding: 20px 0;">Tracking por query ainda não ativo</div>
                     <table id="topQueriesTable"></table>
                 </div>
+                <h3 class="section-title">Erros de API</h3>
+                <div class="kpi-grid" id="errorKpis"></div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Erros por Dia</div>
+                        <canvas id="proxyErrorDailyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Taxa de Erro por Dia (%)</div>
+                        <canvas id="proxyErrorRateChart"></canvas>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <div class="table-title">Erros por Tipo</div>
+                    <div id="proxyErrorFallback" style="display:none; color: var(--m); font-size: 13px; padding: 20px 0;">Nenhum erro registrado ainda</div>
+                    <table id="proxyErrorTable"></table>
+                </div>
                 <div class="table-container">
                     <div class="table-title">Resumo de Eventos - Terminal</div>
                     <table id="terminalEventsTable"></table>
@@ -3234,6 +3251,9 @@
 
             // Render token usage section
             renderTokenUsageSection();
+
+            // Render error metrics section
+            renderErrorMetrics();
         }
 
         // ===== RENDER TOKEN USAGE SECTION (inside HTA tab) =====
@@ -3559,6 +3579,155 @@
             } else {
                 topQueriesTable.style.display = 'none';
                 topQueriesFallback.style.display = '';
+            }
+        }
+
+        // ===== RENDER ERROR METRICS SECTION (inside HTA tab) =====
+        const PROXY_COLORS = { 'gemini': '#3ecf8e', 'anthropic': '#f59e0b', 'gemini-market': '#6366f1' };
+
+        function renderErrorMetrics() {
+            const hta = dashboardData.hta;
+            const errorDaily = hta.proxy_error_daily || [];
+            const errorSummary = hta.proxy_error_summary || [];
+            const errorRateDaily = hta.proxy_error_rate_daily || [];
+
+            // KPIs
+            const totalErrors = errorSummary.reduce((s, r) => s + (Number(r.error_count) || 0), 0);
+            const totalRequests = errorRateDaily.reduce((s, r) => s + (Number(r.requests) || 0), 0);
+            const totalErrorsFromRate = errorRateDaily.reduce((s, r) => s + (Number(r.errors) || 0), 0);
+            const overallRate = (totalRequests + totalErrorsFromRate) > 0
+                ? ((totalErrorsFromRate / (totalRequests + totalErrorsFromRate)) * 100).toFixed(1)
+                : '0.0';
+
+            // Most affected proxy
+            const proxyErrorCounts = {};
+            errorSummary.forEach(r => {
+                proxyErrorCounts[r.proxy_name] = (proxyErrorCounts[r.proxy_name] || 0) + (Number(r.error_count) || 0);
+            });
+            const mostAffected = Object.entries(proxyErrorCounts).sort((a, b) => b[1] - a[1])[0];
+
+            // Errors today
+            const today = new Date().toISOString().split('T')[0];
+            const errorsToday = errorDaily.filter(d => d.day === today).reduce((s, d) => s + (Number(d.error_count) || 0), 0);
+
+            document.getElementById('errorKpis').innerHTML = `
+                ${createKpiCard('Total Erros', fmt(totalErrors))}
+                ${createKpiCard('Taxa de Erro', overallRate + '%')}
+                ${createKpiCard('Proxy + Afetado', mostAffected ? mostAffected[0] + ' (' + fmt(mostAffected[1]) + ')' : '-')}
+                ${createKpiCard('Erros Hoje', fmt(errorsToday))}
+            `;
+
+            // Chart 1: Erros por Dia (stacked bar por proxy)
+            destroyChart('proxyErrorDailyChart');
+            const proxies = [...new Set(errorDaily.map(d => d.proxy_name))];
+            const errorDays = [...new Set(errorDaily.map(d => d.day))].sort();
+            const errorDayLabels = errorDays.map(d => { const p = d.split('-'); return p[2] + '/' + p[1]; });
+
+            // Build per-proxy-day map
+            const proxyDayErrorMap = {};
+            errorDaily.forEach(d => {
+                const key = d.proxy_name + '|' + d.day;
+                proxyDayErrorMap[key] = (proxyDayErrorMap[key] || 0) + (Number(d.error_count) || 0);
+            });
+
+            if (errorDays.length > 0) {
+                const errorBarDatasets = proxies.map(proxy => ({
+                    label: proxy,
+                    data: errorDays.map(day => proxyDayErrorMap[proxy + '|' + day] || 0),
+                    backgroundColor: PROXY_COLORS[proxy] || '#94a3b8',
+                }));
+                charts.proxyErrorDailyChart = new Chart(document.getElementById('proxyErrorDailyChart'), {
+                    type: 'bar',
+                    data: { labels: errorDayLabels, datasets: errorBarDatasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                        scales: {
+                            x: { stacked: true },
+                            y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                        }
+                    }
+                });
+            }
+
+            // Chart 2: Taxa de Erro por Dia (line per proxy)
+            destroyChart('proxyErrorRateChart');
+            const rateProxies = [...new Set(errorRateDaily.map(d => d.proxy_name))];
+            const rateDays = [...new Set(errorRateDaily.map(d => d.day))].sort();
+            const rateDayLabels = rateDays.map(d => { const p = d.split('-'); return p[2] + '/' + p[1]; });
+
+            // Only show days that have errors
+            const rateProxyDayMap = {};
+            errorRateDaily.forEach(d => {
+                rateProxyDayMap[d.proxy_name + '|' + d.day] = Number(d.error_rate) || 0;
+            });
+
+            const hasAnyErrors = errorRateDaily.some(d => Number(d.errors) > 0);
+            if (rateDays.length > 0) {
+                const rateDatasets = rateProxies.map(proxy => ({
+                    label: proxy,
+                    data: rateDays.map(day => rateProxyDayMap[proxy + '|' + day] || 0),
+                    borderColor: PROXY_COLORS[proxy] || '#94a3b8',
+                    backgroundColor: (PROXY_COLORS[proxy] || '#94a3b8') + '20',
+                    tension: 0.4,
+                    fill: false,
+                    pointBackgroundColor: PROXY_COLORS[proxy] || '#94a3b8',
+                }));
+                charts.proxyErrorRateChart = new Chart(document.getElementById('proxyErrorRateChart'), {
+                    type: 'line',
+                    data: { labels: rateDayLabels, datasets: rateDatasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: '#2a2d3e' },
+                                ticks: { callback: v => v + '%' },
+                                suggestedMax: hasAnyErrors ? undefined : 5,
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Table: Erros por Tipo
+            const errorTable = document.getElementById('proxyErrorTable');
+            const errorFallback = document.getElementById('proxyErrorFallback');
+            if (errorSummary.length > 0) {
+                errorTable.style.display = '';
+                errorFallback.style.display = 'none';
+                errorTable.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>Proxy</th>
+                            <th>Tipo</th>
+                            <th>Status Code</th>
+                            <th>Count</th>
+                            <th>Primeiro</th>
+                            <th>Ultimo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${errorSummary.map(e => {
+                            const first = e.first_seen ? new Date(e.first_seen).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
+                            const last = e.last_seen ? new Date(e.last_seen).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
+                            return `<tr>
+                                <td>${e.proxy_name}</td>
+                                <td>${e.error_type}</td>
+                                <td>${e.status_code || '-'}</td>
+                                <td>${fmt(Number(e.error_count) || 0)}</td>
+                                <td>${first}</td>
+                                <td>${last}</td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                `;
+            } else {
+                errorTable.style.display = 'none';
+                errorFallback.style.display = '';
             }
         }
 
