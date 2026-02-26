@@ -6,7 +6,7 @@ Dashboard de analytics em tempo real para os projetos **brasilhorizonte** e **Ho
 
 O projeto tem duas camadas separadas:
 
-1. **Frontend** (`index.html`): Single-page app com login, graficos Chart.js e 4 abas de metricas. Hospedado como arquivo estatico (GitHub Pages ou Supabase Storage). Nao usa framework — tudo inline (CSS + JS).
+1. **Frontend** (`index.html`): Single-page app com login, graficos Chart.js e 5 abas de metricas. Hospedado como arquivo estatico (GitHub Pages ou Supabase Storage). Nao usa framework — tudo inline (CSS + JS).
 
 2. **API** (`supabase/functions/analytics-dashboard/index.ts`): Edge Function no Supabase que retorna JSON. Verifica JWT do usuario via Supabase Auth e checa role `admin` na tabela `user_roles`. Busca dados de ambos os projetos via RPC functions.
 
@@ -31,16 +31,44 @@ A Edge Function roda no projeto **Horizon Terminal Access** e faz chamadas cross
 ```
 index.html                   # Frontend SPA (login + dashboard + Chart.js)
 deploy.sh                    # Script de deploy para Supabase Storage
+CLAUDE.md                    # Documentacao do projeto
 supabase/
   config.toml                # Config do projeto (project_id, verify_jwt)
   functions/
     analytics-dashboard/
       index.ts               # Edge Function - API JSON com auth admin
   migrations/
-    20260212_..._brasilhorizonte.sql    # RPC get_analytics_data() no BH
-    20260212_..._horizon_terminal.sql   # RPC get_analytics_data() no HTA
-    20260216_enhance_token_analytics.sql # Token stats, mode breakdown, top queries + COALESCE tokens reais
+    20260212_..._brasilhorizonte.sql        # RPC get_analytics_data() no BH
+    20260212_..._horizon_terminal.sql       # RPC get_analytics_data() no HTA
+    20260216_enhance_token_analytics.sql    # Token stats, mode breakdown, top queries + COALESCE tokens reais
+    20260226_add_error_metrics.sql          # proxy_error_log table, error_count column, log_proxy_error RPC
 ```
+
+## Edge Functions (Proxy)
+
+Alem da `analytics-dashboard`, existem 6 Edge Functions de proxy deployadas no projeto HTA. Elas **nao** fazem parte deste repositorio — sao gerenciadas diretamente via Supabase (MCP ou CLI).
+
+| Function | verify_jwt | Descricao |
+|----------|-----------|-----------|
+| `analytics-dashboard` | false | API do dashboard (neste repo) |
+| `gemini-proxy` | false | Proxy para Google Gemini API |
+| `anthropic-proxy` | false | Proxy para Anthropic Claude API |
+| `gemini-market-proxy` | false | Proxy para Gemini + BRAPI (mercado financeiro) |
+| `openai-proxy` | true | Proxy para OpenAI API |
+| `brapi-proxy` | false | Proxy para brapi.dev (cotacoes) |
+| `partnr-news-proxy` | false | Proxy para Partnr News API |
+
+### Deploy de proxies (file structure)
+
+Os proxies usam imports relativos para `../_shared/cors.ts` e `../_shared/supabase.ts`. Ao deployar via MCP, a estrutura de arquivos deve ser:
+
+```
+functions/<proxy-name>/index.ts   # entrypoint
+functions/_shared/cors.ts         # CORS helpers
+functions/_shared/supabase.ts     # Supabase client helpers
+```
+
+Com `entrypoint_path: "functions/<proxy-name>/index.ts"`.
 
 ## API Response
 
@@ -91,6 +119,9 @@ A Edge Function retorna:
 - `response_mode_summary` / `response_mode_daily`: uso de modos de resposta
 - `chat_depth_distribution`: profundidade das sessoes de chat (buckets)
 - `questions_daily`: perguntas diarias de user_daily_usage
+- `proxy_error_daily`: erros por dia/proxy/tipo (da tabela `proxy_error_log`)
+- `proxy_error_summary`: resumo de erros por proxy/tipo/status_code com first_seen e last_seen
+- `proxy_error_rate_daily`: taxa de erro diaria por proxy (erro / (requests + erros) * 100)
 
 ## Deploy
 
@@ -117,6 +148,7 @@ URL: `https://llqhmywodxzstjlrulcw.supabase.co/storage/v1/object/public/dashboar
 - **Cross-project data**: A Edge Function usa anon key do BH e service role key do HTA. Se as keys mudarem, atualizar no codigo.
 - **RPC functions**: Criadas com `SECURITY DEFINER` e precisam de `GRANT EXECUTE` para anon/authenticated/service_role.
 - **Token tracking**: Colunas `total_prompt_tokens`, `total_completion_tokens`, `total_tokens` em `proxy_daily_usage` e `token_count`, `response_mode` em `terminal_events` foram adicionadas mas podem estar zeradas ate o tracking no app popular os dados. A RPC usa `COALESCE(NULLIF(nova_coluna, 0), coluna_antiga)` para fallback transparente.
+- **Error metrics**: A tabela `proxy_error_log` so recebe dados quando os proxies IA (gemini, anthropic, gemini-market) encontram erros upstream. A secao "Erros de API" no dashboard mostra "Nenhum erro registrado" ate que erros reais ocorram.
 
 ## Comandos Uteis
 
@@ -148,7 +180,49 @@ const TOKEN_PRICING = {
 };
 ```
 
-Custo calculado por `(input_tokens / 1M) * input_price + (output_tokens / 1M) * output_price`. A tabela `proxy_daily_usage` agora tem `model_name` alem de `proxy_name`. Os `proxy_name` usados sao `anthropic`, `gemini` e `gemini-market`. Os `model_name` sao os nomes reais dos modelos (ex: `gemini-2.5-pro`, `claude-sonnet-4-20250514`). Tokens sao persistidos server-side pelas Edge Functions.
+Custo calculado por `(input_tokens / 1M) * input_price + (output_tokens / 1M) * output_price`. A tabela `proxy_daily_usage` agora tem `model_name` alem de `proxy_name`. Tokens sao persistidos server-side pelas Edge Functions.
+
+### proxy_name e model_name
+
+| proxy_name | model_name | Descricao |
+|------------|-----------|-----------|
+| `anthropic` | `claude-sonnet-4-20250514`, `claude-opus-4-20250514` | Modelo real da API |
+| `gemini` | `gemini-2.5-pro`, `gemini-2.5-flash`, etc. | Modelo real da API |
+| `gemini-market` | `gemini-2.5-flash`, etc. | Modelo real da API |
+| `openai` | `gpt-5.1`, etc. | Modelo real da API |
+| `brapi` | `brapi` | Nao e IA — usa proxy_name como model_name |
+| `partnr-news` | `partnr-news` | Nao e IA — usa proxy_name como model_name |
+
+## Error Metrics
+
+Sistema de metricas de erro para proxies IA (gemini, anthropic, gemini-market).
+
+### Tabelas
+
+- **`proxy_error_log`**: Log detalhado de erros (user_id, proxy_name, model_name, error_type, status_code, error_message, created_at). RLS ativado mas sem policies (acessada via SECURITY DEFINER).
+- **`proxy_daily_usage.error_count`**: Coluna adicional que conta erros por dia/proxy/modelo.
+
+### RPC `log_proxy_error()`
+
+Chamada pelas Edge Functions quando um erro upstream ocorre. Recebe `p_user_id` explicitamente (nao usa `auth.uid()`). Insere em `proxy_error_log` e incrementa `error_count` em `proxy_daily_usage`.
+
+### Classificacao de erros
+
+Os proxies classificam erros via `classifyError()`:
+- `rate_limit` (429)
+- `upstream_unavailable` (503 ou mensagem overloaded/unavailable)
+- `timeout` (408 ou mensagem timeout)
+- `client_error` (4xx)
+- `upstream_error` (5xx)
+- `unknown` (outros)
+
+### Dashboard
+
+Secao "Erros de API" na aba HTA com:
+- KPIs: Total Erros, Taxa de Erro, Proxy + Afetado, Erros Hoje
+- Grafico de barras empilhadas: erros por dia por proxy
+- Grafico de linhas: taxa de erro (%) por dia por proxy
+- Tabela: erros por tipo com proxy, tipo, status code, contagem, first/last seen
 
 ## Stack
 
