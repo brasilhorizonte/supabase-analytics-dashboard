@@ -1212,7 +1212,13 @@
                     </div>
                 </div>
                 <div class="table-container">
-                    <div class="table-title">Consumo por Usuário</div>
+                    <div class="table-title" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                        Consumo por Usuário
+                        <div class="gran-toggle" style="margin:0;">
+                            <button class="gran-btn active" data-token-view="consolidated">Consolidado</button>
+                            <button class="gran-btn" data-token-view="by-model">Por Modelo</button>
+                        </div>
+                    </div>
                     <table id="tokenUserTable"></table>
                 </div>
                 <div class="table-container">
@@ -2442,8 +2448,8 @@
                 'LinkedIn': '#0a66c2', 'Reddit': '#ff4500', 'Facebook': '#1877f2',
                 'Instagram': '#e4405f', 'YouTube': '#ff0000', 'WhatsApp': '#25d366',
                 'Telegram': '#0088cc', 'Email': '#f59e0b', 'Stripe': '#635bff',
-                'Interno': '#3ecf8e', 'Lovable (Dev)': '#a78bfa', 'Localhost (Dev)': '#94a3b8',
-                'Outro': '#6b7280'
+                'iAcoes': '#f97316', 'Interno': '#3ecf8e', 'Lovable (Dev)': '#a78bfa',
+                'Localhost (Dev)': '#94a3b8', 'Outro': '#6b7280'
             };
             const refExclude = new Set(['Lovable (Dev)', 'Localhost (Dev)', 'Interno', 'Stripe']);
             const refSources = [...new Set(refDaily.map(r => r.source))].filter(s => !refExclude.has(s));
@@ -3260,9 +3266,10 @@
         function renderTokenUsageSection() {
             const hta = dashboardData.hta;
             const htaF = tabFilters.hta;
-            const tokenDaily = hta.token_usage_daily || [];
-            const tokenSummary = hta.token_usage_summary || [];
-            const tokenByUser = hta.token_usage_by_user || [];
+            const isAiToken = d => !['brapi', 'partnr-news'].includes(d.proxy_name) && d.model_name !== 'unknown';
+            const tokenDaily = (hta.token_usage_daily || []).filter(isAiToken);
+            const tokenSummary = (hta.token_usage_summary || []).filter(isAiToken);
+            const tokenByUser = (hta.token_usage_by_user || []).filter(isAiToken);
             const tokenStats = hta.token_stats || {};
             const tokenByMode = hta.token_by_mode || [];
             const topQueries = hta.top_queries_by_token || [];
@@ -3449,33 +3456,93 @@
                 }
             });
 
-            // 5. User Table
-            const userTableHtml = `
-                <thead>
-                    <tr>
-                        <th>Usuário</th>
-                        <th>Modelo</th>
-                        <th>Requests</th>
-                        <th>Input Tokens</th>
-                        <th>Output Tokens</th>
-                        <th>Custo Est. (USD)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${tokenByUser.map(u => {
-                        const cost = calcTokenCost(u.model_name, Number(u.total_input_tokens) || 0, Number(u.total_output_tokens) || 0);
-                        return `<tr>
-                            <td>${u.email || '-'}</td>
-                            <td>${TOKEN_PRICING[u.model_name]?.label || u.model_name}</td>
-                            <td>${fmt(Number(u.total_requests) || 0)}</td>
-                            <td>${fmt(Number(u.total_input_tokens) || 0)}</td>
-                            <td>${fmt(Number(u.total_output_tokens) || 0)}</td>
-                            <td>$${cost.toFixed(2)}</td>
-                        </tr>`;
-                    }).join('')}
-                </tbody>
-            `;
-            document.getElementById('tokenUserTable').innerHTML = userTableHtml;
+            // 5. User Table (supports consolidated and by-model views)
+            function renderTokenUserTable(view) {
+                if (view === 'by-model') {
+                    return `
+                        <thead>
+                            <tr>
+                                <th>Usuário</th>
+                                <th>Modelo</th>
+                                <th>Requests</th>
+                                <th>Input Tokens</th>
+                                <th>Output Tokens</th>
+                                <th>Custo Est. (USD)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tokenByUser.map(u => {
+                                const cost = calcTokenCost(u.model_name, Number(u.total_input_tokens) || 0, Number(u.total_output_tokens) || 0);
+                                return `<tr>
+                                    <td>${u.email || '-'}</td>
+                                    <td>${TOKEN_PRICING[u.model_name]?.label || u.model_name}</td>
+                                    <td>${fmt(Number(u.total_requests) || 0)}</td>
+                                    <td>${fmt(Number(u.total_input_tokens) || 0)}</td>
+                                    <td>${fmt(Number(u.total_output_tokens) || 0)}</td>
+                                    <td>$${cost.toFixed(2)}</td>
+                                </tr>`;
+                            }).join('')}
+                        </tbody>`;
+                }
+                // Consolidated: group by user
+                const userMap = {};
+                tokenByUser.forEach(u => {
+                    const email = u.email || '-';
+                    if (!userMap[email]) {
+                        userMap[email] = { email, requests: 0, input: 0, output: 0, cost: 0, models: new Set() };
+                    }
+                    const e = userMap[email];
+                    e.requests += Number(u.total_requests) || 0;
+                    e.input += Number(u.total_input_tokens) || 0;
+                    e.output += Number(u.total_output_tokens) || 0;
+                    e.cost += calcTokenCost(u.model_name, Number(u.total_input_tokens) || 0, Number(u.total_output_tokens) || 0);
+                    e.models.add(TOKEN_PRICING[u.model_name]?.label || u.model_name);
+                });
+                const consolidated = Object.values(userMap).sort((a, b) => (b.input + b.output) - (a.input + a.output));
+                const grandTotal = consolidated.reduce((t, u) => ({ requests: t.requests + u.requests, input: t.input + u.input, output: t.output + u.output, cost: t.cost + u.cost }), { requests: 0, input: 0, output: 0, cost: 0 });
+                return `
+                    <thead>
+                        <tr>
+                            <th>Usuário</th>
+                            <th>Modelos</th>
+                            <th>Requests</th>
+                            <th>Input Tokens</th>
+                            <th>Output Tokens</th>
+                            <th>Total Tokens</th>
+                            <th>Custo Est. (USD)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${consolidated.map(u => `<tr>
+                            <td>${u.email}</td>
+                            <td style="font-size:11px">${[...u.models].join(', ')}</td>
+                            <td>${fmt(u.requests)}</td>
+                            <td>${fmt(u.input)}</td>
+                            <td>${fmt(u.output)}</td>
+                            <td><strong>${fmt(u.input + u.output)}</strong></td>
+                            <td>$${u.cost.toFixed(2)}</td>
+                        </tr>`).join('')}
+                        <tr style="font-weight:bold; border-top:2px solid var(--bd);">
+                            <td>Total</td>
+                            <td></td>
+                            <td>${fmt(grandTotal.requests)}</td>
+                            <td>${fmt(grandTotal.input)}</td>
+                            <td>${fmt(grandTotal.output)}</td>
+                            <td>${fmt(grandTotal.input + grandTotal.output)}</td>
+                            <td>$${grandTotal.cost.toFixed(2)}</td>
+                        </tr>
+                    </tbody>`;
+            }
+            const tokenViewBtns = document.querySelectorAll('[data-token-view]');
+            const currentTokenView = document.querySelector('[data-token-view].active')?.dataset.tokenView || 'consolidated';
+            document.getElementById('tokenUserTable').innerHTML = renderTokenUserTable(currentTokenView);
+            tokenViewBtns.forEach(btn => {
+                btn.onclick = () => {
+                    tokenViewBtns.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    document.getElementById('tokenUserTable').innerHTML = renderTokenUserTable(btn.dataset.tokenView);
+                };
+            });
 
             // 6. Token by Mode (Doughnut)
             destroyChart('tokenByModeChart');
