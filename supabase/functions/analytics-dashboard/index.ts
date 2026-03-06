@@ -69,12 +69,14 @@ Deno.serve(async (req: Request) => {
     }
 
     // Fetch analytics data from both projects
-    const [bh, hta] = await Promise.all([
+    const [bh, hta, bhGeo, htaGeo] = await Promise.all([
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data"),
       fetchRpc(HTA_URL, HTA_KEY, "get_analytics_data"),
+      fetchRpc(BH_URL, BH_ANON, "get_geo_profiles"),
+      fetchRpc(HTA_URL, HTA_KEY, "get_geo_profiles"),
     ]);
 
-    return new Response(JSON.stringify({ admin: email, bh, hta, ts: new Date().toISOString() }), {
+    return new Response(JSON.stringify({ admin: email, bh, hta, geo: { bh: bhGeo || [], hta: htaGeo || [] }, ts: new Date().toISOString() }), {
       headers: {
         ...CORS,
         "Content-Type": "application/json",

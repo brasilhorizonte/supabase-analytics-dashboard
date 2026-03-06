@@ -767,6 +767,7 @@
             <button class="tab-btn" data-tab="bh">brasilhorizonte</button>
             <button class="tab-btn" data-tab="hta">Horizon Terminal</button>
             <button class="tab-btn" data-tab="iacoes">iAcoes</button>
+            <button class="tab-btn" data-tab="geo">Geografia</button>
         </div>
 
         <div class="dashboard-content">
@@ -1318,6 +1319,48 @@
                 </div>
             </div>
 
+            <!-- GEO TAB -->
+            <div class="tab-content" id="geo">
+                <div class="kpi-grid" id="geoKpis"></div>
+                <div class="charts-grid">
+                    <div class="chart-container" style="position:relative;min-height:500px">
+                        <div class="chart-title">Mapa do Brasil</div>
+                        <div id="geoBrazilMap" style="width:100%;display:flex;justify-content:center;align-items:center"></div>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Usuários por Estado</div>
+                        <canvas id="geoStateChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Usuários por Cidade</div>
+                        <canvas id="geoCityChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Distribuição por Região</div>
+                        <canvas id="geoRegionChart"></canvas>
+                    </div>
+                </div>
+                <div id="geoMacroRegions" style="margin-bottom:16px"></div>
+                <div class="table-container">
+                    <div class="table-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                        <span>Clientes por Localização</span>
+                        <div style="display:flex;gap:8px">
+                            <select id="geoFilterUf" style="background:var(--bg);color:var(--t);border:1px solid var(--bd);border-radius:6px;padding:4px 8px;font-size:12px">
+                                <option value="">Todos os Estados</option>
+                            </select>
+                            <select id="geoFilterPlatform" style="background:var(--bg);color:var(--t);border:1px solid var(--bd);border-radius:6px;padding:4px 8px;font-size:12px">
+                                <option value="">Todas Plataformas</option>
+                                <option value="bh">brasilhorizonte</option>
+                                <option value="hta">Horizon Terminal</option>
+                            </select>
+                        </div>
+                    </div>
+                    <table id="geoClientTable"></table>
+                </div>
+            </div>
+
         </div>
     </div>
 
@@ -1342,7 +1385,8 @@
             overview: { gran: 'daily', from: '', to: '' },
             bh:       { gran: 'daily', from: '', to: '', plan: '', period: '' },
             hta:      { gran: 'daily', from: '', to: '' },
-            iacoes:   { gran: 'daily', from: '', to: '' }
+            iacoes:   { gran: 'daily', from: '', to: '' },
+            geo:      {}
         };
 
         // ===== CHART SETUP =====
@@ -1470,6 +1514,7 @@
             else if (tabName === 'bh') renderBhTab();
             else if (tabName === 'hta') renderHtaTab();
             else if (tabName === 'iacoes') renderIacoesTab();
+            else if (tabName === 'geo') renderGeoTab();
         }
 
         // ===== AUTHENTICATION =====
@@ -4123,6 +4168,370 @@
             }
         }
 
+        // ===== GEO TAB =====
+        const DDD_MAP = {
+            '11':'SP','12':'SP','13':'SP','14':'SP','15':'SP','16':'SP','17':'SP','18':'SP','19':'SP',
+            '21':'RJ','22':'RJ','24':'RJ',
+            '27':'ES','28':'ES',
+            '31':'MG','32':'MG','33':'MG','34':'MG','35':'MG','37':'MG','38':'MG',
+            '41':'PR','42':'PR','43':'PR','44':'PR','45':'PR','46':'PR',
+            '47':'SC','48':'SC','49':'SC',
+            '51':'RS','53':'RS','54':'RS','55':'RS',
+            '61':'DF',
+            '62':'GO','64':'GO',
+            '63':'TO',
+            '65':'MT','66':'MT',
+            '67':'MS',
+            '68':'AC',
+            '69':'RO',
+            '71':'BA','73':'BA','74':'BA','75':'BA','77':'BA',
+            '79':'SE',
+            '81':'PE','87':'PE',
+            '82':'AL',
+            '83':'PB',
+            '84':'RN',
+            '85':'CE','88':'CE',
+            '86':'PI','89':'PI',
+            '91':'PA','93':'PA','94':'PA',
+            '92':'AM','97':'AM',
+            '95':'RR',
+            '96':'AP',
+            '98':'MA','99':'MA'
+        };
+
+        const DDD_CITY_MAP = {
+            '11':'São Paulo','21':'Rio de Janeiro','31':'Belo Horizonte','41':'Curitiba',
+            '51':'Porto Alegre','61':'Brasília','71':'Salvador','81':'Recife',
+            '85':'Fortaleza','91':'Belém','92':'Manaus','62':'Goiânia',
+            '47':'Joinville','48':'Florianópolis','27':'Vitória','84':'Natal',
+            '82':'Maceió','83':'João Pessoa','86':'Teresina','79':'Aracaju',
+            '65':'Cuiabá','67':'Campo Grande','68':'Rio Branco','69':'Porto Velho',
+            '95':'Boa Vista','96':'Macapá','63':'Palmas','98':'São Luís',
+            '12':'São José dos Campos','13':'Santos','14':'Bauru','15':'Sorocaba',
+            '16':'Ribeirão Preto','17':'São José do Rio Preto','18':'Presidente Prudente',
+            '19':'Campinas','22':'Campos dos Goytacazes','24':'Volta Redonda',
+            '28':'Cachoeiro de Itapemirim','32':'Juiz de Fora','33':'Governador Valadares',
+            '34':'Uberlândia','35':'Poços de Caldas','37':'Divinópolis','38':'Montes Claros',
+            '42':'Ponta Grossa','43':'Londrina','44':'Maringá','45':'Foz do Iguaçu',
+            '46':'Francisco Beltrão','49':'Chapecó','53':'Pelotas','54':'Caxias do Sul',
+            '55':'Santa Maria','64':'Rio Verde','66':'Rondonópolis',
+            '73':'Ilhéus','74':'Juazeiro','75':'Feira de Santana','77':'Barreiras',
+            '87':'Petrolina','88':'Juazeiro do Norte','89':'Picos',
+            '93':'Santarém','94':'Marabá','97':'Parintins','99':'Imperatriz'
+        };
+
+        const UF_COORDS = {
+            'AC':[-8.8,-70.0],'AL':[-9.6,-36.8],'AM':[-3.5,-63.0],'AP':[1.5,-51.5],
+            'BA':[-12.5,-41.5],'CE':[-5.0,-39.0],'DF':[-15.8,-47.9],'ES':[-19.8,-40.5],
+            'GO':[-15.5,-49.5],'MA':[-5.0,-45.0],'MG':[-18.5,-44.0],'MS':[-20.5,-55.0],
+            'MT':[-13.0,-56.0],'PA':[-4.5,-52.5],'PB':[-7.1,-36.5],'PE':[-8.3,-37.5],
+            'PI':[-7.5,-42.5],'PR':[-24.5,-51.5],'RJ':[-22.5,-43.0],'RN':[-5.8,-36.5],
+            'RO':[-11.0,-63.0],'RR':[2.5,-61.0],'RS':[-29.5,-53.0],'SC':[-27.5,-50.0],
+            'SE':[-10.9,-37.1],'SP':[-22.5,-48.5],'TO':[-10.5,-48.5]
+        };
+
+        const MACRO_REGIONS = {
+            'Norte':   { ufs: ['AC','AM','AP','PA','RO','RR','TO'], color: '#22c55e' },
+            'Nordeste':{ ufs: ['AL','BA','CE','MA','PB','PE','PI','RN','SE'], color: '#f59e0b' },
+            'Centro-Oeste': { ufs: ['DF','GO','MS','MT'], color: '#6366f1' },
+            'Sudeste': { ufs: ['ES','MG','RJ','SP'], color: '#3b82f6' },
+            'Sul':     { ufs: ['PR','RS','SC'], color: '#ec4899' }
+        };
+
+        function normCity(c) {
+            if (!c) return null;
+            const s = c.trim();
+            const lower = s.toLowerCase();
+            const map = {
+                'bh': 'Belo Horizonte', 'bhz': 'Belo Horizonte', 'belo horizonte': 'Belo Horizonte',
+                'sp': 'São Paulo', 'são paulo': 'São Paulo', 'sao paulo': 'São Paulo',
+                'rj': 'Rio de Janeiro', 'rio de janeiro': 'Rio de Janeiro', 'rio': 'Rio de Janeiro',
+                'bsb': 'Brasília', 'brasilia': 'Brasília', 'brasília': 'Brasília',
+                'cwb': 'Curitiba', 'curitiba': 'Curitiba',
+                'poa': 'Porto Alegre', 'porto alegre': 'Porto Alegre',
+                'ssa': 'Salvador', 'salvador': 'Salvador',
+                'florianópolis': 'Florianópolis', 'florianopolis': 'Florianópolis', 'floripa': 'Florianópolis',
+                'vitória': 'Vitória', 'vitoria': 'Vitória',
+                'goiânia': 'Goiânia', 'goiania': 'Goiânia',
+                'fortaleza': 'Fortaleza', 'recife': 'Recife', 'manaus': 'Manaus', 'belém': 'Belém', 'belem': 'Belém',
+            };
+            if (map[lower]) return map[lower];
+            return s.charAt(0).toUpperCase() + s.slice(1);
+        }
+
+        function enrichGeoProfile(p) {
+            let uf = p.uf || null;
+            let city = normCity(p.city) || null;
+            const phone = p.phone || '';
+            // Try DDD extraction from phone
+            if (!uf || !city) {
+                const digits = phone.replace(/\D/g, '');
+                let ddd = null;
+                if (digits.length >= 10) {
+                    ddd = digits.startsWith('55') ? digits.substring(2, 4) : digits.substring(0, 2);
+                }
+                if (ddd && DDD_MAP[ddd]) {
+                    if (!uf) uf = DDD_MAP[ddd];
+                    if (!city) city = DDD_CITY_MAP[ddd] || null;
+                }
+            }
+            return { ...p, uf, city };
+        }
+
+        function getRegionForUf(uf) {
+            for (const [region, info] of Object.entries(MACRO_REGIONS)) {
+                if (info.ufs.includes(uf)) return region;
+            }
+            return null;
+        }
+
+        function renderGeoTab() {
+            const geo = dashboardData.geo || {};
+            const bhProfiles = (geo.bh || []).map(p => ({ ...p, platform: 'bh' }));
+            const htaProfiles = (geo.hta || []).map(p => ({ ...p, platform: 'hta' }));
+            const allRaw = [...bhProfiles, ...htaProfiles];
+            const all = allRaw.map(enrichGeoProfile);
+
+            const withLocation = all.filter(p => p.uf);
+            const withoutLocation = all.filter(p => !p.uf);
+            const totalProfiles = all.length;
+            const locatedCount = withLocation.length;
+
+            // Count by state
+            const stateCounts = {};
+            const cityCounts = {};
+            withLocation.forEach(p => {
+                stateCounts[p.uf] = (stateCounts[p.uf] || 0) + 1;
+                if (p.city) cityCounts[p.city] = (cityCounts[p.city] || 0) + 1;
+            });
+            const uniqueStates = Object.keys(stateCounts).length;
+            const uniqueCities = Object.keys(cityCounts).length;
+            const topState = Object.entries(stateCounts).sort((a, b) => b[1] - a[1])[0];
+            const concentration = topState ? ((topState[1] / locatedCount) * 100).toFixed(0) : 0;
+
+            // KPIs
+            document.getElementById('geoKpis').innerHTML = `
+                ${createKpiCard('Geolocalizados', `${locatedCount}/${totalProfiles}`)}
+                ${createKpiCard('Estados', uniqueStates.toString())}
+                ${createKpiCard('Cidades', uniqueCities.toString())}
+                ${createKpiCard('Maior Concentração', topState ? `${topState[0]} (${concentration}%)` : '-')}
+                ${createKpiCard('Sem Localização', withoutLocation.length.toString())}
+            `;
+
+            // ===== SVG BRAZIL MAP =====
+            renderBrazilMap(stateCounts, locatedCount);
+
+            // ===== STATE BAR CHART =====
+            const sortedStates = Object.entries(stateCounts).sort((a, b) => b[1] - a[1]);
+            destroyChart('geoStateChart');
+            charts.geoStateChart = new Chart(document.getElementById('geoStateChart'), {
+                type: 'bar',
+                data: {
+                    labels: sortedStates.map(s => s[0]),
+                    datasets: [{
+                        label: 'Usuários',
+                        data: sortedStates.map(s => s[1]),
+                        backgroundColor: sortedStates.map(s => {
+                            const region = getRegionForUf(s[0]);
+                            return region ? MACRO_REGIONS[region].color : '#94a3b8';
+                        }),
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true, indexAxis: 'y',
+                    plugins: { legend: { display: false } },
+                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // ===== CITY BAR CHART =====
+            const sortedCities = Object.entries(cityCounts).sort((a, b) => b[1] - a[1]).slice(0, 15);
+            destroyChart('geoCityChart');
+            charts.geoCityChart = new Chart(document.getElementById('geoCityChart'), {
+                type: 'bar',
+                data: {
+                    labels: sortedCities.map(c => c[0]),
+                    datasets: [{
+                        label: 'Usuários',
+                        data: sortedCities.map(c => c[1]),
+                        backgroundColor: '#3ecf8e',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true, indexAxis: 'y',
+                    plugins: { legend: { display: false } },
+                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // ===== REGION DONUT CHART =====
+            const regionCounts = {};
+            withLocation.forEach(p => {
+                const r = getRegionForUf(p.uf);
+                if (r) regionCounts[r] = (regionCounts[r] || 0) + 1;
+            });
+            const regionEntries = Object.entries(MACRO_REGIONS).map(([name, info]) => ({
+                name, count: regionCounts[name] || 0, color: info.color
+            })).filter(r => r.count > 0).sort((a, b) => b.count - a.count);
+
+            destroyChart('geoRegionChart');
+            charts.geoRegionChart = new Chart(document.getElementById('geoRegionChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: regionEntries.map(r => r.name),
+                    datasets: [{
+                        data: regionEntries.map(r => r.count),
+                        backgroundColor: regionEntries.map(r => r.color),
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { padding: 16 } },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => {
+                                    const pct = ((ctx.raw / locatedCount) * 100).toFixed(1);
+                                    return `${ctx.label}: ${ctx.raw} (${pct}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // ===== MACRO REGIONS CARDS =====
+            document.getElementById('geoMacroRegions').innerHTML = `
+                <h3 class="section-title">Regiões do Brasil</h3>
+                <div class="kpi-grid">
+                    ${Object.entries(MACRO_REGIONS).map(([name, info]) => {
+                        const count = regionCounts[name] || 0;
+                        const pct = locatedCount > 0 ? ((count / locatedCount) * 100).toFixed(0) : 0;
+                        const statesInRegion = info.ufs.filter(u => stateCounts[u]).map(u => `${u}(${stateCounts[u]})`).join(', ');
+                        return `<div class="kpi-card" style="border-top:3px solid ${info.color}">
+                            <div class="kpi-label">${name}</div>
+                            <div class="kpi-value">${count} <span style="font-size:14px;color:var(--m)">(${pct}%)</span></div>
+                            <div style="font-size:11px;color:var(--m);margin-top:4px">${statesInRegion || 'Nenhum usuário'}</div>
+                        </div>`;
+                    }).join('')}
+                </div>
+            `;
+
+            // ===== CLIENT TABLE =====
+            renderGeoTable(all);
+
+            // Filter listeners
+            document.getElementById('geoFilterUf').innerHTML = '<option value="">Todos os Estados</option>' +
+                Object.keys(stateCounts).sort().map(uf => `<option value="${uf}">${uf}</option>`).join('');
+            document.getElementById('geoFilterUf').onchange = () => renderGeoTable(all);
+            document.getElementById('geoFilterPlatform').onchange = () => renderGeoTable(all);
+        }
+
+        function renderGeoTable(profiles) {
+            const ufFilter = document.getElementById('geoFilterUf').value;
+            const platFilter = document.getElementById('geoFilterPlatform').value;
+            let filtered = profiles;
+            if (ufFilter) filtered = filtered.filter(p => p.uf === ufFilter);
+            if (platFilter) filtered = filtered.filter(p => p.platform === platFilter);
+
+            const sorted = filtered.sort((a, b) => {
+                if (a.uf && !b.uf) return -1;
+                if (!a.uf && b.uf) return 1;
+                return (a.uf || '').localeCompare(b.uf || '') || (a.city || '').localeCompare(b.city || '');
+            });
+
+            document.getElementById('geoClientTable').innerHTML = `
+                <thead><tr>
+                    <th>Nome</th><th>Cidade</th><th>UF</th><th>Plataforma</th><th>Status</th><th>Empresa</th>
+                </tr></thead>
+                <tbody>
+                    ${sorted.map(p => {
+                        const platLabel = p.platform === 'bh' ? '<span style="color:#3ecf8e">BH</span>' : '<span style="color:#6366f1">HTA</span>';
+                        const status = p.status || p.subscription_status || '-';
+                        return `<tr>
+                            <td>${p.full_name || p.email || '-'}</td>
+                            <td>${p.city || '<span style="color:var(--m)">-</span>'}</td>
+                            <td>${p.uf || '<span style="color:var(--m)">-</span>'}</td>
+                            <td>${platLabel}</td>
+                            <td>${status}</td>
+                            <td>${p.company || '-'}</td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            `;
+        }
+
+        function renderBrazilMap(stateCounts, total) {
+            // Brazil SVG map with real state boundaries (simplified paths)
+            const BRAZIL_STATES_SVG = {
+                'AC': 'M95,295 L115,285 L120,295 L110,310 L90,305Z',
+                'AM': 'M100,220 L175,200 L210,215 L215,260 L175,275 L130,270 L95,260Z',
+                'RR': 'M155,165 L180,155 L190,175 L175,195 L155,185Z',
+                'AP': 'M240,175 L260,160 L275,175 L265,200 L245,200Z',
+                'PA': 'M195,195 L280,190 L310,215 L295,260 L240,265 L215,250 L200,225Z',
+                'MA': 'M295,215 L335,205 L340,230 L315,250 L290,245Z',
+                'PI': 'M320,235 L345,225 L355,255 L335,275 L310,260Z',
+                'CE': 'M350,215 L375,210 L380,235 L360,245 L345,235Z',
+                'RN': 'M380,225 L400,220 L400,235 L385,240Z',
+                'PB': 'M375,240 L400,237 L400,250 L375,252Z',
+                'PE': 'M350,250 L400,250 L395,265 L345,268Z',
+                'AL': 'M375,268 L395,265 L393,278 L377,280Z',
+                'SE': 'M370,280 L385,278 L382,292 L368,290Z',
+                'BA': 'M310,265 L365,270 L375,295 L355,340 L310,345 L295,310 L300,280Z',
+                'TO': 'M275,260 L305,255 L310,300 L285,310 L270,290Z',
+                'GO': 'M260,305 L305,300 L310,340 L295,365 L255,350 L250,325Z',
+                'DF': 'M290,325 L300,322 L302,332 L292,335Z',
+                'MT': 'M190,280 L260,275 L265,335 L250,360 L195,355 L175,315Z',
+                'MS': 'M215,360 L260,355 L270,395 L240,420 L210,400Z',
+                'MG': 'M300,315 L360,310 L370,345 L350,380 L305,385 L290,355Z',
+                'ES': 'M365,340 L385,335 L388,365 L370,370Z',
+                'RJ': 'M345,380 L375,370 L380,385 L355,395Z',
+                'SP': 'M270,370 L340,365 L350,395 L310,420 L265,405Z',
+                'PR': 'M255,405 L310,400 L315,430 L270,440 L250,425Z',
+                'SC': 'M275,440 L315,435 L310,460 L275,460Z',
+                'RS': 'M260,460 L305,458 L295,510 L260,505 L245,480Z',
+                'RO': 'M140,280 L190,275 L185,315 L155,320 L135,305Z'
+            };
+
+            const container = document.getElementById('geoBrazilMap');
+            const maxCount = Math.max(...Object.values(stateCounts), 1);
+
+            let svgContent = `<svg viewBox="60 140 370 400" style="width:100%;max-width:450px;height:auto">`;
+            // Draw states
+            for (const [uf, path] of Object.entries(BRAZIL_STATES_SVG)) {
+                const count = stateCounts[uf] || 0;
+                const region = getRegionForUf(uf);
+                const baseColor = region ? MACRO_REGIONS[region].color : '#94a3b8';
+                const opacity = count > 0 ? 0.3 + (count / maxCount) * 0.7 : 0.08;
+                svgContent += `<path d="${path}" fill="${baseColor}" fill-opacity="${opacity}" stroke="#2a2d3e" stroke-width="1.5">
+                    <title>${uf}: ${count} usuário${count !== 1 ? 's' : ''}</title>
+                </path>`;
+            }
+            // Draw circles for states with users
+            for (const [uf, count] of Object.entries(stateCounts)) {
+                if (UF_COORDS[uf]) {
+                    const [lat, lon] = UF_COORDS[uf];
+                    // Map lat/lon to SVG coords (approximate)
+                    const x = (lon + 75) * 5.2 + 60;
+                    const y = (lat + 6) * 12 + 140;
+                    const r = Math.max(5, Math.min(20, 5 + (count / maxCount) * 15));
+                    const region = getRegionForUf(uf);
+                    const color = region ? MACRO_REGIONS[region].color : '#3ecf8e';
+                    svgContent += `<circle cx="${x}" cy="${y}" r="${r}" fill="${color}" fill-opacity="0.85" stroke="#fff" stroke-width="1">
+                        <title>${uf}: ${count} usuário${count !== 1 ? 's' : ''}</title>
+                    </circle>`;
+                    if (count >= 2) {
+                        svgContent += `<text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">${count}</text>`;
+                    }
+                }
+            }
+            svgContent += '</svg>';
+            container.innerHTML = svgContent;
+        }
+
         // ===== TAB NAVIGATION =====
         function switchTab(tabName) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -4156,6 +4565,7 @@
                 renderBhTab();
                 renderHtaTab();
                 renderIacoesTab();
+                renderGeoTab();
 
                 // Set up auto-refresh (every 5 minutes)
                 if (refreshInterval) clearInterval(refreshInterval);
@@ -4167,6 +4577,7 @@
                         else if (currentTab === 'bh') renderBhTab();
                         else if (currentTab === 'hta') renderHtaTab();
                         else if (currentTab === 'iacoes') renderIacoesTab();
+                        else if (currentTab === 'geo') renderGeoTab();
                     }
                 }, 5 * 60 * 1000);
 
