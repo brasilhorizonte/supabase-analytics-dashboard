@@ -3362,6 +3362,9 @@
             const tokenDaily = (hta.token_usage_daily || []).filter(isAiToken);
             const tokenSummary = (hta.token_usage_summary || []).filter(isAiToken);
             const tokenByUser = (hta.token_usage_by_user || []).filter(isAiToken);
+            const questionsByUser = hta.questions_by_user || [];
+            const questionsMap = {};
+            questionsByUser.forEach(q => { questionsMap[q.email] = Number(q.total_questions) || 0; });
             const tokenStats = hta.token_stats || {};
             const tokenByMode = hta.token_by_mode || [];
             const topQueries = hta.top_queries_by_token || [];
@@ -3556,7 +3559,7 @@
                             <tr>
                                 <th>Usuário</th>
                                 <th>Modelo</th>
-                                <th>Requests</th>
+                                <th>Perguntas</th>
                                 <th>Input Tokens</th>
                                 <th>Output Tokens</th>
                                 <th>Custo Est. (USD)</th>
@@ -3568,7 +3571,7 @@
                                 return `<tr>
                                     <td>${u.email || '-'}</td>
                                     <td>${TOKEN_PRICING[u.model_name]?.label || u.model_name}</td>
-                                    <td>${fmt(Number(u.total_requests) || 0)}</td>
+                                    <td>${fmt(questionsMap[u.email] || 0)}</td>
                                     <td>${fmt(Number(u.total_input_tokens) || 0)}</td>
                                     <td>${fmt(Number(u.total_output_tokens) || 0)}</td>
                                     <td>$${cost.toFixed(2)}</td>
@@ -3581,23 +3584,22 @@
                 tokenByUser.forEach(u => {
                     const email = u.email || '-';
                     if (!userMap[email]) {
-                        userMap[email] = { email, requests: 0, input: 0, output: 0, cost: 0, models: new Set() };
+                        userMap[email] = { email, questions: questionsMap[email] || 0, input: 0, output: 0, cost: 0, models: new Set() };
                     }
                     const e = userMap[email];
-                    e.requests += Number(u.total_requests) || 0;
                     e.input += Number(u.total_input_tokens) || 0;
                     e.output += Number(u.total_output_tokens) || 0;
                     e.cost += calcTokenCost(u.model_name, Number(u.total_input_tokens) || 0, Number(u.total_output_tokens) || 0);
                     e.models.add(TOKEN_PRICING[u.model_name]?.label || u.model_name);
                 });
                 const consolidated = Object.values(userMap).sort((a, b) => (b.input + b.output) - (a.input + a.output));
-                const grandTotal = consolidated.reduce((t, u) => ({ requests: t.requests + u.requests, input: t.input + u.input, output: t.output + u.output, cost: t.cost + u.cost }), { requests: 0, input: 0, output: 0, cost: 0 });
+                const grandTotal = consolidated.reduce((t, u) => ({ questions: t.questions + u.questions, input: t.input + u.input, output: t.output + u.output, cost: t.cost + u.cost }), { questions: 0, input: 0, output: 0, cost: 0 });
                 return `
                     <thead>
                         <tr>
                             <th>Usuário</th>
                             <th>Modelos</th>
-                            <th>Requests</th>
+                            <th>Perguntas</th>
                             <th>Input Tokens</th>
                             <th>Output Tokens</th>
                             <th>Total Tokens</th>
@@ -3608,7 +3610,7 @@
                         ${consolidated.map(u => `<tr>
                             <td>${u.email}</td>
                             <td style="font-size:11px">${[...u.models].join(', ')}</td>
-                            <td>${fmt(u.requests)}</td>
+                            <td>${fmt(u.questions)}</td>
                             <td>${fmt(u.input)}</td>
                             <td>${fmt(u.output)}</td>
                             <td><strong>${fmt(u.input + u.output)}</strong></td>
@@ -3617,7 +3619,7 @@
                         <tr style="font-weight:bold; border-top:2px solid var(--bd);">
                             <td>Total</td>
                             <td></td>
-                            <td>${fmt(grandTotal.requests)}</td>
+                            <td>${fmt(grandTotal.questions)}</td>
                             <td>${fmt(grandTotal.input)}</td>
                             <td>${fmt(grandTotal.output)}</td>
                             <td>${fmt(grandTotal.input + grandTotal.output)}</td>
