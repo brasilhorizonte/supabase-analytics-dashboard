@@ -3563,18 +3563,22 @@
                                 <th>Input Tokens</th>
                                 <th>Output Tokens</th>
                                 <th>Custo Est. (USD)</th>
+                                <th>Custo/Pergunta</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${tokenByUser.map(u => {
                                 const cost = calcTokenCost(u.model_name, Number(u.total_input_tokens) || 0, Number(u.total_output_tokens) || 0);
+                                const q = questionsMap[u.email] || 0;
+                                const costPerQ = q > 0 ? cost / q : 0;
                                 return `<tr>
                                     <td>${u.email || '-'}</td>
                                     <td>${TOKEN_PRICING[u.model_name]?.label || u.model_name}</td>
-                                    <td>${fmt(questionsMap[u.email] || 0)}</td>
+                                    <td>${fmt(q)}</td>
                                     <td>${fmt(Number(u.total_input_tokens) || 0)}</td>
                                     <td>${fmt(Number(u.total_output_tokens) || 0)}</td>
                                     <td>$${cost.toFixed(2)}</td>
+                                    <td>$${costPerQ.toFixed(4)}</td>
                                 </tr>`;
                             }).join('')}
                         </tbody>`;
@@ -3604,10 +3608,13 @@
                             <th>Output Tokens</th>
                             <th>Total Tokens</th>
                             <th>Custo Est. (USD)</th>
+                            <th>Custo/Pergunta</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${consolidated.map(u => `<tr>
+                        ${consolidated.map(u => {
+                            const costPerQ = u.questions > 0 ? u.cost / u.questions : 0;
+                            return `<tr>
                             <td>${u.email}</td>
                             <td style="font-size:11px">${[...u.models].join(', ')}</td>
                             <td>${fmt(u.questions)}</td>
@@ -3615,7 +3622,9 @@
                             <td>${fmt(u.output)}</td>
                             <td><strong>${fmt(u.input + u.output)}</strong></td>
                             <td>$${u.cost.toFixed(2)}</td>
-                        </tr>`).join('')}
+                            <td>$${costPerQ.toFixed(4)}</td>
+                        </tr>`;
+                        }).join('')}
                         <tr style="font-weight:bold; border-top:2px solid var(--bd);">
                             <td>Total</td>
                             <td></td>
@@ -3624,6 +3633,7 @@
                             <td>${fmt(grandTotal.output)}</td>
                             <td>${fmt(grandTotal.input + grandTotal.output)}</td>
                             <td>$${grandTotal.cost.toFixed(2)}</td>
+                            <td>$${grandTotal.questions > 0 ? (grandTotal.cost / grandTotal.questions).toFixed(4) : '0.0000'}</td>
                         </tr>
                     </tbody>`;
             }
