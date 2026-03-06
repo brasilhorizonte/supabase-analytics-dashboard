@@ -766,6 +766,7 @@
             <button class="tab-btn active" data-tab="overview">Visão Geral</button>
             <button class="tab-btn" data-tab="bh">brasilhorizonte</button>
             <button class="tab-btn" data-tab="hta">Horizon Terminal</button>
+            <button class="tab-btn" data-tab="iacoes">iAcoes</button>
         </div>
 
         <div class="dashboard-content">
@@ -1253,6 +1254,75 @@
                 </div>
             </div>
 
+            <!-- IACOES TAB -->
+            <div class="tab-content" id="iacoes">
+                <div class="kpi-grid" id="iacoesKpis"></div>
+                <div class="filter-bar" data-tab="iacoes">
+                    <div class="gran-toggle">
+                        <button class="gran-btn active" data-gran="daily">Diário</button>
+                        <button class="gran-btn" data-gran="weekly">Semanal</button>
+                        <button class="gran-btn" data-gran="monthly">Mensal</button>
+                    </div>
+                    <div class="date-filters">
+                        <input type="date" class="filter-from" />
+                        <span style="color:var(--m)">até</span>
+                        <input type="date" class="filter-to" />
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Page Views (diário)</div>
+                        <canvas id="iacoesViewsDailyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Sessões (diário)</div>
+                        <canvas id="iacoesSessionsDailyChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Top Páginas</div>
+                        <canvas id="iacoesTopPagesChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Origem do Tráfego</div>
+                        <canvas id="iacoesReferrerChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container" style="grid-column: span 2;">
+                        <div class="chart-title">Origem do Tráfego ao Longo do Tempo</div>
+                        <canvas id="iacoesReferrerDailyChart"></canvas>
+                    </div>
+                </div>
+                <h3 class="section-title">Dispositivos & Plataformas</h3>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Dispositivos</div>
+                        <canvas id="iacoesDeviceChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Navegador</div>
+                        <canvas id="iacoesBrowserChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Sistema Operacional</div>
+                        <canvas id="iacoesOsChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Campanhas UTM</div>
+                        <div id="iacoesUtmFallback" style="display:none; color: var(--m); font-size: 13px; text-align: center; padding: 40px 0;">Nenhuma campanha UTM registrada</div>
+                        <canvas id="iacoesUtmChart"></canvas>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <div class="table-title">Top Páginas Detalhado</div>
+                    <table id="iacoesTopPagesTable"></table>
+                </div>
+            </div>
+
         </div>
     </div>
 
@@ -1276,7 +1346,8 @@
         const tabFilters = {
             overview: { gran: 'daily', from: '', to: '' },
             bh:       { gran: 'daily', from: '', to: '', plan: '', period: '' },
-            hta:      { gran: 'daily', from: '', to: '' }
+            hta:      { gran: 'daily', from: '', to: '' },
+            iacoes:   { gran: 'daily', from: '', to: '' }
         };
 
         // ===== CHART SETUP =====
@@ -1403,6 +1474,7 @@
             if (tabName === 'overview') renderOverviewTab();
             else if (tabName === 'bh') renderBhTab();
             else if (tabName === 'hta') renderHtaTab();
+            else if (tabName === 'iacoes') renderIacoesTab();
         }
 
         // ===== AUTHENTICATION =====
@@ -3798,6 +3870,249 @@
             }
         }
 
+        // ===== RENDER IACOES TAB =====
+        function renderIacoesTab() {
+            const bh = dashboardData.bh;
+            const ov = bh.iacoes_overview || {};
+            const daily = bh.iacoes_daily || [];
+            const topPages = bh.iacoes_top_pages || [];
+            const referrers = bh.iacoes_referrers || [];
+            const refDaily = bh.iacoes_referrer_daily || [];
+            const devices = bh.iacoes_devices || [];
+            const browsers = bh.iacoes_browsers || [];
+            const osList = bh.iacoes_os || [];
+            const utmData = bh.iacoes_utm || [];
+
+            const totalViews = ov.total_views || 0;
+            const totalSessions = ov.total_sessions || 0;
+            const totalPages = ov.total_pages || 0;
+            const viewsPerSession = totalSessions > 0 ? (totalViews / totalSessions).toFixed(1) : '0';
+
+            document.getElementById('iacoesKpis').innerHTML = `
+                ${createKpiCard('Page Views', fmt(totalViews))}
+                ${createKpiCard('Sessões', fmt(totalSessions))}
+                ${createKpiCard('Páginas Únicas', fmt(totalPages))}
+                ${createKpiCard('Views/Sessão', viewsPerSession)}
+                ${createKpiCard('Views Hoje', fmt(ov.views_today || 0))}
+                ${createKpiCard('Sessões Hoje', fmt(ov.sessions_today || 0))}
+            `;
+
+            const iaF = tabFilters.iacoes;
+            const dailyPrep = prepareTimeSeries(daily, iaF, ['views', 'sessions']);
+
+            // Views diário
+            destroyChart('iacoesViewsDailyChart');
+            charts.iacoesViewsDailyChart = new Chart(document.getElementById('iacoesViewsDailyChart'), {
+                type: 'bar',
+                data: {
+                    labels: dailyPrep.labels,
+                    datasets: [{
+                        label: 'Page Views',
+                        data: dailyPrep.data.map(d => d.views || 0),
+                        backgroundColor: '#3ecf8e'
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Sessões diário
+            destroyChart('iacoesSessionsDailyChart');
+            charts.iacoesSessionsDailyChart = new Chart(document.getElementById('iacoesSessionsDailyChart'), {
+                type: 'bar',
+                data: {
+                    labels: dailyPrep.labels,
+                    datasets: [{
+                        label: 'Sessões',
+                        data: dailyPrep.data.map(d => d.sessions || 0),
+                        backgroundColor: '#6366f1'
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Top Pages (horizontal bar)
+            const topPagesSlice = topPages.slice(0, 15);
+            destroyChart('iacoesTopPagesChart');
+            charts.iacoesTopPagesChart = new Chart(document.getElementById('iacoesTopPagesChart'), {
+                type: 'bar',
+                data: {
+                    labels: topPagesSlice.map(p => p.page_path === '/' ? 'Home' : p.page_path.replace(/^\//,'').replace(/\/$/,'')),
+                    datasets: [{
+                        label: 'Views',
+                        data: topPagesSlice.map(p => p.views || 0),
+                        backgroundColor: '#f59e0b'
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Referrers (doughnut)
+            destroyChart('iacoesReferrerChart');
+            charts.iacoesReferrerChart = new Chart(document.getElementById('iacoesReferrerChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: referrers.map(r => r.source),
+                    datasets: [{
+                        data: referrers.map(r => r.views || 0),
+                        backgroundColor: COLORS.slice(0, referrers.length)
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } } }
+                }
+            });
+
+            // Referrer daily (stacked bar)
+            const refSources = [...new Set(refDaily.map(r => r.source))];
+            const refDays = [...new Set(refDaily.map(r => r.day))].sort();
+            const refFilteredDays = filterByDateRange(refDays.map(d => ({day: d})), iaF.from, iaF.to).map(d => d.day);
+            const refAgg = aggregateData(refFilteredDays.map(d => ({day: d})), iaF.gran, []);
+
+            destroyChart('iacoesReferrerDailyChart');
+            charts.iacoesReferrerDailyChart = new Chart(document.getElementById('iacoesReferrerDailyChart'), {
+                type: 'bar',
+                data: {
+                    labels: refAgg.map(d => formatLabel(d.day, iaF.gran)),
+                    datasets: refSources.map((src, i) => ({
+                        label: src,
+                        data: refAgg.map(d => {
+                            if (iaF.gran === 'daily') {
+                                const match = refDaily.find(r => r.day === d.day && r.source === src);
+                                return match ? match.views : 0;
+                            }
+                            return refDaily.filter(r => {
+                                const rd = r.day;
+                                if (iaF.gran === 'weekly') {
+                                    const dDate = new Date(d.day + 'T00:00:00');
+                                    const rDate = new Date(rd + 'T00:00:00');
+                                    return r.source === src && rDate >= new Date(dDate - 6*86400000) && rDate <= dDate;
+                                }
+                                return r.source === src && rd.substring(0,7) === d.day.substring(0,7);
+                            }).reduce((s,r) => s + (r.views || 0), 0);
+                        }),
+                        backgroundColor: COLORS[i % COLORS.length]
+                    }))
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                    }
+                }
+            });
+
+            // Devices (doughnut)
+            destroyChart('iacoesDeviceChart');
+            charts.iacoesDeviceChart = new Chart(document.getElementById('iacoesDeviceChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: devices.map(d => d.device_type),
+                    datasets: [{
+                        data: devices.map(d => d.views || 0),
+                        backgroundColor: ['#3ecf8e', '#6366f1', '#f59e0b']
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } } }
+                }
+            });
+
+            // Browser (doughnut)
+            destroyChart('iacoesBrowserChart');
+            charts.iacoesBrowserChart = new Chart(document.getElementById('iacoesBrowserChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: browsers.map(b => b.browser),
+                    datasets: [{
+                        data: browsers.map(b => b.views || 0),
+                        backgroundColor: COLORS.slice(0, browsers.length)
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } } }
+                }
+            });
+
+            // OS (doughnut)
+            destroyChart('iacoesOsChart');
+            charts.iacoesOsChart = new Chart(document.getElementById('iacoesOsChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: osList.map(o => o.os),
+                    datasets: [{
+                        data: osList.map(o => o.views || 0),
+                        backgroundColor: COLORS.slice(0, osList.length)
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } } }
+                }
+            });
+
+            // UTM campaigns
+            const utmCanvas = document.getElementById('iacoesUtmChart');
+            const utmFallback = document.getElementById('iacoesUtmFallback');
+            if (utmData.length > 0) {
+                utmCanvas.style.display = '';
+                utmFallback.style.display = 'none';
+                destroyChart('iacoesUtmChart');
+                charts.iacoesUtmChart = new Chart(utmCanvas, {
+                    type: 'bar',
+                    data: {
+                        labels: utmData.map(u => `${u.utm_source}/${u.utm_medium || '-'}`),
+                        datasets: [{
+                            label: 'Views',
+                            data: utmData.map(u => u.views || 0),
+                            backgroundColor: '#3b82f6'
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true, maintainAspectRatio: true,
+                        plugins: { legend: { display: false } },
+                        scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    }
+                });
+            } else {
+                utmCanvas.style.display = 'none';
+                utmFallback.style.display = '';
+            }
+
+            // Top pages table
+            const pagesTable = document.getElementById('iacoesTopPagesTable');
+            pagesTable.innerHTML = `
+                <thead><tr>
+                    <th>Página</th><th>Views</th><th>Sessões</th>
+                </tr></thead>
+                <tbody>
+                    ${topPages.map(p => `<tr>
+                        <td>${p.page_path === '/' ? 'Home (/)' : p.page_path}</td>
+                        <td>${fmt(p.views || 0)}</td>
+                        <td>${fmt(p.sessions || 0)}</td>
+                    </tr>`).join('')}
+                </tbody>
+            `;
+        }
+
         // ===== TAB NAVIGATION =====
         function switchTab(tabName) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -3830,6 +4145,7 @@
                 renderOverviewTab();
                 renderBhTab();
                 renderHtaTab();
+                renderIacoesTab();
 
                 // Set up auto-refresh (every 5 minutes)
                 if (refreshInterval) clearInterval(refreshInterval);
@@ -3840,6 +4156,7 @@
                         if (currentTab === 'overview') renderOverviewTab();
                         else if (currentTab === 'bh') renderBhTab();
                         else if (currentTab === 'hta') renderHtaTab();
+                        else if (currentTab === 'iacoes') renderIacoesTab();
                     }
                 }, 5 * 60 * 1000);
 

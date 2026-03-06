@@ -42,6 +42,7 @@ supabase/
     20260212_..._horizon_terminal.sql       # RPC get_analytics_data() no HTA
     20260216_enhance_token_analytics.sql    # Token stats, mode breakdown, top queries + COALESCE tokens reais
     20260226_add_error_metrics.sql          # proxy_error_log table, error_count column, log_proxy_error RPC
+    20260301_filter_non_ai_proxies.sql      # Filtra brapi/partnr-news das metricas de tokens na RPC
 ```
 
 ## Edge Functions (Proxy)
@@ -51,7 +52,7 @@ Alem da `analytics-dashboard`, existem 6 Edge Functions de proxy deployadas no p
 | Function | verify_jwt | Descricao |
 |----------|-----------|-----------|
 | `analytics-dashboard` | false | API do dashboard (neste repo) |
-| `gemini-proxy` | false | Proxy para Google Gemini API |
+| `gemini-proxy` | false | Proxy para Google Gemini API (tracking server-side: requests + tokens) |
 | `anthropic-proxy` | false | Proxy para Anthropic Claude API |
 | `gemini-market-proxy` | false | Proxy para Gemini + BRAPI (mercado financeiro) |
 | `openai-proxy` | true | Proxy para OpenAI API |
@@ -106,9 +107,9 @@ A Edge Function retorna:
 - `login_daily`: logins e usuarios unicos por dia
 - `top_tickers_searched`: tickers mais buscados no terminal
 - `table_sizes`: tamanhos e rows das tabelas publicas
-- `token_usage_daily`: tokens por dia/proxy (prefere tokens reais via COALESCE)
-- `token_usage_summary`: totais por proxy
-- `token_usage_by_user`: consumo por usuario/proxy
+- `token_usage_daily`: tokens por dia/modelo IA (exclui brapi/partnr-news, agrupa por model_name)
+- `token_usage_summary`: totais por modelo IA
+- `token_usage_by_user`: consumo por usuario/modelo IA
 - `token_stats`: metricas agregadas de queries IA (total, com token_count, media)
 - `token_by_mode`: breakdown por response_mode (deep/fast/pro)
 - `top_queries_by_token`: top 20 queries mais caras em tokens
@@ -147,7 +148,7 @@ URL: `https://llqhmywodxzstjlrulcw.supabase.co/storage/v1/object/public/dashboar
 - **Supabase Storage pode nao renderizar HTML**: Dependendo da configuracao, o Storage pode forcar download ao inves de renderizar. GitHub Pages e mais confiavel para hospedar o frontend.
 - **Cross-project data**: A Edge Function usa anon key do BH e service role key do HTA. Se as keys mudarem, atualizar no codigo.
 - **RPC functions**: Criadas com `SECURITY DEFINER` e precisam de `GRANT EXECUTE` para anon/authenticated/service_role.
-- **Token tracking**: Colunas `total_prompt_tokens`, `total_completion_tokens`, `total_tokens` em `proxy_daily_usage` e `token_count`, `response_mode` em `terminal_events` foram adicionadas mas podem estar zeradas ate o tracking no app popular os dados. A RPC usa `COALESCE(NULLIF(nova_coluna, 0), coluna_antiga)` para fallback transparente.
+- **Token tracking server-side**: O `gemini-proxy` (v256+) faz tracking completo server-side: `check_proxy_rate_limit` (request counting + rate limit 500/dia) e `increment_proxy_tokens` (tokens com model_name correto). As metricas de tokens excluem proxies nao-IA (brapi, partnr-news) tanto na RPC (`WHERE proxy_name NOT IN (...)`) quanto no frontend (`isAiToken` filter). A RPC usa `COALESCE(NULLIF(nova_coluna, 0), coluna_antiga)` para fallback transparente.
 - **Error metrics**: A tabela `proxy_error_log` so recebe dados quando os proxies IA (gemini, anthropic, gemini-market) encontram erros upstream. A secao "Erros de API" no dashboard mostra "Nenhum erro registrado" ate que erros reais ocorram.
 
 ## Comandos Uteis
@@ -184,14 +185,23 @@ Custo calculado por `(input_tokens / 1M) * input_price + (output_tokens / 1M) * 
 
 ### proxy_name e model_name
 
-| proxy_name | model_name | Descricao |
-|------------|-----------|-----------|
-| `anthropic` | `claude-sonnet-4-20250514`, `claude-opus-4-20250514` | Modelo real da API |
-| `gemini` | `gemini-2.5-pro`, `gemini-2.5-flash`, etc. | Modelo real da API |
-| `gemini-market` | `gemini-2.5-flash`, etc. | Modelo real da API |
-| `openai` | `gpt-5.1`, etc. | Modelo real da API |
-| `brapi` | `brapi` | Nao e IA — usa proxy_name como model_name |
-| `partnr-news` | `partnr-news` | Nao e IA — usa proxy_name como model_name |
+| proxy_name | model_name | IA? | Descricao |
+|------------|-----------|-----|-----------|
+| `anthropic` | `claude-sonnet-4-20250514`, `claude-opus-4-20250514` | Sim | Modelo real da API |
+| `gemini` | `gemini-2.5-pro`, `gemini-2.5-flash`, etc. | Sim | Modelo real da API |
+| `gemini-market` | `gemini-2.5-flash`, etc. | Sim | Modelo real da API |
+| `openai` | `gpt-5.1`, etc. | Sim | Modelo real da API |
+| `brapi` | `brapi` | **Nao** | Excluido das metricas de tokens |
+| `partnr-news` | `partnr-news` | **Nao** | Excluido das metricas de tokens |
+
+### Server-side tracking (gemini-proxy v256+)
+
+O `gemini-proxy` faz tracking completo server-side em 2 etapas:
+
+1. **Antes da API call**: `check_proxy_rate_limit(p_proxy_name, p_model_name, p_daily_limit)` — conta request + aplica rate limit (500/dia). ON CONFLICT so atualiza `request_count`.
+2. **Apos a API call**: `increment_proxy_tokens(p_proxy_name, p_prompt_tokens, p_completion_tokens, p_total_tokens, p_model_name)` — persiste tokens. ON CONFLICT so atualiza colunas de tokens.
+
+As duas RPCs usam a mesma unique key `(user_id, usage_date, proxy_name, model_name)` mas atualizam colunas diferentes, entao nao conflitam. O tracking funciona nos 3 caminhos: multimodal, streaming SSE, e texto simples.
 
 ## Error Metrics
 
