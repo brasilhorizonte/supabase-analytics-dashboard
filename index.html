@@ -1321,6 +1321,26 @@
                     <div class="table-title">Top Páginas Detalhado</div>
                     <table id="iacoesTopPagesTable"></table>
                 </div>
+                <h3 class="section-title">Conversão iAcoes → BH</h3>
+                <div class="kpi-grid" id="iacoesConvKpis"></div>
+                <div class="chart-container mb-2">
+                    <div class="chart-title">Funil de Conversão</div>
+                    <div class="funnel" id="iacoesConvFunnel"></div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Conversão Diária (iAcoes → BH)</div>
+                        <canvas id="iacoesConvDailyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Taxa de Conversão por Fonte</div>
+                        <canvas id="iacoesVsOtherChart"></canvas>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <div class="table-title">Tickers que Mais Convertem</div>
+                    <table id="iacoesConvTickersTable"></table>
+                </div>
             </div>
 
         </div>
@@ -4109,6 +4129,99 @@
                         <td>${fmt(p.views || 0)}</td>
                         <td>${fmt(p.sessions || 0)}</td>
                     </tr>`).join('')}
+                </tbody>
+            `;
+
+            // ===== CONVERSION ANALYSIS =====
+            const convFunnel = bh.iacoes_conversion_funnel || {};
+            const convDaily = bh.iacoes_conversion_daily || [];
+            const convTickers = bh.iacoes_converting_tickers || [];
+            const convComparison = bh.iacoes_vs_other_conversion || [];
+
+            const ctaClicks = convFunnel.cta_clicks || 0;
+            const bhSessions = convFunnel.bh_sessions || 0;
+            const bhLogins = convFunnel.bh_logins || 0;
+            const bhPaywall = convFunnel.bh_paywall || 0;
+            const bhPayments = convFunnel.bh_payments || 0;
+            const loginRate = bhSessions > 0 ? ((bhLogins / bhSessions) * 100).toFixed(1) : '0';
+            const paywallRate = bhSessions > 0 ? ((bhPaywall / bhSessions) * 100).toFixed(1) : '0';
+
+            document.getElementById('iacoesConvKpis').innerHTML = `
+                ${createKpiCard('Sessões no BH', fmt(bhSessions))}
+                ${createKpiCard('Usuários Únicos', fmt(convFunnel.bh_unique_users || 0))}
+                ${createKpiCard('Taxa de Login', loginRate + '%')}
+                ${createKpiCard('Taxa de Paywall', paywallRate + '%')}
+                ${createKpiCard('CTA Clicks', fmt(ctaClicks))}
+                ${createKpiCard('Pagamentos', fmt(bhPayments))}
+            `;
+
+            // Conversion funnel
+            document.getElementById('iacoesConvFunnel').innerHTML = `
+                <div class="funnel-step"><span class="funnel-step-label">iAcoes Views</span><span class="funnel-step-value">${fmt(convFunnel.iacoes_views || 0)}</span></div>
+                <div class="funnel-step"><span class="funnel-step-label">CTA Clicks</span><span class="funnel-step-value">${fmt(ctaClicks)}</span></div>
+                <div class="funnel-step"><span class="funnel-step-label">Sessões BH</span><span class="funnel-step-value">${fmt(bhSessions)}</span></div>
+                <div class="funnel-step"><span class="funnel-step-label">Logins</span><span class="funnel-step-value">${fmt(bhLogins)}</span></div>
+                <div class="funnel-step"><span class="funnel-step-label">Paywall</span><span class="funnel-step-value">${fmt(bhPaywall)}</span></div>
+                <div class="funnel-step"><span class="funnel-step-label">Pagamentos</span><span class="funnel-step-value">${fmt(bhPayments)}</span></div>
+            `;
+
+            // Conversion daily chart (stacked bar)
+            const convDailyPrep = prepareTimeSeries(convDaily, iaF, ['sessions', 'logins', 'paywall', 'payments']);
+            destroyChart('iacoesConvDailyChart');
+            charts.iacoesConvDailyChart = new Chart(document.getElementById('iacoesConvDailyChart'), {
+                type: 'bar',
+                data: {
+                    labels: convDailyPrep.labels,
+                    datasets: [
+                        { label: 'Sessões', data: convDailyPrep.data.map(d => d.sessions || 0), backgroundColor: '#3ecf8e' },
+                        { label: 'Logins', data: convDailyPrep.data.map(d => d.logins || 0), backgroundColor: '#6366f1' },
+                        { label: 'Paywall', data: convDailyPrep.data.map(d => d.paywall || 0), backgroundColor: '#f59e0b' },
+                        { label: 'Pagamentos', data: convDailyPrep.data.map(d => d.payments || 0), backgroundColor: '#3b82f6' }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // Conversion rate comparison (grouped bar)
+            destroyChart('iacoesVsOtherChart');
+            charts.iacoesVsOtherChart = new Chart(document.getElementById('iacoesVsOtherChart'), {
+                type: 'bar',
+                data: {
+                    labels: convComparison.map(c => c.source),
+                    datasets: [
+                        { label: 'Taxa de Login (%)', data: convComparison.map(c => c.login_rate || 0), backgroundColor: '#6366f1' },
+                        { label: 'Taxa de Paywall (%)', data: convComparison.map(c => c.paywall_rate || 0), backgroundColor: '#f59e0b' }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' }, title: { display: true, text: '%', color: '#94a3b8' } } }
+                }
+            });
+
+            // Converting tickers table
+            const tickersTable = document.getElementById('iacoesConvTickersTable');
+            tickersTable.innerHTML = `
+                <thead><tr>
+                    <th>Página de Origem</th><th>Sessões</th><th>Usuários</th><th>Logins</th><th>Paywall</th><th>Taxa Login</th>
+                </tr></thead>
+                <tbody>
+                    ${convTickers.map(t => {
+                        const lr = t.sessions > 0 ? ((t.led_to_login / t.sessions) * 100).toFixed(1) : '0';
+                        return `<tr>
+                            <td>${t.ticker}</td>
+                            <td>${fmt(t.sessions || 0)}</td>
+                            <td>${fmt(t.unique_users || 0)}</td>
+                            <td>${fmt(t.led_to_login || 0)}</td>
+                            <td>${fmt(t.led_to_paywall || 0)}</td>
+                            <td>${lr}%</td>
+                        </tr>`;
+                    }).join('')}
                 </tbody>
             `;
         }
