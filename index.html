@@ -1228,6 +1228,32 @@
                     <div id="topQueriesFallback" style="display:none; color: var(--m); font-size: 13px; padding: 20px 0;">Tracking por query ainda não ativo</div>
                     <table id="topQueriesTable"></table>
                 </div>
+                <h3 class="section-title">Tokens Backend (Server-Side)</h3>
+                <div class="kpi-grid" id="serverTokenKpis"></div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Tokens Backend por Dia</div>
+                        <canvas id="serverTokenDailyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Custo Backend por Dia (USD)</div>
+                        <canvas id="serverTokenCostChart"></canvas>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">Requests Backend por Dia</div>
+                        <canvas id="serverTokenReqChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Distribuição por Fonte</div>
+                        <canvas id="serverTokenDistChart"></canvas>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <div class="table-title">Resumo por Fonte</div>
+                    <table id="serverTokenSummaryTable"></table>
+                </div>
                 <h3 class="section-title">Erros de API</h3>
                 <div class="kpi-grid" id="errorKpis"></div>
                 <div class="charts-grid">
@@ -3370,6 +3396,9 @@
             // Render token usage section
             renderTokenUsageSection();
 
+            // Render server-side token usage section
+            renderServerTokenSection();
+
             // Render error metrics section
             renderErrorMetrics();
         }
@@ -3771,6 +3800,252 @@
                 topQueriesTable.style.display = 'none';
                 topQueriesFallback.style.display = '';
             }
+        }
+
+        // ===== RENDER SERVER TOKEN SECTION (Backend) =====
+        const SERVER_SOURCE_LABELS = {
+            'watcher-ai-summary': 'AI Summary (Watcher)',
+            'tweet-polish': 'Tweet Polish',
+        };
+        const SERVER_SOURCE_COLORS = {
+            'watcher-ai-summary': '#6366f1',
+            'tweet-polish': '#3ecf8e',
+        };
+        const BACKFILL_COLOR = '#f97316'; // orange for backfill data
+        // Server-side pricing: gemini-2.5-flash has thinking tokens
+        const SERVER_TOKEN_PRICING = {
+            'gemini-2.5-flash': { prompt: 0.15, completion: 0.60, thoughts: 3.50 },
+            'gemini-2.5-flash-lite': { prompt: 0.075, completion: 0.30, thoughts: 0 },
+        };
+        function calcServerCost(model, prompt, completion, thoughts) {
+            const p = SERVER_TOKEN_PRICING[model] || { prompt: 0.15, completion: 0.60, thoughts: 3.50 };
+            return (prompt / 1e6) * p.prompt + (completion / 1e6) * p.completion + (thoughts / 1e6) * p.thoughts;
+        }
+
+        function renderServerTokenSection() {
+            const hta = dashboardData.hta;
+            const htaF = tabFilters.hta;
+            const daily = hta.server_token_daily || [];
+            const summary = hta.server_token_summary || [];
+            const last24h = hta.server_token_last_24h || {};
+
+            // KPIs
+            const totalRequests = summary.reduce((s, r) => s + (Number(r.total_requests) || 0), 0);
+            const totalTokens = summary.reduce((s, r) => s + (Number(r.total_tokens) || 0), 0);
+            const totalThoughts = summary.reduce((s, r) => s + (Number(r.total_thoughts_tokens) || 0), 0);
+            const totalCost = summary.reduce((s, r) => s + calcServerCost(r.model_name, Number(r.total_prompt_tokens) || 0, Number(r.total_completion_tokens) || 0, Number(r.total_thoughts_tokens) || 0), 0);
+            const backfillDocs = summary.filter(r => r.is_backfill).reduce((s, r) => s + (Number(r.total_requests) || 0), 0);
+            const realDocs = totalRequests - backfillDocs;
+            const today24h = Number(last24h.total_tokens) || 0;
+
+            document.getElementById('serverTokenKpis').innerHTML = `
+                ${createKpiCard('Total Docs Processados', fmt(totalRequests) + (backfillDocs > 0 ? ' <span style="font-size:10px;color:#f97316;">(' + fmt(backfillDocs) + ' backfill)</span>' : ''))}
+                ${createKpiCard('Tokens Totais', fmt(totalTokens))}
+                ${createKpiCard('Thinking Tokens', fmt(totalThoughts) + ' <span style="font-size:10px;color:#ef4444;">($3.50/M)</span>')}
+                ${createKpiCard('Custo Estimado', '$' + totalCost.toFixed(2))}
+                ${createKpiCard('Hoje', fmt(today24h) + ' tokens')}
+                ${createKpiCard('Dados Reais', fmt(realDocs) + ' docs')}
+            `;
+
+            // Prepare daily data
+            const allDays = [...new Set(daily.map(d => d.day))].sort();
+            const filteredDays = allDays.filter(day => {
+                if (htaF.from && day < htaF.from) return false;
+                if (htaF.to && day > htaF.to) return false;
+                return true;
+            });
+            const dayLabels = filteredDays.map(d => { const p = d.split('-'); return p[2] + '/' + p[1]; });
+
+            // Build day maps per source+backfill
+            const sources = [...new Set(daily.map(d => d.source))];
+            const dayMap = {};
+            daily.forEach(d => {
+                const bfTag = d.is_backfill ? ':bf' : ':real';
+                const key = d.source + bfTag + '|' + d.day;
+                if (!dayMap[key]) dayMap[key] = { prompt: 0, completion: 0, thoughts: 0, total: 0, requests: 0, model: d.model_name };
+                dayMap[key].prompt += Number(d.prompt_tokens) || 0;
+                dayMap[key].completion += Number(d.completion_tokens) || 0;
+                dayMap[key].thoughts += Number(d.thoughts_tokens) || 0;
+                dayMap[key].total += Number(d.total_tokens) || 0;
+                dayMap[key].requests += Number(d.requests) || 0;
+            });
+
+            // 1. Tokens Daily (stacked bar: real vs backfill per source)
+            destroyChart('serverTokenDailyChart');
+            const tokenDatasets = [];
+            sources.forEach(src => {
+                const label = SERVER_SOURCE_LABELS[src] || src;
+                const color = SERVER_SOURCE_COLORS[src] || '#94a3b8';
+                // Real data
+                tokenDatasets.push({
+                    label: label + ' (real)',
+                    data: filteredDays.map(day => (dayMap[src + ':real|' + day] || {}).total || 0),
+                    backgroundColor: color,
+                    stack: 'tokens',
+                });
+                // Backfill data — orange tint
+                tokenDatasets.push({
+                    label: label + ' (backfill)',
+                    data: filteredDays.map(day => (dayMap[src + ':bf|' + day] || {}).total || 0),
+                    backgroundColor: BACKFILL_COLOR + '90',
+                    borderColor: BACKFILL_COLOR,
+                    borderWidth: 1,
+                    stack: 'tokens',
+                });
+            });
+            charts.serverTokenDailyChart = new Chart(document.getElementById('serverTokenDailyChart'), {
+                type: 'bar',
+                data: { labels: dayLabels, datasets: tokenDatasets },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // 2. Cost Daily (line)
+            destroyChart('serverTokenCostChart');
+            const costDatasets = sources.map(src => {
+                const color = SERVER_SOURCE_COLORS[src] || '#94a3b8';
+                return {
+                    label: SERVER_SOURCE_LABELS[src] || src,
+                    data: filteredDays.map(day => {
+                        let cost = 0;
+                        ['real', 'bf'].forEach(tag => {
+                            const d = dayMap[src + ':' + tag + '|' + day];
+                            if (d) cost += calcServerCost(d.model, d.prompt, d.completion, d.thoughts);
+                        });
+                        return cost;
+                    }),
+                    borderColor: color, backgroundColor: color + '20',
+                    tension: 0.4, fill: false, pointBackgroundColor: color,
+                };
+            });
+            // Total line
+            costDatasets.push({
+                label: 'Total',
+                data: filteredDays.map(day => {
+                    let cost = 0;
+                    sources.forEach(src => {
+                        ['real', 'bf'].forEach(tag => {
+                            const d = dayMap[src + ':' + tag + '|' + day];
+                            if (d) cost += calcServerCost(d.model, d.prompt, d.completion, d.thoughts);
+                        });
+                    });
+                    return cost;
+                }),
+                borderColor: '#ef4444', borderDash: [5, 5], tension: 0.4, fill: false, pointBackgroundColor: '#ef4444',
+            });
+            charts.serverTokenCostChart = new Chart(document.getElementById('serverTokenCostChart'), {
+                type: 'line',
+                data: { labels: dayLabels, datasets: costDatasets },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' }, ticks: { callback: v => '$' + v.toFixed(2) } } }
+                }
+            });
+
+            // 3. Requests Daily (stacked bar: real vs backfill)
+            destroyChart('serverTokenReqChart');
+            const reqDatasets = [];
+            sources.forEach(src => {
+                const label = SERVER_SOURCE_LABELS[src] || src;
+                const color = SERVER_SOURCE_COLORS[src] || '#94a3b8';
+                reqDatasets.push({
+                    label: label + ' (real)',
+                    data: filteredDays.map(day => (dayMap[src + ':real|' + day] || {}).requests || 0),
+                    backgroundColor: color,
+                    stack: 'req',
+                });
+                reqDatasets.push({
+                    label: label + ' (backfill)',
+                    data: filteredDays.map(day => (dayMap[src + ':bf|' + day] || {}).requests || 0),
+                    backgroundColor: BACKFILL_COLOR + '90',
+                    borderColor: BACKFILL_COLOR,
+                    borderWidth: 1,
+                    stack: 'req',
+                });
+            });
+            charts.serverTokenReqChart = new Chart(document.getElementById('serverTokenReqChart'), {
+                type: 'bar',
+                data: { labels: dayLabels, datasets: reqDatasets },
+                options: {
+                    responsive: true, maintainAspectRatio: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                }
+            });
+
+            // 4. Distribution doughnut
+            destroyChart('serverTokenDistChart');
+            const distData = summary.filter(s => !s.is_backfill);
+            const distBackfill = summary.filter(s => s.is_backfill);
+            const allSources = [...new Set([...distData, ...distBackfill].map(s => s.source))];
+            const distLabels = [];
+            const distValues = [];
+            const distColors = [];
+            allSources.forEach(src => {
+                const real = distData.filter(s => s.source === src).reduce((s, r) => s + (Number(r.total_tokens) || 0), 0);
+                const bf = distBackfill.filter(s => s.source === src).reduce((s, r) => s + (Number(r.total_tokens) || 0), 0);
+                if (real > 0) {
+                    distLabels.push((SERVER_SOURCE_LABELS[src] || src) + ' (real)');
+                    distValues.push(real);
+                    distColors.push(SERVER_SOURCE_COLORS[src] || '#94a3b8');
+                }
+                if (bf > 0) {
+                    distLabels.push((SERVER_SOURCE_LABELS[src] || src) + ' (backfill)');
+                    distValues.push(bf);
+                    distColors.push(BACKFILL_COLOR);
+                }
+            });
+            charts.serverTokenDistChart = new Chart(document.getElementById('serverTokenDistChart'), {
+                type: 'doughnut',
+                data: { labels: distLabels, datasets: [{ data: distValues, backgroundColor: distColors }] },
+                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'right' } } }
+            });
+
+            // 5. Summary table
+            const tableRows = summary.map(r => {
+                const cost = calcServerCost(r.model_name, Number(r.total_prompt_tokens) || 0, Number(r.total_completion_tokens) || 0, Number(r.total_thoughts_tokens) || 0);
+                const rowStyle = r.is_backfill ? 'color: #f97316; font-style: italic;' : '';
+                const tag = r.is_backfill ? ' <span style="background:#f97316;color:#000;padding:1px 6px;border-radius:4px;font-size:10px;font-style:normal;">BACKFILL</span>' : '';
+                return `<tr style="${rowStyle}">
+                    <td>${(SERVER_SOURCE_LABELS[r.source] || r.source) + tag}</td>
+                    <td>${r.model_name}</td>
+                    <td>${fmt(Number(r.total_requests) || 0)}</td>
+                    <td>${fmt(Number(r.total_prompt_tokens) || 0)}</td>
+                    <td>${fmt(Number(r.total_completion_tokens) || 0)}</td>
+                    <td>${fmt(Number(r.total_thoughts_tokens) || 0)}</td>
+                    <td><strong>${fmt(Number(r.total_tokens) || 0)}</strong></td>
+                    <td>$${cost.toFixed(2)}</td>
+                </tr>`;
+            }).join('');
+            const grandTotal = summary.reduce((t, r) => ({
+                requests: t.requests + (Number(r.total_requests) || 0),
+                prompt: t.prompt + (Number(r.total_prompt_tokens) || 0),
+                completion: t.completion + (Number(r.total_completion_tokens) || 0),
+                thoughts: t.thoughts + (Number(r.total_thoughts_tokens) || 0),
+                total: t.total + (Number(r.total_tokens) || 0),
+                cost: t.cost + calcServerCost(r.model_name, Number(r.total_prompt_tokens) || 0, Number(r.total_completion_tokens) || 0, Number(r.total_thoughts_tokens) || 0),
+            }), { requests: 0, prompt: 0, completion: 0, thoughts: 0, total: 0, cost: 0 });
+            document.getElementById('serverTokenSummaryTable').innerHTML = `
+                <thead><tr>
+                    <th>Fonte</th><th>Modelo</th><th>Docs</th>
+                    <th>Prompt</th><th>Completion</th><th>Thinking</th><th>Total</th><th>Custo (USD)</th>
+                </tr></thead>
+                <tbody>
+                    ${tableRows}
+                    <tr style="font-weight:bold; border-top:2px solid var(--bd);">
+                        <td>Total</td><td></td>
+                        <td>${fmt(grandTotal.requests)}</td>
+                        <td>${fmt(grandTotal.prompt)}</td>
+                        <td>${fmt(grandTotal.completion)}</td>
+                        <td>${fmt(grandTotal.thoughts)}</td>
+                        <td>${fmt(grandTotal.total)}</td>
+                        <td>$${grandTotal.cost.toFixed(2)}</td>
+                    </tr>
+                </tbody>`;
         }
 
         // ===== RENDER ERROR METRICS SECTION (inside HTA tab) =====
