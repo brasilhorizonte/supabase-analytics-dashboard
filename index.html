@@ -4975,6 +4975,7 @@
             globalFilters.from = from;
             globalFilters.to = to;
             globalFilters.preset = days.toString();
+            console.log('applyPreset', days, 'from:', from, 'to:', to);
             reRenderTab(activeTab());
         }
 
@@ -4993,16 +4994,22 @@
                 }
 
                 currentAdmin = dashboardData.admin;
+                console.log('Dashboard data loaded:', Object.keys(dashboardData), 'bh keys:', Object.keys(dashboardData.bh || {}), 'hta keys:', Object.keys(dashboardData.hta || {}));
                 document.getElementById('adminBadge').textContent = currentAdmin;
                 document.getElementById('loginContainer').classList.add('hidden');
                 document.getElementById('dashboard').classList.add('show');
 
                 initDefaultFilters();
-                renderOverviewTab();
-                renderBhTab();
-                renderHtaTab();
-                renderIacoesTab();
-                renderGeoTab();
+                const renders = [
+                    ['overview', renderOverviewTab],
+                    ['bh', renderBhTab],
+                    ['hta', renderHtaTab],
+                    ['iacoes', renderIacoesTab],
+                    ['geo', renderGeoTab]
+                ];
+                renders.forEach(([name, fn]) => {
+                    try { fn(); } catch(e) { console.error(`Render error [${name}]:`, e); }
+                });
 
                 // Set up auto-refresh (every 5 minutes)
                 if (refreshInterval) clearInterval(refreshInterval);
@@ -5017,6 +5024,11 @@
             } catch (error) {
                 showLoading(false);
                 console.error('Dashboard Error:', error);
+                // Show error visibly in dashboard area if dashboard is showing
+                const dc = document.querySelector('.dashboard-content');
+                if (dc && document.getElementById('dashboard').classList.contains('show')) {
+                    dc.innerHTML = '<div style="padding:40px;text-align:center;color:#ef4444;font-size:16px;">Erro ao carregar: ' + (error.message || 'erro desconhecido') + '</div>' + dc.innerHTML;
+                }
                 showError('Erro ao carregar dashboard: ' + (error.message || 'erro desconhecido'));
             }
         }
