@@ -6,7 +6,7 @@ Dashboard de analytics em tempo real para os projetos **brasilhorizonte** e **Ho
 
 O projeto tem duas camadas separadas:
 
-1. **Frontend** (`index.html`): Single-page app com login, graficos Chart.js e 5 abas de metricas. Hospedado como arquivo estatico (GitHub Pages ou Supabase Storage). Nao usa framework — tudo inline (CSS + JS).
+1. **Frontend** (`index.html`): Single-page app com login, sidebar lateral dark, area de conteudo light, filtros globais e 5 abas de metricas. Hospedado como arquivo estatico (GitHub Pages ou Supabase Storage). Nao usa framework — tudo inline (CSS + JS).
 
 2. **API** (`supabase/functions/analytics-dashboard/index.ts`): Edge Function no Supabase que retorna JSON. Verifica JWT do usuario via Supabase Auth e checa role `admin` na tabela `user_roles`. Busca dados de ambos os projetos via RPC functions.
 
@@ -120,6 +120,7 @@ A Edge Function retorna:
 - `response_mode_summary` / `response_mode_daily`: uso de modos de resposta
 - `chat_depth_distribution`: profundidade das sessoes de chat (buckets)
 - `questions_daily`: perguntas diarias de user_daily_usage
+- `questions_by_user`: total de perguntas por usuario (email, total_questions) de user_daily_usage
 - `proxy_error_daily`: erros por dia/proxy/tipo (da tabela `proxy_error_log`)
 - `proxy_error_summary`: resumo de erros por proxy/tipo/status_code com first_seen e last_seen
 - `proxy_error_rate_daily`: taxa de erro diaria por proxy (erro / (requests + erros) * 100)
@@ -233,6 +234,33 @@ Secao "Erros de API" na aba HTA com:
 - Grafico de barras empilhadas: erros por dia por proxy
 - Grafico de linhas: taxa de erro (%) por dia por proxy
 - Tabela: erros por tipo com proxy, tipo, status code, contagem, first/last seen
+
+## Frontend Layout
+
+O dashboard usa layout com sidebar lateral + area de conteudo light (estilo Kondado).
+
+### Estrutura visual
+- **Login page**: tema dark standalone (variaveis CSS scopadas no `.login-container`)
+- **Sidebar** (220px, fixed): dark (#1a1d2e), com logo, 5 itens de navegacao (Sumario, brasilhorizonte, Horizon Terminal, iAcoes, Geografia)
+- **Top bar** (sticky): titulo da aba + filtros globais + admin info
+- **Area de conteudo**: fundo claro (#f5f7fa), cards brancos com sombra sutil
+
+### Filtros globais
+- **Presets**: 7d, 30d (default), 90d, Custom
+- **Date picker**: inputs de data (from/to) visiveis quando Custom selecionado
+- **Granularidade**: Diario, Semanal, Mensal
+- Estado mantido em `globalFilters = { gran, from, to, preset }`
+- Filtros locais: apenas `bhSubFilters = { plan, period }` para secao de assinantes BH
+
+### Responsivo (mobile)
+- Sidebar collapsa (translateX) com botao hamburger na top bar
+- Overlay escuro ao abrir sidebar
+- Top bar reorganiza filtros em nova linha
+
+### Chart.js defaults
+- Barras arredondadas (`borderRadius: 6`), linhas suaves (`tension: 0.4`)
+- Grid sutil (`#f1f5f9`), texto (`#64748b`)
+- Cores: `['#6366f1','#3ecf8e','#f59e0b','#3b82f6','#ec4899','#22c55e',...]`
 
 ## Stack
 
