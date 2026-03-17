@@ -1226,35 +1226,21 @@
                         <canvas id="htaSessionsDailyChart"></canvas>
                     </div>
                     <div class="chart-container">
-                        <div class="chart-title">Tasks IA Diárias</div>
-                        <canvas id="htaTasksDailyChart"></canvas>
+                        <div class="chart-title">Tasks IA + Chat Msgs (diário)</div>
+                        <canvas id="htaTasksChatComboChart"></canvas>
                     </div>
                 </div>
                 <div class="charts-grid">
                     <div class="chart-container">
-                        <div class="chart-title">Chat Msgs Diárias</div>
-                        <canvas id="htaChatMsgsDailyChart"></canvas>
+                        <div class="chart-title">Chat: Mensagens + Usuários (diário)</div>
+                        <canvas id="chatComboChart"></canvas>
                     </div>
                     <div class="chart-container">
-                        <div class="chart-title">Mensagens Chat (diário)</div>
-                        <canvas id="chatMessagesDailyChart"></canvas>
+                        <div class="chart-title">Logins + Usuários Únicos (diário)</div>
+                        <canvas id="loginComboChart"></canvas>
                     </div>
                 </div>
                 <div class="charts-grid">
-                    <div class="chart-container">
-                        <div class="chart-title">Usuários Únicos Chat (diário)</div>
-                        <canvas id="chatUsersDailyChart"></canvas>
-                    </div>
-                    <div class="chart-container">
-                        <div class="chart-title">Logins Diários</div>
-                        <canvas id="loginsDailyChart"></canvas>
-                    </div>
-                </div>
-                <div class="charts-grid">
-                    <div class="chart-container">
-                        <div class="chart-title">Usuários Únicos Login (diário)</div>
-                        <canvas id="loginUsersDailyChart"></canvas>
-                    </div>
                     <div class="chart-container">
                         <div class="chart-title">Tickers Mais Buscados no Terminal</div>
                         <canvas id="htaTickersSearchedChart"></canvas>
@@ -3303,135 +3289,119 @@
                 }
             });
 
-            // 2. Tasks IA Diárias (bar roxo)
-            destroyChart('htaTasksDailyChart');
-            charts.htaTasksDailyChart = new Chart(document.getElementById('htaTasksDailyChart'), {
+            // 2. Tasks IA (bar) + Chat Msgs (line) - combo
+            destroyChart('htaTasksChatComboChart');
+            charts.htaTasksChatComboChart = new Chart(document.getElementById('htaTasksChatComboChart'), {
                 type: 'bar',
                 data: {
                     labels: termPrep.labels,
-                    datasets: [{
-                        label: 'Tasks IA',
-                        data: termPrep.data.map(d => d.tasks || 0),
-                        backgroundColor: '#6366f1'
-                    }]
+                    datasets: [
+                        {
+                            label: 'Tasks IA',
+                            data: termPrep.data.map(d => d.tasks || 0),
+                            backgroundColor: 'rgba(99, 102, 241, 0.8)',
+                            order: 2
+                        },
+                        {
+                            label: 'Chat Msgs',
+                            type: 'line',
+                            data: termPrep.data.map(d => d.chat_msgs || 0),
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            pointBackgroundColor: '#f59e0b',
+                            pointRadius: 3,
+                            order: 1
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
-                    plugins: { legend: { display: false } },
+                    plugins: { legend: { display: true, labels: { boxWidth: 12 } } },
                     scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
-            // 3. Chat Msgs Diárias (bar amber)
-            destroyChart('htaChatMsgsDailyChart');
-            charts.htaChatMsgsDailyChart = new Chart(document.getElementById('htaChatMsgsDailyChart'), {
+            // 3. Chat: Mensagens (bar) + Usuários (line) - combo
+            destroyChart('chatComboChart');
+            charts.chatComboChart = new Chart(document.getElementById('chatComboChart'), {
                 type: 'bar',
                 data: {
-                    labels: termPrep.labels,
-                    datasets: [{
-                        label: 'Chat Msgs',
-                        data: termPrep.data.map(d => d.chat_msgs || 0),
-                        backgroundColor: '#f59e0b'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
-                }
-            });
-
-            // 4. Mensagens Chat (line verde)
-            destroyChart('chatMessagesDailyChart');
-            charts.chatMessagesDailyChart = new Chart(document.getElementById('chatMessagesDailyChart'), {
-                type: 'line',
-                data: {
                     labels: chatPrep.labels,
-                    datasets: [{
-                        label: 'Mensagens',
-                        data: chatPrep.data.map(d => d.messages || 0),
-                        borderColor: '#3ecf8e',
-                        backgroundColor: 'rgba(62, 207, 142, 0.1)',
-                        tension: 0.4,
-                        fill: true,
-                        pointBackgroundColor: '#3ecf8e'
-                    }]
+                    datasets: [
+                        {
+                            label: 'Mensagens',
+                            data: chatPrep.data.map(d => d.messages || 0),
+                            backgroundColor: 'rgba(62, 207, 142, 0.8)',
+                            order: 2
+                        },
+                        {
+                            label: 'Usuários Únicos',
+                            type: 'line',
+                            data: chatPrep.data.map(d => d.unique_users || 0),
+                            borderColor: '#6366f1',
+                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            pointBackgroundColor: '#6366f1',
+                            pointRadius: 3,
+                            yAxisID: 'y1',
+                            order: 1
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
+                    plugins: { legend: { display: true, labels: { boxWidth: 12 } } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' }, title: { display: true, text: 'Mensagens', color: '#64748b' } },
+                        y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Usuários', color: '#64748b' } }
+                    }
                 }
             });
 
-            // 5. Usuários Únicos Chat (line roxo)
-            destroyChart('chatUsersDailyChart');
-            charts.chatUsersDailyChart = new Chart(document.getElementById('chatUsersDailyChart'), {
-                type: 'line',
-                data: {
-                    labels: chatPrep.labels,
-                    datasets: [{
-                        label: 'Usuários Únicos',
-                        data: chatPrep.data.map(d => d.unique_users || 0),
-                        borderColor: '#6366f1',
-                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                        tension: 0.4,
-                        fill: true,
-                        pointBackgroundColor: '#6366f1'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
-                }
-            });
-
-            // 6. Logins Diários (bar verde)
-            destroyChart('loginsDailyChart');
-            charts.loginsDailyChart = new Chart(document.getElementById('loginsDailyChart'), {
+            // 4. Logins (bar) + Usuários Únicos (line) - combo
+            destroyChart('loginComboChart');
+            charts.loginComboChart = new Chart(document.getElementById('loginComboChart'), {
                 type: 'bar',
                 data: {
                     labels: loginPrep.labels,
-                    datasets: [{
-                        label: 'Logins',
-                        data: loginPrep.data.map(d => d.logins || 0),
-                        backgroundColor: '#3ecf8e'
-                    }]
+                    datasets: [
+                        {
+                            label: 'Logins',
+                            data: loginPrep.data.map(d => d.logins || 0),
+                            backgroundColor: 'rgba(62, 207, 142, 0.8)',
+                            order: 2
+                        },
+                        {
+                            label: 'Usuários Únicos',
+                            type: 'line',
+                            data: loginPrep.data.map(d => d.unique_users || 0),
+                            borderColor: '#6366f1',
+                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            pointBackgroundColor: '#6366f1',
+                            pointRadius: 3,
+                            yAxisID: 'y1',
+                            order: 1
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
+                    plugins: { legend: { display: true, labels: { boxWidth: 12 } } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' }, title: { display: true, text: 'Logins', color: '#64748b' } },
+                        y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Usuários', color: '#64748b' } }
+                    }
                 }
             });
-
-            // 7. Usuários Únicos Login (bar roxo)
-            destroyChart('loginUsersDailyChart');
-            charts.loginUsersDailyChart = new Chart(document.getElementById('loginUsersDailyChart'), {
-                type: 'bar',
-                data: {
-                    labels: loginPrep.labels,
-                    datasets: [{
-                        label: 'Usuários Únicos',
-                        data: loginPrep.data.map(d => d.unique_users || 0),
-                        backgroundColor: '#6366f1'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
-                }
-            });
-
-            // 8. Tickers Mais Buscados no Terminal
+            // 5. Tickers Mais Buscados no Terminal
             destroyChart('htaTickersSearchedChart');
             const tickersSearched = (hta.top_tickers_searched || []).slice(0, 15);
             charts.htaTickersSearchedChart = new Chart(document.getElementById('htaTickersSearchedChart'), {
