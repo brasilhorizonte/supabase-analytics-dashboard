@@ -13,11 +13,14 @@
         }
 
         :root {
-            --bg: #0f1117;
-            --c: #1a1d2e;
-            --bd: #2a2d3e;
-            --t: #e2e8f0;
-            --m: #94a3b8;
+            --bg: #f5f7fa;
+            --c: #ffffff;
+            --bd: #e2e8f0;
+            --t: #1e293b;
+            --m: #64748b;
+            --sidebar: #1a1d2e;
+            --sidebar-hover: #242738;
+            --sidebar-active: #2a2d3e;
             --g: #3ecf8e;
             --p: #6366f1;
             --a: #f59e0b;
@@ -31,13 +34,18 @@
             overflow-x: hidden;
         }
 
-        /* ===== LOGIN PAGE ===== */
+        /* ===== LOGIN PAGE (dark themed) ===== */
         .login-container {
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
             background: linear-gradient(135deg, #0f1117 0%, #1a1d2e 100%);
+            --bg: #0f1117;
+            --c: #1a1d2e;
+            --bd: #2a2d3e;
+            --t: #e2e8f0;
+            --m: #94a3b8;
         }
 
         .login-card {
@@ -166,38 +174,41 @@
 
         .dashboard.show {
             display: flex;
+            flex-direction: row;
+        }
+
+        /* ===== SIDEBAR ===== */
+        .sidebar {
+            width: 220px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            background: var(--sidebar);
+            display: flex;
             flex-direction: column;
+            z-index: 100;
+            overflow-y: auto;
         }
 
-        .dashboard-header {
-            background: linear-gradient(90deg, var(--c) 0%, #1f2937 100%);
-            border-bottom: 1px solid var(--bd);
-            padding: 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 16px;
-        }
-
-        .header-title {
-            font-size: 24px;
+        .sidebar-logo {
+            padding: 24px 20px 20px;
+            font-size: 16px;
             font-weight: 700;
-            background: linear-gradient(90deg, var(--g), var(--p));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: #fff;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
         }
 
-        .live-dot {
-            width: 12px;
-            height: 12px;
+        .sidebar-logo .live-dot {
+            width: 10px;
+            height: 10px;
             background: var(--g);
             border-radius: 50%;
             animation: pulse 2s infinite;
+            flex-shrink: 0;
         }
 
         @keyframes pulse {
@@ -205,11 +216,150 @@
             50% { opacity: 0.5; }
         }
 
-        .header-info {
+        .sidebar-nav {
+            flex: 1;
+            padding: 12px 0;
+        }
+
+        .sidebar-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 20px;
+            color: #94a3b8;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .sidebar-item:hover {
+            color: #e2e8f0;
+            background: var(--sidebar-hover);
+        }
+
+        .sidebar-item.active {
+            color: #fff;
+            background: var(--sidebar-active);
+            border-left-color: var(--g);
+        }
+
+        .sidebar-icon {
+            font-size: 18px;
+            width: 24px;
+            text-align: center;
+        }
+
+        .hamburger {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            background: none;
+            border: 1px solid var(--bd);
+            border-radius: 6px;
+            color: var(--t);
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        /* ===== TOP BAR ===== */
+        .top-bar {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: var(--c);
+            border-bottom: 1px solid var(--bd);
+            padding: 12px 24px;
             display: flex;
             align-items: center;
             gap: 16px;
             flex-wrap: wrap;
+        }
+
+        .top-bar-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .top-bar-left h2 {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--t);
+            margin: 0;
+        }
+
+        .top-bar-center {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .date-presets {
+            display: flex;
+            gap: 4px;
+        }
+
+        .preset-btn {
+            padding: 6px 14px;
+            background: var(--bg);
+            border: 1px solid var(--bd);
+            color: var(--m);
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .preset-btn:hover {
+            border-color: var(--p);
+            color: var(--t);
+        }
+
+        .preset-btn.active {
+            background: var(--p);
+            color: white;
+            border-color: var(--p);
+        }
+
+        .date-range {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .date-range input[type="date"] {
+            background: var(--bg);
+            border: 1px solid var(--bd);
+            color: var(--t);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        .date-range input[type="date"]:focus {
+            outline: none;
+            border-color: var(--g);
+        }
+
+        .date-range span {
+            color: var(--m);
+            font-size: 13px;
+        }
+
+        .top-bar-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
 
         .timestamp {
@@ -221,57 +371,36 @@
         .admin-badge {
             background: var(--p);
             color: white;
-            padding: 6px 12px;
+            padding: 5px 12px;
             border-radius: 20px;
             font-size: 12px;
             font-weight: 500;
         }
 
         .logout-btn {
-            padding: 8px 16px;
-            background: var(--r);
-            color: white;
-            border: none;
+            padding: 6px 14px;
+            background: transparent;
+            color: var(--r);
+            border: 1px solid var(--r);
             border-radius: 6px;
             font-size: 13px;
             font-weight: 600;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: all 0.2s;
         }
 
         .logout-btn:hover {
-            background: #dc2626;
+            background: var(--r);
+            color: white;
         }
 
-        .tabs {
-            background: var(--c);
-            border-bottom: 1px solid var(--bd);
+        /* ===== MAIN CONTENT ===== */
+        .main-content {
+            margin-left: 220px;
+            flex: 1;
             display: flex;
-            padding: 0 24px;
-            gap: 8px;
-            overflow-x: auto;
-        }
-
-        .tab-btn {
-            padding: 16px 20px;
-            background: none;
-            border: none;
-            color: var(--m);
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            transition: all 0.3s;
-            white-space: nowrap;
-        }
-
-        .tab-btn:hover {
-            color: var(--t);
-        }
-
-        .tab-btn.active {
-            color: var(--g);
-            border-bottom-color: var(--g);
+            flex-direction: column;
+            min-height: 100vh;
         }
 
         .dashboard-content {
@@ -294,12 +423,13 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(255, 255, 255, 0.8);
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 1000;
             display: none;
+            backdrop-filter: blur(4px);
         }
 
         .loading-overlay.show {
@@ -309,8 +439,8 @@
         .loading-spinner {
             width: 40px;
             height: 40px;
-            border: 4px solid rgba(255, 255, 255, 0.3);
-            border-top-color: var(--g);
+            border: 4px solid var(--bd);
+            border-top-color: var(--p);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -326,14 +456,15 @@
         .kpi-card {
             background: var(--c);
             border: 1px solid var(--bd);
-            border-radius: 8px;
+            border-radius: 12px;
             padding: 20px;
             transition: all 0.3s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         }
 
         .kpi-card:hover {
-            border-color: var(--g);
-            box-shadow: 0 4px 12px rgba(62, 207, 142, 0.15);
+            border-color: var(--p);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.12);
         }
 
         .kpi-label {
@@ -346,11 +477,10 @@
         }
 
         .kpi-value {
-            font-size: 28px;
+            font-size: 26px;
             font-weight: 700;
             color: var(--t);
             margin-bottom: 8px;
-            font-family: 'Courier New', monospace;
         }
 
         .kpi-change {
@@ -377,10 +507,11 @@
         .chart-container {
             background: var(--c);
             border: 1px solid var(--bd);
-            border-radius: 8px;
+            border-radius: 12px;
             padding: 20px;
             position: relative;
             min-height: 400px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         }
 
         .chart-title {
@@ -398,9 +529,10 @@
         .table-container {
             background: var(--c);
             border: 1px solid var(--bd);
-            border-radius: 8px;
+            border-radius: 12px;
             overflow: hidden;
             margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         }
 
         .table-title {
@@ -435,7 +567,7 @@
         }
 
         tr:hover {
-            background: rgba(62, 207, 142, 0.05);
+            background: #f8fafc;
         }
 
         .status-badge {
@@ -448,12 +580,12 @@
         }
 
         .status-active {
-            background: rgba(62, 207, 142, 0.2);
-            color: var(--g);
+            background: #dcfce7;
+            color: #16a34a;
         }
 
         .status-inactive {
-            background: rgba(148, 163, 184, 0.2);
+            background: #f1f5f9;
             color: var(--m);
         }
 
@@ -468,8 +600,9 @@
         .panel {
             background: var(--c);
             border: 1px solid var(--bd);
-            border-radius: 8px;
+            border-radius: 12px;
             padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         }
 
         .panel-title {
@@ -535,14 +668,42 @@
                 margin: 20px;
             }
 
-            .dashboard-header {
-                flex-direction: column;
-                align-items: flex-start;
+            .sidebar {
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
             }
 
-            .header-info {
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            .sidebar-overlay {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
                 width: 100%;
-                flex-direction: column;
+                height: 100%;
+                background: rgba(0,0,0,0.5);
+                z-index: 99;
+            }
+
+            .sidebar-overlay.show {
+                display: block;
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .hamburger {
+                display: flex;
+            }
+
+            .top-bar-center {
+                order: 3;
+                flex-basis: 100%;
+                justify-content: flex-start;
             }
 
             .charts-grid {
@@ -569,18 +730,19 @@
                 padding: 16px;
             }
 
-            .filter-bar {
-                gap: 12px;
-            }
-
             .gran-btn {
                 padding: 5px 10px;
                 font-size: 12px;
             }
 
-            .date-filters input[type="date"] {
-                padding: 5px 8px;
+            .preset-btn {
+                padding: 5px 10px;
                 font-size: 12px;
+            }
+
+            .top-bar-right .timestamp,
+            .top-bar-right .admin-badge {
+                display: none;
             }
         }
 
@@ -589,7 +751,7 @@
             display: none !important;
         }
 
-        /* ===== FILTER BAR ===== */
+        /* ===== FILTER BAR (local, e.g. BH subscribers) ===== */
         .filter-bar {
             display: flex;
             gap: 16px;
@@ -626,27 +788,6 @@
             border-color: var(--g);
         }
 
-        .date-filters {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-
-        .date-filters input[type="date"] {
-            background: var(--bg);
-            border: 1px solid var(--bd);
-            color: var(--t);
-            padding: 6px 10px;
-            border-radius: 6px;
-            font-size: 13px;
-            font-family: inherit;
-        }
-
-        .date-filters input[type="date"]:focus {
-            outline: none;
-            border-color: var(--g);
-        }
-
         .text-center {
             text-align: center;
         }
@@ -661,7 +802,7 @@
 
         /* ===== SECTION TITLE ===== */
         .section-title {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 700;
             color: var(--t);
             margin: 32px 0 16px;
@@ -711,16 +852,16 @@
         }
 
         ::-webkit-scrollbar-track {
-            background: var(--bg);
+            background: #f1f5f9;
         }
 
         ::-webkit-scrollbar-thumb {
-            background: var(--bd);
+            background: #cbd5e1;
             border-radius: 4px;
         }
 
         ::-webkit-scrollbar-thumb:hover {
-            background: var(--m);
+            background: #94a3b8;
         }
     </style>
 </head>
@@ -750,27 +891,63 @@
 
     <!-- DASHBOARD PAGE -->
     <div class="dashboard" id="dashboard">
-        <div class="dashboard-header">
-            <h1 class="header-title">
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-logo">
                 <span class="live-dot"></span>
-                Supabase Analytics — Live Dashboard
-            </h1>
-            <div class="header-info">
-                <div class="timestamp" id="timestamp">--:--:--</div>
-                <div class="admin-badge" id="adminBadge">admin@example.com</div>
-                <button class="logout-btn" id="logoutBtn">Sair</button>
+                Brasil Horizonte
             </div>
-        </div>
+            <div class="sidebar-nav">
+                <a class="sidebar-item active" data-tab="overview">
+                    <span class="sidebar-icon">&#x1f4ca;</span> Sumario
+                </a>
+                <a class="sidebar-item" data-tab="bh">
+                    <span class="sidebar-icon">&#x1f3e2;</span> brasilhorizonte
+                </a>
+                <a class="sidebar-item" data-tab="hta">
+                    <span class="sidebar-icon">&#x1f4bb;</span> Horizon Terminal
+                </a>
+                <a class="sidebar-item" data-tab="iacoes">
+                    <span class="sidebar-icon">&#x1f4c8;</span> iAcoes
+                </a>
+                <a class="sidebar-item" data-tab="geo">
+                    <span class="sidebar-icon">&#x1f30e;</span> Geografia
+                </a>
+            </div>
+        </nav>
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
-        <div class="tabs">
-            <button class="tab-btn active" data-tab="overview">Visão Geral</button>
-            <button class="tab-btn" data-tab="bh">brasilhorizonte</button>
-            <button class="tab-btn" data-tab="hta">Horizon Terminal</button>
-            <button class="tab-btn" data-tab="iacoes">iAcoes</button>
-            <button class="tab-btn" data-tab="geo">Geografia</button>
-        </div>
+        <div class="main-content">
+            <div class="top-bar">
+                <div class="top-bar-left">
+                    <button class="hamburger" id="hamburgerBtn">&#9776;</button>
+                    <h2 id="currentTabTitle">Sumario</h2>
+                </div>
+                <div class="top-bar-center">
+                    <div class="date-presets">
+                        <button class="preset-btn" data-days="7">7d</button>
+                        <button class="preset-btn active" data-days="30">30d</button>
+                        <button class="preset-btn" data-days="90">90d</button>
+                        <button class="preset-btn" data-days="custom">Custom</button>
+                    </div>
+                    <div class="date-range" id="dateRangeInputs" style="display:none">
+                        <input type="date" id="globalFrom" />
+                        <span>ate</span>
+                        <input type="date" id="globalTo" />
+                    </div>
+                    <div class="gran-toggle">
+                        <button class="gran-btn active" data-gran="daily">Diario</button>
+                        <button class="gran-btn" data-gran="weekly">Semanal</button>
+                        <button class="gran-btn" data-gran="monthly">Mensal</button>
+                    </div>
+                </div>
+                <div class="top-bar-right">
+                    <span class="timestamp" id="timestamp">--:--:--</span>
+                    <span class="admin-badge" id="adminBadge">admin@example.com</span>
+                    <button class="logout-btn" id="logoutBtn">Sair</button>
+                </div>
+            </div>
 
-        <div class="dashboard-content">
+            <div class="dashboard-content">
             <!-- OVERVIEW TAB -->
             <div class="tab-content show" id="overview">
                 <h3 class="section-title" style="margin-top:0;border-top:none;padding-top:0">Hoje (BRT)</h3>
@@ -786,18 +963,6 @@
                 </div>
                 <h3 class="section-title">Visão Geral</h3>
                 <div class="kpi-grid" id="overviewKpis"></div>
-                <div class="filter-bar" data-tab="overview">
-                    <div class="gran-toggle">
-                        <button class="gran-btn active" data-gran="daily">Diário</button>
-                        <button class="gran-btn" data-gran="weekly">Semanal</button>
-                        <button class="gran-btn" data-gran="monthly">Mensal</button>
-                    </div>
-                    <div class="date-filters">
-                        <input type="date" class="filter-from" />
-                        <span style="color:var(--m)">até</span>
-                        <input type="date" class="filter-to" />
-                    </div>
-                </div>
                 <div class="charts-grid">
                     <div class="chart-container">
                         <div class="chart-title">Eventos BH (diário)</div>
@@ -839,18 +1004,6 @@
             <!-- BH TAB -->
             <div class="tab-content" id="bh">
                 <div class="kpi-grid" id="bhKpis"></div>
-                <div class="filter-bar" data-tab="bh">
-                    <div class="gran-toggle">
-                        <button class="gran-btn active" data-gran="daily">Diário</button>
-                        <button class="gran-btn" data-gran="weekly">Semanal</button>
-                        <button class="gran-btn" data-gran="monthly">Mensal</button>
-                    </div>
-                    <div class="date-filters">
-                        <input type="date" class="filter-from" />
-                        <span style="color:var(--m)">até</span>
-                        <input type="date" class="filter-to" />
-                    </div>
-                </div>
                 <div class="charts-grid">
                     <div class="chart-container">
                         <div class="chart-title">Eventos (diário)</div>
@@ -1067,18 +1220,6 @@
             <!-- HTA TAB -->
             <div class="tab-content" id="hta">
                 <div class="kpi-grid" id="htaKpis"></div>
-                <div class="filter-bar" data-tab="hta">
-                    <div class="gran-toggle">
-                        <button class="gran-btn active" data-gran="daily">Diário</button>
-                        <button class="gran-btn" data-gran="weekly">Semanal</button>
-                        <button class="gran-btn" data-gran="monthly">Mensal</button>
-                    </div>
-                    <div class="date-filters">
-                        <input type="date" class="filter-from" />
-                        <span style="color:var(--m)">até</span>
-                        <input type="date" class="filter-to" />
-                    </div>
-                </div>
                 <div class="charts-grid">
                     <div class="chart-container">
                         <div class="chart-title">Sessões Diárias</div>
@@ -1285,18 +1426,6 @@
             <div class="tab-content" id="iacoes">
                 <!-- CONVERSÃO iAcoes → BH (principal) -->
                 <div class="kpi-grid" id="iacoesConvKpis"></div>
-                <div class="filter-bar" data-tab="iacoes">
-                    <div class="gran-toggle">
-                        <button class="gran-btn active" data-gran="daily">Diário</button>
-                        <button class="gran-btn" data-gran="weekly">Semanal</button>
-                        <button class="gran-btn" data-gran="monthly">Mensal</button>
-                    </div>
-                    <div class="date-filters">
-                        <input type="date" class="filter-from" />
-                        <span style="color:var(--m)">até</span>
-                        <input type="date" class="filter-to" />
-                    </div>
-                </div>
                 <div class="chart-container mb-2">
                     <div class="chart-title">Funil de Conversão</div>
                     <div class="funnel" id="iacoesConvFunnel"></div>
@@ -1387,6 +1516,7 @@
                 </div>
             </div>
 
+            </div>
         </div>
     </div>
 
@@ -1407,19 +1537,27 @@
         let dashboardData = null;
         let charts = {};
         let refreshInterval = null;
-        const tabFilters = {
-            overview: { gran: 'daily', from: '', to: '' },
-            bh:       { gran: 'daily', from: '', to: '', plan: '', period: '' },
-            hta:      { gran: 'daily', from: '', to: '' },
-            iacoes:   { gran: 'daily', from: '', to: '' },
-            geo:      {}
-        };
+        const globalFilters = { gran: 'daily', from: '', to: '', preset: '30' };
+        let bhSubFilters = { plan: '', period: '' };
 
         // ===== CHART SETUP =====
-        Chart.defaults.color = '#94a3b8';
-        Chart.defaults.borderColor = '#2a2d3e';
+        Chart.defaults.color = '#64748b';
+        Chart.defaults.borderColor = '#e2e8f0';
+        Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, sans-serif';
+        Chart.defaults.elements.bar.borderRadius = 6;
+        Chart.defaults.elements.bar.borderSkipped = false;
+        Chart.defaults.elements.line.tension = 0.4;
+        Chart.defaults.elements.point.radius = 3;
 
-        const COLORS = ['#3ecf8e', '#6366f1', '#f59e0b', '#3b82f6', '#ec4899', '#22c55e', '#818cf8', '#fbbf24', '#a78bfa', '#fb923c', '#ef4444', '#94a3b8'];
+        const COLORS = ['#6366f1','#3ecf8e','#f59e0b','#3b82f6','#ec4899','#22c55e','#818cf8','#fbbf24','#a78bfa','#fb923c','#ef4444','#94a3b8'];
+
+        const TAB_TITLES = {
+            overview: 'Sumario',
+            bh: 'brasilhorizonte',
+            hta: 'Horizon Terminal',
+            iacoes: 'iAcoes',
+            geo: 'Geografia'
+        };
 
         // ===== HELPER FUNCTIONS =====
         function fmt(n) {
@@ -1713,7 +1851,7 @@
 
             const bhDaily = bh.daily_activity || [];
             const htaDaily = hta.terminal_daily || [];
-            const ovF = tabFilters.overview;
+            const ovF = globalFilters;
             const bhPrep = prepareTimeSeries(bhDaily, ovF, ['events', 'dau']);
             const htaPrep = prepareTimeSeries(htaDaily, ovF, ['sessions', 'tasks', 'chat_msgs']);
 
@@ -1737,7 +1875,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -1761,7 +1899,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -1781,7 +1919,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -1801,7 +1939,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -1821,7 +1959,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -1843,7 +1981,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -1897,7 +2035,7 @@
 
             // Apply filters
             const bhDaily = bh.daily_activity || [];
-            const bhF = tabFilters.bh;
+            const bhF = globalFilters;
             const bhPrep = prepareTimeSeries(bhDaily, bhF, ['events', 'dau']);
 
             destroyChart('bhEventsDailyChart');
@@ -1919,7 +2057,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -1943,7 +2081,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -1978,7 +2116,7 @@
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
                     scales: {
-                        x: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                        x: { beginAtZero: true, grid: { color: '#f1f5f9' } }
                     }
                 }
             });
@@ -2021,7 +2159,7 @@
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
                     scales: {
-                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' } }
                     }
                 }
             });
@@ -2059,7 +2197,7 @@
                         }
                     },
                     scales: {
-                        x: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                        x: { beginAtZero: true, grid: { color: '#f1f5f9' } }
                     }
                 }
             });
@@ -2083,7 +2221,7 @@
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
                     scales: {
-                        x: { beginAtZero: true, grid: { color: '#2a2d3e' } }
+                        x: { beginAtZero: true, grid: { color: '#f1f5f9' } }
                     }
                 }
             });
@@ -2118,7 +2256,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -2144,14 +2282,13 @@
         // ===== RENDER SUBSCRIBERS SECTION (inside BH tab) =====
         function renderSubscribersSection() {
             const bh = dashboardData.bh;
-            const bhF = tabFilters.bh;
             const subsOv = bh.subscribers_overview || {};
             const subsByPlan = bh.subscribers_by_plan || [];
 
             // Filter subscribers_by_plan by plan/period filters
             let filteredSubs = subsByPlan;
-            if (bhF.plan) filteredSubs = filteredSubs.filter(s => s.plan === bhF.plan);
-            if (bhF.period) filteredSubs = filteredSubs.filter(s => s.billing_period === bhF.period);
+            if (bhSubFilters.plan) filteredSubs = filteredSubs.filter(s => s.plan === bhSubFilters.plan);
+            if (bhSubFilters.period) filteredSubs = filteredSubs.filter(s => s.billing_period === bhSubFilters.period);
 
             // Compute filtered KPIs
             const filteredTotal = filteredSubs.reduce((s, r) => s + (r.cnt || 0), 0);
@@ -2164,9 +2301,9 @@
 
             // KPIs
             document.getElementById('subsKpis').innerHTML = `
-                ${createKpiCard('Total Cadastros', fmt(bhF.plan || bhF.period ? filteredTotal : (subsOv.total_profiles || 0)))}
-                ${createKpiCard('Assinantes Ativos', fmt(bhF.plan || bhF.period ? filteredActive : (subsOv.active || 0)))}
-                ${createKpiCard('Inativos', fmt(bhF.plan || bhF.period ? filteredInactive : (subsOv.inactive || 0)))}
+                ${createKpiCard('Total Cadastros', fmt(bhSubFilters.plan || bhSubFilters.period ? filteredTotal : (subsOv.total_profiles || 0)))}
+                ${createKpiCard('Assinantes Ativos', fmt(bhSubFilters.plan || bhSubFilters.period ? filteredActive : (subsOv.active || 0)))}
+                ${createKpiCard('Inativos', fmt(bhSubFilters.plan || bhSubFilters.period ? filteredInactive : (subsOv.inactive || 0)))}
                 ${createKpiCard('Churn Rate', churnRate + '%')}
                 ${createKpiCard('Clientes Especiais', fmt(specialClients))}
             `;
@@ -2198,7 +2335,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { x: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -2226,7 +2363,7 @@
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
                     scales: {
                         x: { stacked: true },
-                        y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                        y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } }
                     }
                 }
             });
@@ -2249,7 +2386,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -2273,7 +2410,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -2340,7 +2477,7 @@
                     maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
                     scales: {
-                        y: { beginAtZero: true, max: 100, grid: { color: '#2a2d3e' }, ticks: { callback: v => v + '%' } }
+                        y: { beginAtZero: true, max: 100, grid: { color: '#f1f5f9' }, ticks: { callback: v => v + '%' } }
                     }
                 }
             });
@@ -2366,7 +2503,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -2432,7 +2569,7 @@
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
                     scales: {
                         x: { stacked: true },
-                        y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                        y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } }
                     }
                 }
             });
@@ -2475,11 +2612,11 @@
                     maintainAspectRatio: true,
                     interaction: { mode: 'index', intersect: false },
                     scales: {
-                        x: { grid: { color: '#2a2d3e' }, ticks: { color: '#94a3b8', maxRotation: 45 } },
-                        y: { stacked, grid: { color: '#2a2d3e' }, ticks: { color: '#94a3b8' }, beginAtZero: true }
+                        x: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', maxRotation: 45 } },
+                        y: { stacked, grid: { color: '#f1f5f9' }, ticks: { color: '#64748b' }, beginAtZero: true }
                     },
                     plugins: {
-                        legend: { position: 'top', labels: { color: '#e2e8f0', boxWidth: 12 } },
+                        legend: { position: 'top', labels: { color: '#1e293b', boxWidth: 12 } },
                         tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} visitas` } }
                     }
                 }
@@ -2512,7 +2649,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { x: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -2534,7 +2671,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { x: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -2605,19 +2742,19 @@
             if (detailEl && refDetail.length > 0) {
                 detailEl.innerHTML = `
                     <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
-                        <thead><tr style="border-bottom:1px solid #2a2d3e;">
-                            <th style="text-align:left;padding:6px;color:#94a3b8;">URL</th>
-                            <th style="text-align:right;padding:6px;color:#94a3b8;">Visitas</th>
-                            <th style="text-align:right;padding:6px;color:#94a3b8;">Usuários</th>
+                        <thead><tr style="border-bottom:1px solid #e2e8f0;">
+                            <th style="text-align:left;padding:6px;color:#64748b;">URL</th>
+                            <th style="text-align:right;padding:6px;color:#64748b;">Visitas</th>
+                            <th style="text-align:right;padding:6px;color:#64748b;">Usuários</th>
                         </tr></thead>
-                        <tbody>${refDetail.map(r => `<tr style="border-bottom:1px solid #1e2030;">
-                            <td style="padding:6px;color:#e2e8f0;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.referrer_clean}">${r.referrer_clean}</td>
-                            <td style="text-align:right;padding:6px;color:#e2e8f0;">${(r.visits || 0).toLocaleString()}</td>
-                            <td style="text-align:right;padding:6px;color:#e2e8f0;">${r.unique_users || 0}</td>
+                        <tbody>${refDetail.map(r => `<tr style="border-bottom:1px solid #e2e8f0;">
+                            <td style="padding:6px;color:#1e293b;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.referrer_clean}">${r.referrer_clean}</td>
+                            <td style="text-align:right;padding:6px;color:#1e293b;">${(r.visits || 0).toLocaleString()}</td>
+                            <td style="text-align:right;padding:6px;color:#1e293b;">${r.unique_users || 0}</td>
                         </tr>`).join('')}</tbody>
                     </table>`;
             } else if (detailEl) {
-                detailEl.innerHTML = '<p style="color:#94a3b8;font-size:0.85rem;">Sem dados de referrer detail</p>';
+                detailEl.innerHTML = '<p style="color:#64748b;font-size:0.85rem;">Sem dados de referrer detail</p>';
             }
         }
 
@@ -2645,7 +2782,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -2680,7 +2817,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -2718,7 +2855,7 @@
                     maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
                     scales: {
-                        y: { beginAtZero: true, max: 100, grid: { color: '#2a2d3e' }, ticks: { callback: v => v + '%' } }
+                        y: { beginAtZero: true, max: 100, grid: { color: '#f1f5f9' }, ticks: { callback: v => v + '%' } }
                     }
                 }
             });
@@ -2742,7 +2879,7 @@
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
                     scales: {
                         x: { stacked: true },
-                        y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                        y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } }
                     }
                 }
             });
@@ -2808,7 +2945,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
         }
@@ -2834,7 +2971,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { x: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -2857,7 +2994,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { x: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
         }
@@ -2896,7 +3033,7 @@
                     maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
                     scales: {
-                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } },
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
                         y1: { position: 'right', beginAtZero: true, max: 100, grid: { display: false }, ticks: { callback: v => v + '%' } }
                     }
                 }
@@ -2920,7 +3057,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -2972,7 +3109,7 @@
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
                     scales: {
                         x: { stacked: true },
-                        y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                        y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } }
                     }
                 }
             });
@@ -2995,7 +3132,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -3029,7 +3166,7 @@
                     maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
                     scales: {
-                        y: { beginAtZero: true, grid: { color: '#2a2d3e' } },
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
                         y1: { position: 'right', beginAtZero: true, grid: { display: false } }
                     }
                 }
@@ -3068,7 +3205,7 @@
                 options: {
                     responsive: true, maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
-                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -3141,7 +3278,7 @@
 
             const chatDaily = hta.chat_daily || [];
             const loginDaily = hta.login_daily || [];
-            const htaF = tabFilters.hta;
+            const htaF = globalFilters;
             const termPrep = prepareTimeSeries(terminalDaily, htaF, ['sessions', 'tasks', 'chat_msgs']);
             const chatPrep = prepareTimeSeries(chatDaily, htaF, ['messages', 'unique_users']);
             const loginPrep = prepareTimeSeries(loginDaily, htaF, ['logins', 'unique_users']);
@@ -3162,7 +3299,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -3182,7 +3319,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -3202,7 +3339,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -3226,7 +3363,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -3250,7 +3387,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -3270,7 +3407,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -3290,7 +3427,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -3312,7 +3449,7 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: { legend: { display: false } },
-                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { x: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -3339,7 +3476,7 @@
             const watchlist = (hta.watchlist || []).slice(0, 10);
             const watchlistHtml = watchlist.length > 0
                 ? watchlist.map(w => `<div class="list-item"><span class="list-item-value">${w.ticker}</span></div>`).join('')
-                : '<div class="list-item" style="color: #94a3b8;">Nenhum ticker favorito</div>';
+                : '<div class="list-item" style="color: #64748b;">Nenhum ticker favorito</div>';
             document.getElementById('watchlistPanel').innerHTML = watchlistHtml;
 
             // Terminal Events Table
@@ -3406,7 +3543,7 @@
         // ===== RENDER TOKEN USAGE SECTION (inside HTA tab) =====
         function renderTokenUsageSection() {
             const hta = dashboardData.hta;
-            const htaF = tabFilters.hta;
+            const htaF = globalFilters;
             const isAiToken = d => !['brapi', 'partnr-news'].includes(d.proxy_name) && d.model_name !== 'unknown';
             const tokenDaily = (hta.token_usage_daily || []).filter(isAiToken);
             const tokenSummary = (hta.token_usage_summary || []).filter(isAiToken);
@@ -3506,7 +3643,7 @@
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
                     scales: {
                         x: { stacked: true },
-                        y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                        y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } }
                     }
                 }
             });
@@ -3554,7 +3691,7 @@
                     scales: {
                         y: {
                             beginAtZero: true,
-                            grid: { color: '#2a2d3e' },
+                            grid: { color: '#f1f5f9' },
                             ticks: { callback: v => '$' + v.toFixed(2) }
                         }
                     }
@@ -3577,7 +3714,7 @@
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
                     scales: {
                         x: { stacked: true },
-                        y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                        y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } }
                     }
                 }
             });
@@ -3824,7 +3961,7 @@
 
         function renderServerTokenSection() {
             const hta = dashboardData.hta;
-            const htaF = tabFilters.hta;
+            const htaF = globalFilters;
             const daily = hta.server_token_daily || [];
             const summary = hta.server_token_summary || [];
             const last24h = hta.server_token_last_24h || {};
@@ -3899,7 +4036,7 @@
                 options: {
                     responsive: true, maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
-                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -3942,7 +4079,7 @@
                 options: {
                     responsive: true, maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' }, ticks: { callback: v => '$' + v.toFixed(2) } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { callback: v => '$' + v.toFixed(2) } } }
                 }
             });
 
@@ -3973,7 +4110,7 @@
                 options: {
                     responsive: true, maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
-                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -4111,7 +4248,7 @@
                         plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
                         scales: {
                             x: { stacked: true },
-                            y: { stacked: true, beginAtZero: true, grid: { color: '#2a2d3e' } }
+                            y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } }
                         }
                     }
                 });
@@ -4150,7 +4287,7 @@
                         scales: {
                             y: {
                                 beginAtZero: true,
-                                grid: { color: '#2a2d3e' },
+                                grid: { color: '#f1f5f9' },
                                 ticks: { callback: v => v + '%' },
                                 suggestedMax: hasAnyErrors ? undefined : 5,
                             }
@@ -4200,7 +4337,7 @@
         // ===== RENDER IACOES TAB =====
         function renderIacoesTab() {
             const bh = dashboardData.bh;
-            const iaF = tabFilters.iacoes;
+            const iaF = globalFilters;
 
             // ===== 1. CONVERSÃO iAcoes → BH (seção principal) =====
             const convFunnel = bh.iacoes_conversion_funnel || {};
@@ -4270,7 +4407,7 @@
                 options: {
                     responsive: true, maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -4289,7 +4426,7 @@
                 options: {
                     responsive: true, maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' }, title: { display: true, text: '%', color: '#94a3b8' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' }, title: { display: true, text: '%', color: '#64748b' } } }
                 }
             });
 
@@ -4353,7 +4490,7 @@
                 options: {
                     responsive: true, maintainAspectRatio: true,
                     plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },
-                    scales: { y: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -4434,7 +4571,7 @@
                         indexAxis: 'y',
                         responsive: true, maintainAspectRatio: true,
                         plugins: { legend: { display: false } },
-                        scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                        scales: { x: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                     }
                 });
             } else {
@@ -4616,7 +4753,7 @@
                 options: {
                     responsive: true, maintainAspectRatio: true, indexAxis: 'y',
                     plugins: { legend: { display: false } },
-                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { x: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -4637,7 +4774,7 @@
                 options: {
                     responsive: true, maintainAspectRatio: true, indexAxis: 'y',
                     plugins: { legend: { display: false } },
-                    scales: { x: { beginAtZero: true, grid: { color: '#2a2d3e' } } }
+                    scales: { x: { beginAtZero: true, grid: { color: '#f1f5f9' } } }
                 }
             });
 
@@ -4781,7 +4918,7 @@
                 const region = getRegionForUf(uf);
                 const baseColor = region ? MACRO_REGIONS[region].color : '#94a3b8';
                 const opacity = count > 0 ? 0.3 + (count / maxCount) * 0.7 : 0.08;
-                svgContent += `<path d="${path}" fill="${baseColor}" fill-opacity="${opacity}" stroke="#2a2d3e" stroke-width="1.5">
+                svgContent += `<path d="${path}" fill="${baseColor}" fill-opacity="${opacity}" stroke="#cbd5e1" stroke-width="1.5">
                     <title>${uf}: ${count} usuário${count !== 1 ? 's' : ''}</title>
                 </path>`;
             }
@@ -4808,17 +4945,41 @@
         }
 
         // ===== TAB NAVIGATION =====
+        function activeTab() {
+            const el = document.querySelector('.sidebar-item.active');
+            return el ? el.dataset.tab : 'overview';
+        }
+
         function switchTab(tabName) {
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.sidebar-item').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('show'));
 
-            document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+            document.querySelector(`.sidebar-item[data-tab="${tabName}"]`).classList.add('active');
             document.getElementById(tabName).classList.add('show');
+            document.getElementById('currentTabTitle').textContent = TAB_TITLES[tabName] || tabName;
+
+            // Close sidebar on mobile
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('sidebarOverlay').classList.remove('show');
 
             // Trigger chart resize on tab switch
             setTimeout(() => {
                 Object.values(charts).forEach(chart => chart.resize());
             }, 100);
+        }
+
+        // ===== GLOBAL FILTER FUNCTIONS =====
+        function applyPreset(days) {
+            const to = new Date().toISOString().slice(0, 10);
+            const from = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+            globalFilters.from = from;
+            globalFilters.to = to;
+            globalFilters.preset = days.toString();
+            reRenderTab(activeTab());
+        }
+
+        function initDefaultFilters() {
+            applyPreset(30);
         }
 
         // ===== LOAD DASHBOARD =====
@@ -4836,6 +4997,7 @@
                 document.getElementById('loginContainer').classList.add('hidden');
                 document.getElementById('dashboard').classList.add('show');
 
+                initDefaultFilters();
                 renderOverviewTab();
                 renderBhTab();
                 renderHtaTab();
@@ -4847,12 +5009,7 @@
                 refreshInterval = setInterval(async () => {
                     dashboardData = await fetchAnalytics();
                     if (dashboardData) {
-                        const currentTab = document.querySelector('.tab-btn.active').dataset.tab;
-                        if (currentTab === 'overview') renderOverviewTab();
-                        else if (currentTab === 'bh') renderBhTab();
-                        else if (currentTab === 'hta') renderHtaTab();
-                        else if (currentTab === 'iacoes') renderIacoesTab();
-                        else if (currentTab === 'geo') renderGeoTab();
+                        reRenderTab(activeTab());
                     }
                 }, 5 * 60 * 1000);
 
@@ -4879,36 +5036,66 @@
 
         document.getElementById('logoutBtn').addEventListener('click', logout);
 
-        document.querySelectorAll('.tab-btn').forEach(btn => {
+        // Sidebar navigation
+        document.querySelectorAll('.sidebar-item').forEach(btn => {
             btn.addEventListener('click', () => switchTab(btn.dataset.tab));
         });
 
-        // Filter controls
-        document.querySelector('.dashboard-content').addEventListener('click', (e) => {
-            const btn = e.target.closest('.gran-btn');
-            if (!btn) return;
-            const bar = btn.closest('.filter-bar');
-            const tabName = bar.dataset.tab;
-            tabFilters[tabName].gran = btn.dataset.gran;
-            bar.querySelectorAll('.gran-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            reRenderTab(tabName);
+        // Hamburger menu (mobile)
+        document.getElementById('hamburgerBtn').addEventListener('click', () => {
+            document.getElementById('sidebar').classList.toggle('open');
+            document.getElementById('sidebarOverlay').classList.toggle('show');
+        });
+        document.getElementById('sidebarOverlay').addEventListener('click', () => {
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('sidebarOverlay').classList.remove('show');
         });
 
+        // Global preset buttons
+        document.querySelectorAll('.preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const days = btn.dataset.days;
+                document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                if (days === 'custom') {
+                    document.getElementById('dateRangeInputs').style.display = 'flex';
+                } else {
+                    document.getElementById('dateRangeInputs').style.display = 'none';
+                    applyPreset(parseInt(days));
+                }
+            });
+        });
+
+        // Global date range inputs
+        document.getElementById('globalFrom').addEventListener('change', () => {
+            globalFilters.from = document.getElementById('globalFrom').value;
+            globalFilters.preset = 'custom';
+            reRenderTab(activeTab());
+        });
+        document.getElementById('globalTo').addEventListener('change', () => {
+            globalFilters.to = document.getElementById('globalTo').value;
+            globalFilters.preset = 'custom';
+            reRenderTab(activeTab());
+        });
+
+        // Global granularity toggle
+        document.querySelector('.top-bar .gran-toggle').addEventListener('click', (e) => {
+            const btn = e.target.closest('.gran-btn');
+            if (!btn) return;
+            globalFilters.gran = btn.dataset.gran;
+            document.querySelector('.top-bar .gran-toggle').querySelectorAll('.gran-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            reRenderTab(activeTab());
+        });
+
+        // BH subscribers local filters (plan/period)
         document.querySelector('.dashboard-content').addEventListener('change', (e) => {
-            if (e.target.classList.contains('filter-from') || e.target.classList.contains('filter-to')) {
-                const bar = e.target.closest('.filter-bar');
-                const tabName = bar.dataset.tab;
-                tabFilters[tabName].from = bar.querySelector('.filter-from').value;
-                tabFilters[tabName].to = bar.querySelector('.filter-to').value;
-                reRenderTab(tabName);
-            }
             if (e.target.classList.contains('filter-plan')) {
-                tabFilters.bh.plan = e.target.value;
+                bhSubFilters.plan = e.target.value;
                 renderSubscribersSection();
             }
             if (e.target.classList.contains('filter-period')) {
-                tabFilters.bh.period = e.target.value;
+                bhSubFilters.period = e.target.value;
                 renderSubscribersSection();
             }
         });
