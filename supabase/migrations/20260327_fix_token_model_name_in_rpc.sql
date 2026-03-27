@@ -6,16 +6,20 @@
 -- O frontend espera model_name para exibir labels corretas nos graficos
 -- (TOKEN_PRICING e MODEL_COLORS sao keyed por model_name).
 --
--- Tambem adiciona secoes de proxy_error que estavam faltando:
+-- Tambem adiciona secoes que estavam faltando:
 -- proxy_error_daily, proxy_error_summary, proxy_error_rate_daily
+-- server_token_daily, server_token_summary, server_token_last_24h
 --
 -- Mudancas:
 --   token_usage_daily: GROUP BY usage_date, proxy_name, model_name (era so proxy_name)
 --   token_usage_summary: GROUP BY proxy_name, model_name (era so proxy_name)
 --   token_usage_by_user: GROUP BY user_id, email, proxy_name, model_name (era so proxy_name)
---   proxy_error_daily: nova secao
+--   proxy_error_daily: nova secao (da tabela proxy_error_log)
 --   proxy_error_summary: nova secao
 --   proxy_error_rate_daily: nova secao
+--   server_token_daily: nova secao (da tabela server_token_usage)
+--   server_token_summary: nova secao
+--   server_token_last_24h: nova secao
 
 -- RPC ja aplicada via execute_sql. Este arquivo serve como registro da migration.
 -- Para aplicar manualmente: supabase db push --project-ref llqhmywodxzstjlrulcw
