@@ -1,0 +1,21 @@
+-- Migration: Add model_name to token sections in get_analytics_data() RPC
+-- Apply to: Horizon Terminal Access (llqhmywodxzstjlrulcw)
+--
+-- Motivo: As secoes token_usage_daily, token_usage_summary e token_usage_by_user
+-- agrupavam apenas por proxy_name, sem incluir model_name no SELECT/GROUP BY.
+-- O frontend espera model_name para exibir labels corretas nos graficos
+-- (TOKEN_PRICING e MODEL_COLORS sao keyed por model_name).
+--
+-- Tambem adiciona secoes de proxy_error que estavam faltando:
+-- proxy_error_daily, proxy_error_summary, proxy_error_rate_daily
+--
+-- Mudancas:
+--   token_usage_daily: GROUP BY usage_date, proxy_name, model_name (era so proxy_name)
+--   token_usage_summary: GROUP BY proxy_name, model_name (era so proxy_name)
+--   token_usage_by_user: GROUP BY user_id, email, proxy_name, model_name (era so proxy_name)
+--   proxy_error_daily: nova secao
+--   proxy_error_summary: nova secao
+--   proxy_error_rate_daily: nova secao
+
+-- RPC ja aplicada via execute_sql. Este arquivo serve como registro da migration.
+-- Para aplicar manualmente: supabase db push --project-ref llqhmywodxzstjlrulcw
