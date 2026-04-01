@@ -106,7 +106,10 @@
         .table-container { background: var(--c); border: 1px solid var(--bd); border-radius: 12px; overflow: hidden; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
         .table-title { font-size: 14px; font-weight: 600; color: var(--t); padding: 20px 20px 16px; border-bottom: 1px solid var(--bd); }
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { background: var(--bg); padding: 12px 16px; text-align: left; font-weight: 600; color: var(--m); border-bottom: 1px solid var(--bd); position: sticky; top: 0; }
+        th { background: var(--bg); padding: 12px 16px; text-align: left; font-weight: 600; color: var(--m); border-bottom: 1px solid var(--bd); position: sticky; top: 0; cursor: pointer; user-select: none; white-space: nowrap; }
+        th:hover { background: #e8ecf1; }
+        th .sort-indicator { display: inline-block; margin-left: 4px; font-size: 10px; color: #94a3b8; }
+        th .sort-indicator.active { color: var(--p); }
         td { padding: 12px 16px; border-bottom: 1px solid var(--bd); color: var(--t); }
         tr:hover { background: #f8fafc; }
         .status-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
@@ -146,6 +149,12 @@
 
         .hidden { display: none !important; }
         .mb-2 { margin-bottom: 16px; }
+
+        .export-csv-btn { padding: 4px 10px; background: transparent; border: 1px solid var(--bd); border-radius: 4px; font-size: 11px; color: var(--m); cursor: pointer; transition: all 0.2s; float: right; margin-left: 8px; }
+        .export-csv-btn:hover { border-color: var(--p); color: var(--p); }
+
+        .doughnut-reset-btn { position: absolute; top: 12px; right: 12px; padding: 3px 8px; background: var(--r); color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer; display: none; z-index: 5; }
+        .doughnut-reset-btn.show { display: block; }
 
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; }
@@ -394,31 +403,268 @@
     function filterDays(days, f) { return days.filter(day => { if(f.from && day < f.from) return false; if(f.to && day > f.to) return false; return true; }); }
     function dayLabel(d) { const p=d.split('-'); return p[2]+'/'+p[1]; }
 
+    /** Filter snapshot data (arrays with a date field) by globalFilters date range */
+    function filterSnapshot(data, f, dateField='day') {
+        if (!data || data.length === 0) return data;
+        return data.filter(d => {
+            const val = d[dateField];
+            if (!val) return true;
+            if (f.from && val < f.from) return false;
+            if (f.to && val > f.to) return false;
+            return true;
+        });
+    }
+
+    /**
+     * Prepare multi-category time series: pivoted data (category+day) into aggregated datasets.
+     * Returns { labels, dayList, datasets: [{label, data:[...]}] }
+     */
+    function prepareMultiCategoryTS(rawData, f, categoryField, valueField, dateField='day') {
+        const filtered = filterSnapshot(rawData, f, dateField);
+        const categories = [...new Set(filtered.map(d => d[categoryField]))];
+        const allDays = [...new Set(filtered.map(d => d[dateField]))].sort();
+        // Build map
+        const map = {};
+        filtered.forEach(d => { map[d[categoryField]+'|'+d[dateField]] = (map[d[categoryField]+'|'+d[dateField]]||0) + (d[valueField]||0); });
+        // Aggregate by granularity
+        const granDays = aggregateDayList(allDays, f.gran);
+        const dayBuckets = buildDayBuckets(allDays, f.gran);
+        return {
+            labels: granDays.map(d => formatLabel(d, f.gran)),
+            dayList: granDays,
+            categories,
+            getValues: (cat) => granDays.map((gd, i) => dayBuckets[i].reduce((s, day) => s + (map[cat+'|'+day]||0), 0))
+        };
+    }
+    function aggregateDayList(sortedDays, gran) {
+        if (gran === 'daily') return sortedDays;
+        const seen = new Set();
+        const result = [];
+        sortedDays.forEach(day => {
+            let key;
+            if (gran === 'weekly') { const date = new Date(day+'T00:00:00'); const dow = date.getDay(); const diff = dow===0?-6:1-dow; const mon = new Date(date); mon.setDate(date.getDate()+diff); key = mon.toISOString().slice(0,10); }
+            else { key = day.slice(0,7); }
+            if (!seen.has(key)) { seen.add(key); result.push(key); }
+        });
+        return result;
+    }
+    function buildDayBuckets(sortedDays, gran) {
+        if (gran === 'daily') return sortedDays.map(d => [d]);
+        const buckets = {};
+        const order = [];
+        sortedDays.forEach(day => {
+            let key;
+            if (gran === 'weekly') { const date = new Date(day+'T00:00:00'); const dow = date.getDay(); const diff = dow===0?-6:1-dow; const mon = new Date(date); mon.setDate(date.getDate()+diff); key = mon.toISOString().slice(0,10); }
+            else { key = day.slice(0,7); }
+            if (!buckets[key]) { buckets[key] = []; order.push(key); }
+            buckets[key].push(day);
+        });
+        return order.map(k => buckets[k]);
+    }
+
+    // ===== RICH TOOLTIP HELPERS =====
+    function richTooltipLabel(ctx) {
+        const ds = ctx.dataset;
+        const val = ctx.parsed.y != null ? ctx.parsed.y : ctx.parsed;
+        const total = ctx.chart.data.datasets.reduce((s, d) => s + (d.data[ctx.dataIndex] || 0), 0);
+        const pct = total > 0 ? ((val / total) * 100).toFixed(1) : '0.0';
+        let label = (ds.label || '') + ': ' + (typeof val === 'number' && val % 1 !== 0 ? val.toFixed(2) : fmt(val));
+        label += ' (' + pct + '% do total)';
+        return label;
+    }
+    function doughnutTooltipLabel(ctx) {
+        const val = ctx.parsed;
+        const total = ctx.chart.data.datasets[0].data.reduce((s, v) => s + v, 0);
+        const pct = total > 0 ? ((val / total) * 100).toFixed(1) : '0.0';
+        return (ctx.label || '') + ': ' + fmt(val) + ' (' + pct + '%)';
+    }
+    const richTooltipCallbacks = { label: richTooltipLabel };
+    const doughnutTooltipCallbacks = { label: doughnutTooltipLabel };
+
+    // ===== HOVER DIM PLUGIN =====
+    const hoverDimPlugin = {
+        id: 'hoverDim',
+        beforeDraw(chart) {
+            const active = chart.getActiveElements();
+            if (active.length === 0) {
+                chart.data.datasets.forEach((ds, i) => {
+                    const meta = chart.getDatasetMeta(i);
+                    meta.hidden = ds._hoverHidden || false;
+                });
+                return;
+            }
+            const activeIdx = active[0].datasetIndex;
+            chart.data.datasets.forEach((ds, i) => {
+                const meta = chart.getDatasetMeta(i);
+                if (i !== activeIdx && chart.data.datasets.length > 1) {
+                    meta.dataset && (meta.dataset.options = meta.dataset.options || {});
+                }
+            });
+        }
+    };
+    Chart.register(hoverDimPlugin);
+
+    // ===== SORTABLE TABLE =====
+    function makeSortable(tableEl) {
+        if (!tableEl) return;
+        const thead = tableEl.querySelector('thead');
+        if (!thead) return;
+        const headers = thead.querySelectorAll('th');
+        headers.forEach((th, colIdx) => {
+            // Add sort indicator
+            if (!th.querySelector('.sort-indicator')) {
+                th.innerHTML += ' <span class="sort-indicator"></span>';
+            }
+            th.addEventListener('click', () => {
+                const tbody = tableEl.querySelector('tbody');
+                if (!tbody) return;
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                // Skip total rows (bold/summary)
+                const dataRows = rows.filter(r => !r.style.fontWeight && !r.querySelector('td:first-child strong'));
+                const totalRows = rows.filter(r => r.style.fontWeight || (r.style.borderTop && r.querySelector('td')));
+                if (dataRows.length === 0) return;
+
+                const currentDir = th.dataset.sortDir || 'none';
+                const newDir = currentDir === 'asc' ? 'desc' : 'asc';
+
+                // Reset all headers
+                headers.forEach(h => { h.dataset.sortDir = 'none'; const ind = h.querySelector('.sort-indicator'); if(ind) { ind.textContent = ''; ind.classList.remove('active'); } });
+                th.dataset.sortDir = newDir;
+                const ind = th.querySelector('.sort-indicator');
+                if (ind) { ind.textContent = newDir === 'asc' ? '\u25B2' : '\u25BC'; ind.classList.add('active'); }
+
+                dataRows.sort((a, b) => {
+                    const cellA = a.children[colIdx];
+                    const cellB = b.children[colIdx];
+                    if (!cellA || !cellB) return 0;
+                    let valA = cellA.textContent.trim();
+                    let valB = cellB.textContent.trim();
+                    // Try numeric
+                    const numA = parseFloat(valA.replace(/[^0-9.\-]/g, ''));
+                    const numB = parseFloat(valB.replace(/[^0-9.\-]/g, ''));
+                    if (!isNaN(numA) && !isNaN(numB)) {
+                        return newDir === 'asc' ? numA - numB : numB - numA;
+                    }
+                    return newDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                });
+
+                // Re-insert rows
+                dataRows.forEach(r => tbody.appendChild(r));
+                totalRows.forEach(r => tbody.appendChild(r));
+            });
+        });
+    }
+
+    /** After building a table, call this to make it sortable and add export button */
+    function enhanceTable(tableId, titleContainerId) {
+        const tableEl = document.getElementById(tableId);
+        if (tableEl) makeSortable(tableEl);
+        // Add CSV export if title container exists
+        if (titleContainerId) {
+            const titleEl = document.getElementById(titleContainerId);
+            if (titleEl && !titleEl.querySelector('.export-csv-btn')) {
+                const btn = document.createElement('button');
+                btn.className = 'export-csv-btn';
+                btn.textContent = 'Export CSV';
+                btn.onclick = () => exportTableCSV(tableId);
+                titleEl.appendChild(btn);
+            }
+        }
+    }
+
+    function exportTableCSV(tableId) {
+        const table = document.getElementById(tableId);
+        if (!table) return;
+        const rows = table.querySelectorAll('tr');
+        const csv = [];
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('th, td');
+            const rowData = [];
+            cells.forEach(cell => rowData.push('"' + cell.textContent.trim().replace(/"/g, '""') + '"'));
+            csv.push(rowData.join(','));
+        });
+        const blob = new Blob([csv.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = tableId + '.csv'; a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    /** Add export button next to a table-title div */
+    function addExportBtn(titleSelector, tableId) {
+        setTimeout(() => {
+            const titleEl = document.querySelector(titleSelector);
+            if (titleEl && !titleEl.querySelector('.export-csv-btn')) {
+                const btn = document.createElement('button');
+                btn.className = 'export-csv-btn';
+                btn.textContent = 'Export CSV';
+                btn.onclick = () => exportTableCSV(tableId);
+                titleEl.appendChild(btn);
+            }
+        }, 0);
+    }
+
     function lineChart(canvasId, labels, datasets, opts={}) {
         destroyChart(canvasId);
         charts[canvasId] = new Chart(document.getElementById(canvasId), {
             type: 'line', data: { labels, datasets },
-            options: { responsive:true, maintainAspectRatio:true, plugins:{legend:{display:datasets.length>1,position:'top',labels:{boxWidth:12,font:{size:11}}}}, scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'},...(opts.yOpts||{})},...(opts.scales||{})}, ...opts.extra }
+            options: { responsive:true, maintainAspectRatio:true, plugins:{legend:{display:datasets.length>1,position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}}, scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'},...(opts.yOpts||{})},...(opts.scales||{})}, ...opts.extra }
         });
     }
     function barChart(canvasId, labels, datasets, opts={}) {
         destroyChart(canvasId);
         charts[canvasId] = new Chart(document.getElementById(canvasId), {
             type: 'bar', data: { labels, datasets },
-            options: { responsive:true, maintainAspectRatio:true, indexAxis:opts.horizontal?'y':'x', plugins:{legend:{display:datasets.length>1,position:'top',labels:{boxWidth:12,font:{size:11}}},...(opts.pluginsOpts||{})}, scales:opts.horizontal?{x:{beginAtZero:true,grid:{color:'#f1f5f9'}}}:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}},...(opts.scales||{})}, ...opts.extra }
+            options: { responsive:true, maintainAspectRatio:true, indexAxis:opts.horizontal?'y':'x', plugins:{legend:{display:datasets.length>1,position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks},...(opts.pluginsOpts||{})}, scales:opts.horizontal?{x:{beginAtZero:true,grid:{color:'#f1f5f9'}}}:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}},...(opts.scales||{})}, ...opts.extra }
         });
     }
-    function doughnutChart(canvasId, labels, data, colors) {
+    function doughnutChart(canvasId, labels, data, colors, onClick) {
         destroyChart(canvasId);
+        const chartOpts = {responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'right'},tooltip:{callbacks:doughnutTooltipCallbacks}}};
+        if (onClick) chartOpts.onClick = onClick;
         charts[canvasId] = new Chart(document.getElementById(canvasId), {
             type:'doughnut', data:{labels,datasets:[{data,backgroundColor:colors||COLORS}]},
-            options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'right'}}}
+            options: chartOpts
         });
     }
 
     function buildHTML(containerId, html) { document.getElementById(containerId).innerHTML = html; }
 
     function canvasHTML(id, title, extra='') { return `<div class="chart-container ${extra}"><div class="chart-title">${title}</div><canvas id="${id}"></canvas></div>`; }
+
+    // ===== DOUGHNUT CLICK-TO-FILTER HELPERS =====
+    function setupDoughnutFilter(doughnutCanvasId, relatedChartId, rawData, f, categoryField, valueField, dateField, colorMap, colorArray) {
+        const container = document.getElementById(doughnutCanvasId)?.closest('.chart-container');
+        if (!container) return;
+        // Add reset button
+        let resetBtn = container.querySelector('.doughnut-reset-btn');
+        if (!resetBtn) {
+            resetBtn = document.createElement('button');
+            resetBtn.className = 'doughnut-reset-btn';
+            resetBtn.textContent = 'Reset';
+            container.style.position = 'relative';
+            container.appendChild(resetBtn);
+        }
+        resetBtn.classList.remove('show');
+
+        const chart = charts[doughnutCanvasId];
+        if (!chart) return;
+        chart.options.onClick = (evt, elements) => {
+            if (elements.length === 0) return;
+            const label = chart.data.labels[elements[0].index];
+            resetBtn.classList.add('show');
+            // Update related daily chart with filtered data
+            const filtered = rawData.filter(d => d[categoryField] === label);
+            const prep = prepareTimeSeries(filtered, f, [valueField]);
+            const color = (colorMap && colorMap[label]) || (colorArray && colorArray[elements[0].index % colorArray.length]) || COLORS[0];
+            lineChart(relatedChartId, prep.labels, [{label:label,data:prep.data.map(d=>d[valueField]||0),borderColor:color,backgroundColor:color+'20',fill:true}]);
+        };
+        resetBtn.onclick = () => {
+            resetBtn.classList.remove('show');
+            // Re-render the tab to reset
+            reRenderTab(currentTab);
+        };
+    }
 
     // Tab-level HTML builders
     function renderBhVisao() {
@@ -494,15 +740,17 @@
         const sPrep = prepareTimeSeries(signupsDaily, f, ['signups']);
         barChart('bhAqSignupsChart', sPrep.labels, [{label:'Cadastros',data:sPrep.data.map(d=>d.signups||0),backgroundColor:'#22c55e'}]);
 
-        doughnutChart('bhAqReferrerChart', referrers.map(r=>r.source||'Outro'), referrers.map(r=>r.visits||0), COLORS);
+        // Filter referrer summary by date range
+        const filteredRefDaily = filterSnapshot(refDaily, f);
+        const refAgg = {};
+        filteredRefDaily.forEach(r => { refAgg[r.source] = (refAgg[r.source]||0) + (r.visits||0); });
+        const filteredReferrers = Object.entries(refAgg).sort((a,b)=>b[1]-a[1]).map(([source,visits])=>({source,visits}));
+        doughnutChart('bhAqReferrerChart', filteredReferrers.map(r=>r.source||'Outro'), filteredReferrers.map(r=>r.visits||0), COLORS);
 
-        // Referrer daily
+        // Referrer daily with date+granularity filtering
         const REF_COLORS = {'Direto':'#3b82f6','Google':'#ef4444','Twitter/X':'#1da1f2','LinkedIn':'#0a66c2','Reddit':'#ff4500','Facebook':'#1877f2','Instagram':'#e4405f','YouTube':'#ff0000','WhatsApp':'#25d366','Telegram':'#0088cc','Email':'#f59e0b','Stripe':'#635bff','iAcoes':'#f97316','Interno':'#3ecf8e','Lovable (Dev)':'#a78bfa','Localhost (Dev)':'#94a3b8','Outro':'#6b7280'};
         const refExclude = new Set(['Lovable (Dev)','Localhost (Dev)','Interno','Stripe']);
-        const refSources = [...new Set(refDaily.map(r=>r.source))].filter(s=>!refExclude.has(s));
-        const refDays = [...new Set(refDaily.map(r=>r.day))].sort();
-        const refDayMap = {}; refDaily.forEach(r=>{refDayMap[r.day+'|'+r.source]=r.visits;});
-        window._refDailyData = {refSources,refDays,refDayMap,REF_COLORS};
+        window._refDailyData = {filteredRefDaily,refExclude,REF_COLORS,f};
         window._refDailyConsolidated = false;
         buildRefDailyChart(false);
         const toggleBtn = document.getElementById('bhRefDailyToggle');
@@ -511,7 +759,8 @@
         // Ref detail
         const detailEl = document.getElementById('bhRefDetailTable');
         if (detailEl && refDetail.length > 0) {
-            detailEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:0.85rem;"><thead><tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;color:#64748b;">URL</th><th style="text-align:right;padding:6px;color:#64748b;">Visitas</th><th style="text-align:right;padding:6px;color:#64748b;">Usuarios</th></tr></thead><tbody>${refDetail.map(r=>`<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:6px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.referrer_clean}">${r.referrer_clean}</td><td style="text-align:right;padding:6px;">${(r.visits||0).toLocaleString()}</td><td style="text-align:right;padding:6px;">${r.unique_users||0}</td></tr>`).join('')}</tbody></table>`;
+            detailEl.innerHTML = `<table id="bhRefDetailTableInner" style="width:100%;border-collapse:collapse;font-size:0.85rem;"><thead><tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;color:#64748b;">URL</th><th style="text-align:right;padding:6px;color:#64748b;">Visitas</th><th style="text-align:right;padding:6px;color:#64748b;">Usuarios</th></tr></thead><tbody>${refDetail.map(r=>`<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:6px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.referrer_clean}">${r.referrer_clean}</td><td style="text-align:right;padding:6px;">${(r.visits||0).toLocaleString()}</td><td style="text-align:right;padding:6px;">${r.unique_users||0}</td></tr>`).join('')}</tbody></table>`;
+            makeSortable(document.getElementById('bhRefDetailTableInner'));
         } else if (detailEl) { detailEl.innerHTML = '<p style="color:#64748b;font-size:0.85rem;">Sem dados de referrer detail</p>'; }
 
         barChart('bhAqLandingsChart', landings.map(l=>l.landing||'/'), [{label:'Entradas',data:landings.map(l=>l.entries||0),backgroundColor:'#6366f1'}], {horizontal:true});
@@ -531,19 +780,24 @@
 
     function buildRefDailyChart(consolidated) {
         destroyChart('bhAqReferrerDailyChart');
-        const {refSources,refDays,refDayMap,REF_COLORS} = window._refDailyData;
+        const {filteredRefDaily,refExclude,REF_COLORS,f} = window._refDailyData;
+        const refSources = [...new Set(filteredRefDaily.map(r=>r.source))].filter(s=>!refExclude.has(s));
+        // Use prepareMultiCategoryTS for granularity
+        const mcTS = prepareMultiCategoryTS(filteredRefDaily, f, 'source', 'visits');
+        const filteredSources = mcTS.categories.filter(s=>!refExclude.has(s));
+
         let datasets, stacked;
         if (consolidated) {
-            const totals = refDays.map(d=>refSources.reduce((s,src)=>s+(refDayMap[d+'|'+src]||0),0));
+            const totals = mcTS.labels.map((_, i) => filteredSources.reduce((s, src) => s + mcTS.getValues(src)[i], 0));
             datasets = [{label:'Total',data:totals,borderColor:'#3b82f6',backgroundColor:'#3b82f633',fill:true,tension:0.3,pointRadius:2}];
             stacked = false;
         } else {
-            datasets = refSources.map(src=>({label:src,data:refDays.map(d=>refDayMap[d+'|'+src]||0),borderColor:REF_COLORS[src]||'#6b7280',backgroundColor:(REF_COLORS[src]||'#6b7280')+'33',fill:true,tension:0.3,pointRadius:1}));
+            datasets = filteredSources.map(src=>({label:src,data:mcTS.getValues(src),borderColor:REF_COLORS[src]||'#6b7280',backgroundColor:(REF_COLORS[src]||'#6b7280')+'33',fill:true,tension:0.3,pointRadius:1}));
             stacked = true;
         }
         charts.bhAqReferrerDailyChart = new Chart(document.getElementById('bhAqReferrerDailyChart'), {
-            type:'line',data:{labels:refDays,datasets},
-            options:{responsive:true,maintainAspectRatio:true,interaction:{mode:'index',intersect:false},scales:{x:{grid:{color:'#f1f5f9'}},y:{stacked,grid:{color:'#f1f5f9'},beginAtZero:true}},plugins:{legend:{position:'top',labels:{boxWidth:12}}}}
+            type:'line',data:{labels:mcTS.labels,datasets},
+            options:{responsive:true,maintainAspectRatio:true,interaction:{mode:'index',intersect:false},scales:{x:{grid:{color:'#f1f5f9'}},y:{stacked,grid:{color:'#f1f5f9'},beginAtZero:true}},plugins:{legend:{position:'top',labels:{boxWidth:12}},tooltip:{callbacks:richTooltipCallbacks}}}
         });
     }
 
@@ -578,18 +832,24 @@
             <div class="chart-container mb-2"><div class="chart-title">Mapa de Calor de Atividade (BRT)</div><div id="bhEngHeatmap" style="overflow-x:auto"></div></div>
         `);
 
-        barChart('bhEngFeaturesChart', features.map(f=>f.feature||'Unknown'), [{label:'Uso',data:features.map(f=>f.cnt||0),backgroundColor:'#3ecf8e'}], {horizontal:true});
+        // Filter feature usage by date (aggregate from featureDaily for date-filtered view)
+        const filteredFeatureDaily = filterSnapshot(featureDaily, f);
+        const featureAgg = {};
+        filteredFeatureDaily.forEach(d => { featureAgg[d.feature] = (featureAgg[d.feature]||0) + (d.cnt||0); });
+        const filteredFeatures = Object.entries(featureAgg).sort((a,b)=>b[1]-a[1]).slice(0,10);
+        barChart('bhEngFeaturesChart', filteredFeatures.map(f=>f[0]||'Unknown'), [{label:'Uso',data:filteredFeatures.map(f=>f[1]||0),backgroundColor:'#3ecf8e'}], {horizontal:true});
 
+        // Events summary filtered from usage_events_summary (no time dimension - snapshot)
         const events = (bh.usage_events_summary||[]).slice(0,8);
         doughnutChart('bhEngEventsChart', events.map(e=>e.event_name||'Unknown'), events.map(e=>e.cnt||0), COLORS);
 
-        // Feature daily
+        // Feature daily with granularity
         const fdFeatures = [...new Set(featureDaily.map(d=>d.feature))].slice(0,8);
-        const fdDays = filterDays([...new Set(featureDaily.map(d=>d.day))].sort(), f);
-        const fdMap = {}; featureDaily.forEach(d=>{fdMap[d.feature+'|'+d.day]=d.cnt||0;});
-        lineChart('bhEngFeatureDailyChart', fdDays.map(dayLabel), fdFeatures.map((feat,i)=>({label:feat,data:fdDays.map(day=>fdMap[feat+'|'+day]||0),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
+        const mcFD = prepareMultiCategoryTS(featureDaily, f, 'feature', 'cnt');
+        const topFdFeats = mcFD.categories.slice(0,8);
+        lineChart('bhEngFeatureDailyChart', mcFD.labels, topFdFeats.map((feat,i)=>({label:feat,data:mcFD.getValues(feat),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
 
-        // Ticker by feature (stacked bar)
+        // Ticker by feature (stacked bar) - no time dimension
         if (tickerByFeature.length > 0) {
             const tbfFeatures = [...new Set(tickerByFeature.map(d=>d.feature))];
             const tbfTickers = [...new Set(tickerByFeature.map(d=>d.ticker))].slice(0,15);
@@ -597,27 +857,25 @@
             destroyChart('bhEngTickerByFeatureChart');
             charts.bhEngTickerByFeatureChart = new Chart(document.getElementById('bhEngTickerByFeatureChart'), {
                 type:'bar', data:{labels:tbfTickers,datasets:tbfFeatures.map((feat,i)=>({label:feat,data:tbfTickers.map(t=>tbfMap[t+'|'+feat]||0),backgroundColor:COLORS[i%COLORS.length]}))},
-                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
             });
         }
 
-        // Ticker trend daily
+        // Ticker trend daily with granularity
         if (tickerTrend.length > 0) {
-            const ttTickers = [...new Set(tickerTrend.map(d=>d.ticker))].slice(0,6);
-            const ttDays = filterDays([...new Set(tickerTrend.map(d=>d.day))].sort(), f);
-            const ttMap = {}; tickerTrend.forEach(d=>{ttMap[d.ticker+'|'+d.day]=d.cnt||0;});
-            lineChart('bhEngTickerTrendChart', ttDays.map(dayLabel), ttTickers.map((t,i)=>({label:t,data:ttDays.map(day=>ttMap[t+'|'+day]||0),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
+            const mcTT = prepareMultiCategoryTS(tickerTrend, f, 'ticker', 'cnt');
+            const ttTickers = mcTT.categories.slice(0,6);
+            lineChart('bhEngTickerTrendChart', mcTT.labels, ttTickers.map((t,i)=>({label:t,data:mcTT.getValues(t),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
         }
 
-        // Feature adoption curves
+        // Feature adoption curves with granularity
         if (featureTrend.length > 0) {
-            const ftFeatures = [...new Set(featureTrend.map(d=>d.feature))].slice(0,8);
-            const ftDays = filterDays([...new Set(featureTrend.map(d=>d.day))].sort(), f);
-            const ftMap = {}; featureTrend.forEach(d=>{ftMap[d.feature+'|'+d.day]=d.unique_users||0;});
-            lineChart('bhEngFeatureTrendChart', ftDays.map(dayLabel), ftFeatures.map((feat,i)=>({label:feat,data:ftDays.map(day=>ftMap[feat+'|'+day]||0),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
+            const mcFT = prepareMultiCategoryTS(featureTrend, f, 'feature', 'unique_users');
+            const ftFeatures = mcFT.categories.slice(0,8);
+            lineChart('bhEngFeatureTrendChart', mcFT.labels, ftFeatures.map((feat,i)=>({label:feat,data:mcFT.getValues(feat),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
         }
 
-        // User feature breadth (donut)
+        // User feature breadth (pre-aggregated snapshot, no time dimension)
         if (featureBreadth.length > 0) {
             doughnutChart('bhEngBreadthChart', featureBreadth.map(d=>d.bucket||d.feature_count+' features'), featureBreadth.map(d=>d.user_count||0), COLORS);
         }
@@ -666,12 +924,13 @@
                 {label:'30d',data:cohorts.map(c=>c.cohort_size>0?Math.round(c.retained_30d/c.cohort_size*100):0),backgroundColor:'#6366f1'},
                 {label:'60d',data:cohorts.map(c=>c.cohort_size>0?Math.round(c.retained_60d/c.cohort_size*100):0),backgroundColor:'#f59e0b'},
                 {label:'90d',data:cohorts.map(c=>c.cohort_size>0?Math.round(c.retained_90d/c.cohort_size*100):0),backgroundColor:'#ef4444'}
-            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,max:100,grid:{color:'#f1f5f9'},ticks:{callback:v=>v+'%'}}}}
+            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,max:100,grid:{color:'#f1f5f9'},ticks:{callback:v=>v+'%'}}}}
         });
 
         // Cohort table
         const retClass = pct => pct >= 50 ? 'ret-good' : pct >= 20 ? 'ret-mid' : 'ret-low';
         document.getElementById('bhRetCohortTable').innerHTML = `<thead><tr><th>Coorte</th><th>Tamanho</th><th>Ret 7d</th><th>Ret 30d</th><th>Ret 60d</th><th>Ret 90d</th></tr></thead><tbody>${cohorts.map(c=>{const s=c.cohort_size||1;const r7=Math.round((c.retained_7d||0)/s*100);const r30=Math.round((c.retained_30d||0)/s*100);const r60=Math.round((c.retained_60d||0)/s*100);const r90=Math.round((c.retained_90d||0)/s*100);return`<tr><td>${c.cohort}</td><td>${c.cohort_size}</td><td class="${retClass(r7)}">${r7}%</td><td class="${retClass(r30)}">${r30}%</td><td class="${retClass(r60)}">${r60}%</td><td class="${retClass(r90)}">${r90}%</td></tr>`;}).join('')}</tbody>`;
+        makeSortable(document.getElementById('bhRetCohortTable'));
 
         // Inactivity distribution
         if (inactivityDist.length > 0) {
@@ -689,6 +948,7 @@
         }
         const riskClass = days => days <= 7 ? 'inactivity-green' : days <= 14 ? 'inactivity-yellow' : 'inactivity-red';
         document.getElementById(tableId).innerHTML = `<thead><tr><th>Email</th><th>Ultima Atividade</th><th>Dias Inativo</th><th>Total Eventos</th></tr></thead><tbody>${data.map(u=>{const days=u.days_inactive||0;return`<tr><td>${u.email||'-'}</td><td>${u.last_activity?new Date(u.last_activity).toLocaleDateString('pt-BR'):'-'}</td><td><span class="status-badge ${riskClass(days)}">${days}d</span></td><td>${fmt(u.total_events||0)}</td></tr>`;}).join('')}</tbody>`;
+        makeSortable(document.getElementById(tableId));
     }
 
     function renderBhCustos() {
@@ -767,7 +1027,7 @@
                 type:'bar',data:{labels:allPlans.map(l=>l.charAt(0).toUpperCase()+l.slice(1)),datasets:[
                     {label:'Ativos',data:allPlans.map(p=>activeByPlan[p]||0),backgroundColor:'#3ecf8e'},
                     {label:'Inativos',data:allPlans.map(p=>inactiveByPlan[p]||0),backgroundColor:'#ef4444'}
-                ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+                ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
             });
 
             const planGroups = {}; filteredSubs.forEach(s=>{const p=s.plan||'free';planGroups[p]=(planGroups[p]||0)+(s.cnt||0);});
@@ -802,7 +1062,7 @@
             type:'bar',data:{labels:subAge.map(s=>s.age_bucket),datasets:[
                 {label:'Ativos',data:subAge.map(s=>s.active||0),backgroundColor:'#3ecf8e'},
                 {label:'Churned',data:subAge.map(s=>s.churned||0),backgroundColor:'#ef4444'}
-            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
         });
 
         barChart('bhCTtcChart', ttc.map(t=>t.bucket), [{label:'Conversoes',data:ttc.map(t=>t.conversions||0),backgroundColor:'#3ecf8e'}], {horizontal:true});
@@ -849,15 +1109,21 @@
 
         renderDeviceCharts(bh, 'bhDet', f);
 
+        // Filter screen summary from device_daily if possible, else use snapshot
+        const filteredDeviceDaily = filterSnapshot(bh.device_daily||[], f);
+        const screenAgg = {};
+        filteredDeviceDaily.forEach(d => { const key = d.screen || d.device_type || 'N/A'; screenAgg[key] = (screenAgg[key]||0) + (d.cnt||0); });
+
         doughnutChart('bhDetScreenChart', screens.map(s=>s.screen||'N/A'), screens.map(s=>s.cnt||0), COLORS.slice(2));
         barChart('bhDetTopRoutesChart', routes.map(r=>r.page_path||'/'), [{label:'Views',data:routes.map(r=>r.views||0),backgroundColor:'#3ecf8e'}], {horizontal:true});
 
-        // Section daily
-        const sectionTotals = {}; sectionDaily.forEach(d=>{sectionTotals[d.section]=(sectionTotals[d.section]||0)+(d.cnt||0);});
+        // Section daily with granularity
+        const sectionTotals = {};
+        const filteredSectionDaily = filterSnapshot(sectionDaily, f);
+        filteredSectionDaily.forEach(d=>{sectionTotals[d.section]=(sectionTotals[d.section]||0)+(d.cnt||0);});
         const topSections = Object.entries(sectionTotals).sort((a,b)=>b[1]-a[1]).slice(0,6).map(e=>e[0]);
-        const sdDays = filterDays([...new Set(sectionDaily.map(d=>d.day))].sort(), f);
-        const sdMap = {}; sectionDaily.forEach(d=>{sdMap[d.section+'|'+d.day]=d.cnt||0;});
-        lineChart('bhDetSectionDailyChart', sdDays.map(dayLabel), topSections.map((s,i)=>({label:s,data:sdDays.map(day=>sdMap[s+'|'+day]||0),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
+        const mcSD = prepareMultiCategoryTS(sectionDaily, f, 'section', 'cnt');
+        lineChart('bhDetSectionDailyChart', mcSD.labels, topSections.map((s,i)=>({label:s,data:mcSD.getValues(s),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
 
         const dlPrep = prepareTimeSeries(downloads, f, ['downloads']);
         barChart('bhDetDownloadsChart', dlPrep.labels, [{label:'Downloads',data:dlPrep.data.map(d=>d.downloads||0),backgroundColor:'#f59e0b'}]);
@@ -871,10 +1137,12 @@
 
         // Tickers table
         document.getElementById('bhDetTickersTable').innerHTML = `<thead><tr><th>Ticker</th><th>Preco</th><th>Market Cap</th><th>Setor</th><th>DY</th><th>P/L</th></tr></thead><tbody>${topTickers.map(t=>`<tr><td>${t.ticker||'-'}</td><td>R$${(t.price||0).toFixed(2)}</td><td>${fmtBytes(t.market_cap||0)}</td><td>${t.sector||'-'}</td><td>${(t.dy||0).toFixed(2)}%</td><td>${(t.pe||0).toFixed(1)}</td></tr>`).join('')}</tbody>`;
+        makeSortable(document.getElementById('bhDetTickersTable'));
 
         // Table sizes
         const tableSizes = bh.table_sizes || [];
         document.getElementById('bhDetTableSizes').innerHTML = `<thead><tr><th>Tabela</th><th>Tamanho</th><th>Rows</th></tr></thead><tbody>${tableSizes.map(t=>`<tr><td>${t.table_name||'-'}</td><td>${fmtBytes(t.total_bytes||0)}</td><td>${fmt(t.row_count||0)}</td></tr>`).join('')}</tbody>`;
+        makeSortable(document.getElementById('bhDetTableSizes'));
     }
 
     function renderDeviceCharts(data, prefix, filters) {
@@ -884,16 +1152,27 @@
         const browserSummary = data.browser_summary || [];
         const deviceColors = {desktop:'#3b82f6',mobile:'#f59e0b',tablet:'#3ecf8e'};
 
-        const ddDays = filterDays([...new Set(deviceDaily.map(d=>d.day))].sort(), filters);
-        const ddTypes = [...new Set(deviceDaily.map(d=>d.device_type))];
-        const ddMap = {}; deviceDaily.forEach(d=>{ddMap[d.device_type+'|'+d.day]=d.cnt||0;});
+        // Device daily with granularity
+        const mcDD = prepareMultiCategoryTS(deviceDaily, filters, 'device_type', 'cnt');
+        const ddTypes = mcDD.categories;
         destroyChart(prefix+'DeviceDailyChart');
         charts[prefix+'DeviceDailyChart'] = new Chart(document.getElementById(prefix+'DeviceDailyChart'), {
-            type:'bar',data:{labels:ddDays.map(dayLabel),datasets:ddTypes.map(t=>({label:t.charAt(0).toUpperCase()+t.slice(1),data:ddDays.map(day=>ddMap[t+'|'+day]||0),backgroundColor:deviceColors[t]||'#94a3b8'}))},
-            options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            type:'bar',data:{labels:mcDD.labels,datasets:ddTypes.map(t=>({label:t.charAt(0).toUpperCase()+t.slice(1),data:mcDD.getValues(t),backgroundColor:deviceColors[t]||'#94a3b8'}))},
+            options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
         });
 
-        doughnutChart(prefix+'DeviceChart', deviceSummary.map(d=>(d.device_type||'unknown').charAt(0).toUpperCase()+(d.device_type||'unknown').slice(1)), deviceSummary.map(d=>d.cnt), deviceSummary.map(d=>deviceColors[d.device_type]||'#94a3b8'));
+        // Filter device/os/browser summaries by date range (aggregate from daily data)
+        const filteredDevDaily = filterSnapshot(deviceDaily, filters);
+        const devAgg = {};
+        filteredDevDaily.forEach(d => { devAgg[d.device_type] = (devAgg[d.device_type]||0) + (d.cnt||0); });
+        const filteredDevSummary = Object.entries(devAgg).map(([device_type,cnt])=>({device_type,cnt})).sort((a,b)=>b.cnt-a.cnt);
+
+        doughnutChart(prefix+'DeviceChart',
+            (filteredDevSummary.length > 0 ? filteredDevSummary : deviceSummary).map(d=>(d.device_type||'unknown').charAt(0).toUpperCase()+(d.device_type||'unknown').slice(1)),
+            (filteredDevSummary.length > 0 ? filteredDevSummary : deviceSummary).map(d=>d.cnt),
+            (filteredDevSummary.length > 0 ? filteredDevSummary : deviceSummary).map(d=>deviceColors[d.device_type]||'#94a3b8'));
+
+        // OS and browser summaries are snapshots without time dimension - use as-is
         doughnutChart(prefix+'OsChart', osSummary.map(d=>d.os||'unknown'), osSummary.map(d=>d.cnt), COLORS.slice(0,osSummary.length));
         doughnutChart(prefix+'BrowserChart', browserSummary.map(d=>d.browser||'unknown'), browserSummary.map(d=>d.cnt), COLORS.slice(2,2+browserSummary.length));
     }
@@ -931,7 +1210,7 @@
                 {label:'Sessoes',data:tPrep.data.map(d=>d.sessions||0),backgroundColor:'#3ecf8e',order:2},
                 {label:'Tasks IA',type:'line',data:tPrep.data.map(d=>d.tasks||0),borderColor:'#6366f1',backgroundColor:'transparent',tension:0.4,pointBackgroundColor:'#6366f1',order:1},
                 {label:'Chat Msgs',type:'line',data:tPrep.data.map(d=>d.chat_msgs||0),borderColor:'#f59e0b',backgroundColor:'transparent',tension:0.4,pointBackgroundColor:'#f59e0b',order:1}
-            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:true,labels:{boxWidth:12}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:true,labels:{boxWidth:12}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
         });
 
         const lPrep = prepareTimeSeries(loginDaily, f, ['logins','unique_users']);
@@ -940,7 +1219,7 @@
             type:'bar',data:{labels:lPrep.labels,datasets:[
                 {label:'Logins',data:lPrep.data.map(d=>d.logins||0),backgroundColor:'rgba(62,207,142,0.8)',order:2},
                 {label:'Usuarios Unicos',type:'line',data:lPrep.data.map(d=>d.unique_users||0),borderColor:'#6366f1',backgroundColor:'transparent',tension:0.4,pointBackgroundColor:'#6366f1',yAxisID:'y1',order:1}
-            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:true,labels:{boxWidth:12}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false}}}}
+            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:true,labels:{boxWidth:12}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false}}}}
         });
     }
 
@@ -982,7 +1261,7 @@
             type:'bar',data:{labels:lPrep.labels,datasets:[
                 {label:'Logins',data:lPrep.data.map(d=>d.logins||0),backgroundColor:'rgba(62,207,142,0.8)',order:2},
                 {label:'Usuarios',type:'line',data:lPrep.data.map(d=>d.unique_users||0),borderColor:'#6366f1',backgroundColor:'transparent',tension:0.4,yAxisID:'y1',order:1}
-            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:true,labels:{boxWidth:12}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false}}}}
+            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:true,labels:{boxWidth:12}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false}}}}
         });
 
         const qPrep = prepareTimeSeries(qDaily, f, ['total_questions','active_users']);
@@ -992,12 +1271,14 @@
             type:'bar',data:{labels:qPrep.labels,datasets:[
                 {label:'Total Perguntas',data:qPrep.data.map(d=>d.total_questions||0),backgroundColor:'#3ecf8e',order:2},
                 {label:'Media/Usuario',data:qAvg,type:'line',borderColor:'#f59e0b',backgroundColor:'transparent',tension:0.4,pointBackgroundColor:'#f59e0b',yAxisID:'y1',order:1}
-            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}},y1:{position:'right',beginAtZero:true,grid:{display:false}}}}
+            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}},y1:{position:'right',beginAtZero:true,grid:{display:false}}}}
         });
 
         document.getElementById('htaAqProfilesTable').innerHTML = `<thead><tr><th>Status</th><th>Tipo Cliente</th><th>Quantidade</th></tr></thead><tbody>${profiles.map(p=>`<tr><td><span class="status-badge ${p.status==='active'?'status-active':'status-inactive'}">${p.status}</span></td><td>${p.client_type||'-'}</td><td>${fmt(p.cnt||0)}</td></tr>`).join('')}</tbody>`;
+        makeSortable(document.getElementById('htaAqProfilesTable'));
 
         document.getElementById('htaAqQuestionsTable').innerHTML = `<thead><tr><th>Email</th><th>Perguntas</th></tr></thead><tbody>${qByUser.map(q=>`<tr><td>${q.email||'-'}</td><td>${fmt(Number(q.total_questions)||0)}</td></tr>`).join('')}</tbody>`;
+        makeSortable(document.getElementById('htaAqQuestionsTable'));
     }
 
     function renderHtaEngajamento() {
@@ -1046,7 +1327,7 @@
             type:'bar',data:{labels:tPrep.labels,datasets:[
                 {label:'Tasks IA',data:tPrep.data.map(d=>d.tasks||0),backgroundColor:'rgba(99,102,241,0.8)',order:2},
                 {label:'Chat Msgs',type:'line',data:tPrep.data.map(d=>d.chat_msgs||0),borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,0.1)',tension:0.4,fill:true,order:1}
-            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:true,labels:{boxWidth:12}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:true,labels:{boxWidth:12}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
         });
 
         const cPrep = prepareTimeSeries(chatDaily, f, ['messages','unique_users']);
@@ -1055,7 +1336,7 @@
             type:'bar',data:{labels:cPrep.labels,datasets:[
                 {label:'Mensagens',data:cPrep.data.map(d=>d.messages||0),backgroundColor:'rgba(62,207,142,0.8)',order:2},
                 {label:'Usuarios Unicos',type:'line',data:cPrep.data.map(d=>d.unique_users||0),borderColor:'#6366f1',backgroundColor:'transparent',tension:0.4,yAxisID:'y1',order:1}
-            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:true,labels:{boxWidth:12}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false}}}}
+            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:true,labels:{boxWidth:12}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false}}}}
         });
 
         // Agent success
@@ -1068,7 +1349,7 @@
                 {label:'Concluidas',data:asPrep.data.map(d=>d.completed||0),backgroundColor:'#3ecf8e',order:2},
                 {label:'Falhas',data:asPrep.data.map(d=>d.failed||0),backgroundColor:'#ef4444',order:2},
                 {label:'Taxa Sucesso %',data:asRate,type:'line',borderColor:'#f59e0b',backgroundColor:'transparent',tension:0.4,pointBackgroundColor:'#f59e0b',yAxisID:'y1',order:1}
-            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}},y1:{position:'right',beginAtZero:true,max:100,grid:{display:false},ticks:{callback:v=>v+'%'}}}}
+            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}},y1:{position:'right',beginAtZero:true,max:100,grid:{display:false},ticks:{callback:v=>v+'%'}}}}
         });
 
         // Agent duration
@@ -1079,19 +1360,24 @@
             {label:'Maximo',data:adPrep.data.map(d=>d.max_duration_sec||0),borderColor:'#ef4444',fill:false,borderDash:[5,5]}
         ]);
 
-        // Response mode
+        // Response mode summary - aggregate from daily for date filtering
         const modeColors = {'deep':'#6366f1','pro':'#3ecf8e','fast':'#f59e0b'};
-        doughnutChart('htaEngRespModeChart', rmSummary.map(r=>(r.response_mode||'N/A').charAt(0).toUpperCase()+(r.response_mode||'N/A').slice(1)), rmSummary.map(r=>r.cnt||0), rmSummary.map(r=>modeColors[r.response_mode]||'#94a3b8'));
+        const filteredRmDaily = filterSnapshot(rmDaily, f);
+        const rmAgg = {};
+        filteredRmDaily.forEach(d => { rmAgg[d.response_mode] = (rmAgg[d.response_mode]||0) + (d.cnt||0); });
+        const filteredRmSummary = Object.entries(rmAgg).map(([response_mode,cnt])=>({response_mode,cnt})).sort((a,b)=>b.cnt-a.cnt);
+        const rmSrc = filteredRmSummary.length > 0 ? filteredRmSummary : rmSummary;
+        doughnutChart('htaEngRespModeChart', rmSrc.map(r=>(r.response_mode||'N/A').charAt(0).toUpperCase()+(r.response_mode||'N/A').slice(1)), rmSrc.map(r=>r.cnt||0), rmSrc.map(r=>modeColors[r.response_mode]||'#94a3b8'));
 
-        const rmModes = [...new Set(rmDaily.map(d=>d.response_mode))];
-        const rmDays = filterDays([...new Set(rmDaily.map(d=>d.day))].sort(), f);
-        const rmMap = {}; rmDaily.forEach(d=>{rmMap[d.response_mode+'|'+d.day]=d.cnt||0;});
+        // Response mode daily with granularity
+        const mcRM = prepareMultiCategoryTS(rmDaily, f, 'response_mode', 'cnt');
         destroyChart('htaEngRespModeDailyChart');
         charts.htaEngRespModeDailyChart = new Chart(document.getElementById('htaEngRespModeDailyChart'), {
-            type:'bar',data:{labels:rmDays.map(dayLabel),datasets:rmModes.map(m=>({label:m.charAt(0).toUpperCase()+m.slice(1),data:rmDays.map(day=>rmMap[m+'|'+day]||0),backgroundColor:modeColors[m]||'#94a3b8'}))},
-            options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            type:'bar',data:{labels:mcRM.labels,datasets:mcRM.categories.map(m=>({label:m.charAt(0).toUpperCase()+m.slice(1),data:mcRM.getValues(m),backgroundColor:modeColors[m]||'#94a3b8'}))},
+            options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
         });
 
+        // Chat depth (pre-aggregated snapshot)
         barChart('htaEngChatDepthChart', chatDepth.map(d=>d.bucket), [{label:'Sessoes',data:chatDepth.map(d=>d.sessions||0),backgroundColor:'#6366f1'}]);
 
         // Ticker by feature
@@ -1102,24 +1388,25 @@
             destroyChart('htaEngTickerByFeatureChart');
             charts.htaEngTickerByFeatureChart = new Chart(document.getElementById('htaEngTickerByFeatureChart'), {
                 type:'bar',data:{labels:tbfTickers,datasets:tbfFeatures.map((feat,i)=>({label:feat,data:tbfTickers.map(t=>tbfMap[t+'|'+feat]||0),backgroundColor:COLORS[i%COLORS.length]}))},
-                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
             });
         }
 
+        // Ticker trend with granularity
         if (tickerTrend.length > 0) {
-            const ttTickers = [...new Set(tickerTrend.map(d=>d.ticker))].slice(0,6);
-            const ttDays = filterDays([...new Set(tickerTrend.map(d=>d.day))].sort(), f);
-            const ttMap = {}; tickerTrend.forEach(d=>{ttMap[d.ticker+'|'+d.day]=d.cnt||0;});
-            lineChart('htaEngTickerTrendChart', ttDays.map(dayLabel), ttTickers.map((t,i)=>({label:t,data:ttDays.map(day=>ttMap[t+'|'+day]||0),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
+            const mcTT = prepareMultiCategoryTS(tickerTrend, f, 'ticker', 'cnt');
+            const ttTickers = mcTT.categories.slice(0,6);
+            lineChart('htaEngTickerTrendChart', mcTT.labels, ttTickers.map((t,i)=>({label:t,data:mcTT.getValues(t),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
         }
 
+        // Feature trend with granularity
         if (featureTrend.length > 0) {
-            const ftFeatures = [...new Set(featureTrend.map(d=>d.feature))].slice(0,8);
-            const ftDays = filterDays([...new Set(featureTrend.map(d=>d.day))].sort(), f);
-            const ftMap = {}; featureTrend.forEach(d=>{ftMap[d.feature+'|'+d.day]=d.unique_users||0;});
-            lineChart('htaEngFeatureTrendChart', ftDays.map(dayLabel), ftFeatures.map((feat,i)=>({label:feat,data:ftDays.map(day=>ftMap[feat+'|'+day]||0),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
+            const mcFT = prepareMultiCategoryTS(featureTrend, f, 'feature', 'unique_users');
+            const ftFeatures = mcFT.categories.slice(0,8);
+            lineChart('htaEngFeatureTrendChart', mcFT.labels, ftFeatures.map((feat,i)=>({label:feat,data:mcFT.getValues(feat),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
         }
 
+        // Feature breadth (pre-aggregated snapshot)
         if (featureBreadth.length > 0) {
             doughnutChart('htaEngBreadthChart', featureBreadth.map(d=>d.bucket||d.feature_count+' features'), featureBreadth.map(d=>d.user_count||0), COLORS);
         }
@@ -1165,16 +1452,18 @@
         const tokenByMode = hta.token_by_mode || [];
         const topQueries = hta.top_queries_by_token || [];
 
-        const totalRequests = tokenSummary.reduce((s,r)=>s+(Number(r.total_requests)||0),0);
-        const totalInput = tokenSummary.reduce((s,r)=>s+(Number(r.total_input_tokens)||0),0);
-        const totalOutput = tokenSummary.reduce((s,r)=>s+(Number(r.total_output_tokens)||0),0);
-        const totalCost = tokenSummary.reduce((s,r)=>s+calcTokenCost(r.model_name,Number(r.total_input_tokens)||0,Number(r.total_output_tokens)||0),0);
+        // Filter token summary by date range for KPIs
+        const filteredTokenDaily = filterSnapshot(tokenDaily, f);
+        const totalRequests = filteredTokenDaily.reduce((s,d)=>s+(Number(d.requests)||0),0);
+        const totalInput = filteredTokenDaily.reduce((s,d)=>s+(Number(d.input_tokens)||0),0);
+        const totalOutput = filteredTokenDaily.reduce((s,d)=>s+(Number(d.output_tokens)||0),0);
+        const totalCost = filteredTokenDaily.reduce((s,d)=>s+calcTokenCost(d.model_name,Number(d.input_tokens)||0,Number(d.output_tokens)||0),0);
         const avgPerQuery = Number(tokenStats.avg_tokens_per_query)||0;
 
-        const last7Days = [...new Set(tokenDaily.map(d=>d.day))].sort().slice(-7);
+        const last7Days = [...new Set(filteredTokenDaily.map(d=>d.day))].sort().slice(-7);
         let projectionMonthly = 0;
         if (last7Days.length > 0) {
-            const last7Cost = last7Days.reduce((sum,day)=>sum+tokenDaily.filter(d=>d.day===day).reduce((s,d)=>s+calcTokenCost(d.model_name,Number(d.input_tokens)||0,Number(d.output_tokens)||0),0),0);
+            const last7Cost = last7Days.reduce((sum,day)=>sum+filteredTokenDaily.filter(d=>d.day===day).reduce((s,d)=>s+calcTokenCost(d.model_name,Number(d.input_tokens)||0,Number(d.output_tokens)||0),0),0);
             projectionMonthly = (last7Cost/last7Days.length)*30;
         }
 
@@ -1236,31 +1525,48 @@
             ${createKpiCard('Custo/Usuario', '$'+costPerUser.toFixed(2))}
         `;
 
-        // Token daily charts
-        const models = [...new Set(tokenDaily.map(d=>d.model_name))];
-        const allDays = [...new Set(tokenDaily.map(d=>d.day))].sort();
-        const filteredDays = filterDays(allDays, f);
-        const dLabels = filteredDays.map(dayLabel);
+        // Token daily charts with granularity
+        const models = [...new Set(filteredTokenDaily.map(d=>d.model_name))];
+        // Build aggregated data per model per granularity bucket
+        const tokenDailyNorm = filteredTokenDaily.map(d => ({day: d.day, model_name: d.model_name, input_tokens: Number(d.input_tokens)||0, output_tokens: Number(d.output_tokens)||0, requests: Number(d.requests)||0}));
+        const allTokenDays = [...new Set(tokenDailyNorm.map(d=>d.day))].sort();
+        const granDays = aggregateDayList(allTokenDays, f.gran);
+        const dayBkts = buildDayBuckets(allTokenDays, f.gran);
+        const dLabels = granDays.map(d => formatLabel(d, f.gran));
+
+        // Build model-day map
         const mdMap = {};
-        tokenDaily.forEach(d=>{const k=d.model_name+'|'+d.day;if(!mdMap[k])mdMap[k]={input_tokens:0,output_tokens:0,requests:0};mdMap[k].input_tokens+=Number(d.input_tokens)||0;mdMap[k].output_tokens+=Number(d.output_tokens)||0;mdMap[k].requests+=Number(d.requests)||0;});
+        tokenDailyNorm.forEach(d=>{const k=d.model_name+'|'+d.day;if(!mdMap[k])mdMap[k]={input_tokens:0,output_tokens:0,requests:0};mdMap[k].input_tokens+=d.input_tokens;mdMap[k].output_tokens+=d.output_tokens;mdMap[k].requests+=d.requests;});
+
+        function getGranAgg(model, field) {
+            return granDays.map((gd, i) => dayBkts[i].reduce((s, day) => s + ((mdMap[model+'|'+day]||{})[field]||0), 0));
+        }
 
         const tokenDS = [];
-        models.forEach(model=>{const c=MODEL_COLORS[model]||'#94a3b8';tokenDS.push({label:(TOKEN_PRICING[model]?.label||model)+' Input',data:filteredDays.map(day=>(mdMap[model+'|'+day]||{}).input_tokens||0),backgroundColor:c,stack:model});tokenDS.push({label:(TOKEN_PRICING[model]?.label||model)+' Output',data:filteredDays.map(day=>(mdMap[model+'|'+day]||{}).output_tokens||0),backgroundColor:c+'80',stack:model});});
+        models.forEach(model=>{const c=MODEL_COLORS[model]||'#94a3b8';tokenDS.push({label:(TOKEN_PRICING[model]?.label||model)+' Input',data:getGranAgg(model,'input_tokens'),backgroundColor:c,stack:model});tokenDS.push({label:(TOKEN_PRICING[model]?.label||model)+' Output',data:getGranAgg(model,'output_tokens'),backgroundColor:c+'80',stack:model});});
         destroyChart('htaCTokensDailyChart');
-        charts.htaCTokensDailyChart = new Chart(document.getElementById('htaCTokensDailyChart'),{type:'bar',data:{labels:dLabels,datasets:tokenDS},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}});
+        charts.htaCTokensDailyChart = new Chart(document.getElementById('htaCTokensDailyChart'),{type:'bar',data:{labels:dLabels,datasets:tokenDS},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}});
 
-        const costDS = models.map(model=>{const c=MODEL_COLORS[model]||'#94a3b8';return{label:TOKEN_PRICING[model]?.label||model,data:filteredDays.map(day=>{const d=mdMap[model+'|'+day]||{};return calcTokenCost(model,d.input_tokens||0,d.output_tokens||0);}),borderColor:c,backgroundColor:c+'20',tension:0.4,fill:false,pointBackgroundColor:c};});
-        costDS.push({label:'Total',data:filteredDays.map(day=>models.reduce((s,model)=>{const d=mdMap[model+'|'+day]||{};return s+calcTokenCost(model,d.input_tokens||0,d.output_tokens||0);},0)),borderColor:'#ef4444',borderDash:[5,5],tension:0.4,fill:false,pointBackgroundColor:'#ef4444'});
+        const costDS = models.map(model=>{const c=MODEL_COLORS[model]||'#94a3b8';return{label:TOKEN_PRICING[model]?.label||model,data:granDays.map((gd,i)=>{const inp=dayBkts[i].reduce((s,day)=>s+((mdMap[model+'|'+day]||{}).input_tokens||0),0);const out=dayBkts[i].reduce((s,day)=>s+((mdMap[model+'|'+day]||{}).output_tokens||0),0);return calcTokenCost(model,inp,out);}),borderColor:c,backgroundColor:c+'20',tension:0.4,fill:false,pointBackgroundColor:c};});
+        costDS.push({label:'Total',data:granDays.map((gd,i)=>models.reduce((s,model)=>{const inp=dayBkts[i].reduce((ss,day)=>ss+((mdMap[model+'|'+day]||{}).input_tokens||0),0);const out=dayBkts[i].reduce((ss,day)=>ss+((mdMap[model+'|'+day]||{}).output_tokens||0),0);return s+calcTokenCost(model,inp,out);},0)),borderColor:'#ef4444',borderDash:[5,5],tension:0.4,fill:false,pointBackgroundColor:'#ef4444'});
         destroyChart('htaCCostDailyChart');
-        charts.htaCCostDailyChart = new Chart(document.getElementById('htaCCostDailyChart'),{type:'line',data:{labels:dLabels,datasets:costDS},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'},ticks:{callback:v=>'$'+v.toFixed(2)}}}}});
+        charts.htaCCostDailyChart = new Chart(document.getElementById('htaCCostDailyChart'),{type:'line',data:{labels:dLabels,datasets:costDS},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:ctx=>{const v=ctx.parsed.y;return(ctx.dataset.label||'')+': $'+v.toFixed(4);}}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'},ticks:{callback:v=>'$'+v.toFixed(2)}}}}});
 
-        const reqDS = models.map(model=>({label:TOKEN_PRICING[model]?.label||model,data:filteredDays.map(day=>(mdMap[model+'|'+day]||{}).requests||0),backgroundColor:MODEL_COLORS[model]||'#94a3b8'}));
+        const reqDS = models.map(model=>({label:TOKEN_PRICING[model]?.label||model,data:getGranAgg(model,'requests'),backgroundColor:MODEL_COLORS[model]||'#94a3b8'}));
         destroyChart('htaCReqDailyChart');
-        charts.htaCReqDailyChart = new Chart(document.getElementById('htaCReqDailyChart'),{type:'bar',data:{labels:dLabels,datasets:reqDS},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}});
+        charts.htaCReqDailyChart = new Chart(document.getElementById('htaCReqDailyChart'),{type:'bar',data:{labels:dLabels,datasets:reqDS},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}});
 
-        doughnutChart('htaCTokenDistChart', tokenSummary.map(s=>TOKEN_PRICING[s.model_name]?.label||s.model_name), tokenSummary.map(s=>(Number(s.total_input_tokens)||0)+(Number(s.total_output_tokens)||0)), tokenSummary.map(s=>MODEL_COLORS[s.model_name]||'#94a3b8'));
+        // Token distribution - aggregate filtered data
+        const filteredTokenAgg = {};
+        filteredTokenDaily.forEach(d=>{
+            const m = d.model_name;
+            if(!filteredTokenAgg[m]) filteredTokenAgg[m] = 0;
+            filteredTokenAgg[m] += (Number(d.input_tokens)||0) + (Number(d.output_tokens)||0);
+        });
+        const filteredDistLabels = Object.keys(filteredTokenAgg);
+        doughnutChart('htaCTokenDistChart', filteredDistLabels.map(m=>TOKEN_PRICING[m]?.label||m), filteredDistLabels.map(m=>filteredTokenAgg[m]), filteredDistLabels.map(m=>MODEL_COLORS[m]||'#94a3b8'));
 
-        // Token by mode
+        // Token by mode (snapshot)
         const modeData = tokenByMode.filter(m=>m.mode!=='unknown'||tokenByMode.length===1);
         const hasModeData = modeData.length>0 && modeData.some(m=>Number(m.query_count)>0);
         if (hasModeData) {
@@ -1286,17 +1592,20 @@
         }
 
         document.getElementById('htaCTokenUserTable').innerHTML = renderTokenUserTable('consolidated');
+        makeSortable(document.getElementById('htaCTokenUserTable'));
         document.querySelectorAll('[data-token-view]').forEach(btn=>{
             btn.onclick = () => {
                 document.querySelectorAll('[data-token-view]').forEach(b=>b.classList.remove('active'));
                 btn.classList.add('active');
                 document.getElementById('htaCTokenUserTable').innerHTML = renderTokenUserTable(btn.dataset.tokenView);
+                makeSortable(document.getElementById('htaCTokenUserTable'));
             };
         });
 
         // Top queries
         if (topQueries.length > 0) {
             document.getElementById('htaCTopQueriesTable').innerHTML = `<thead><tr><th>Data</th><th>Ticker</th><th>Modo</th><th>Tokens</th><th>Prompt</th><th>Completion</th><th>Chamadas</th><th>Duracao</th></tr></thead><tbody>${topQueries.map(q=>{const dt=q.event_ts?new Date(q.event_ts).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'-';const dur=q.duration_ms?(q.duration_ms/1000).toFixed(1)+'s':'-';return`<tr><td>${dt}</td><td>${q.ticker||'-'}</td><td>${q.response_mode||'-'}</td><td>${fmt(Number(q.token_count)||0)}</td><td>${q.prompt_tokens!=null?fmt(q.prompt_tokens):'-'}</td><td>${q.completion_tokens!=null?fmt(q.completion_tokens):'-'}</td><td>${q.call_count!=null?q.call_count:'-'}</td><td>${dur}</td></tr>`;}).join('')}</tbody>`;
+            makeSortable(document.getElementById('htaCTopQueriesTable'));
         } else {
             document.getElementById('htaCTopQueriesTable').innerHTML = '<tbody><tr><td colspan="8" style="text-align:center;color:var(--m);padding:20px">Tracking por query ainda nao ativo</td></tr></tbody>';
         }
@@ -1313,11 +1622,27 @@
         const summary = hta.server_token_summary || [];
         const last24h = hta.server_token_last_24h || {};
 
-        const totalRequests = summary.reduce((s,r)=>s+(Number(r.total_requests)||0),0);
-        const totalTokens = summary.reduce((s,r)=>s+(Number(r.total_tokens)||0),0);
-        const totalThoughts = summary.reduce((s,r)=>s+(Number(r.total_thoughts_tokens)||0),0);
-        const totalCost = summary.reduce((s,r)=>s+calcServerCost(r.model_name,Number(r.total_prompt_tokens)||0,Number(r.total_completion_tokens)||0,Number(r.total_thoughts_tokens)||0),0);
-        const backfillDocs = summary.filter(r=>r.is_backfill).reduce((s,r)=>s+(Number(r.total_requests)||0),0);
+        // Filter daily by date range
+        const filteredDaily = filterSnapshot(daily, f);
+
+        const filteredSummaryAgg = {};
+        filteredDaily.forEach(d => {
+            const key = d.source + '|' + (d.is_backfill?'bf':'real') + '|' + d.model_name;
+            if (!filteredSummaryAgg[key]) filteredSummaryAgg[key] = {source:d.source, is_backfill:d.is_backfill, model_name:d.model_name, total_requests:0, total_prompt_tokens:0, total_completion_tokens:0, total_thoughts_tokens:0, total_tokens:0};
+            const a = filteredSummaryAgg[key];
+            a.total_requests += Number(d.requests)||0;
+            a.total_prompt_tokens += Number(d.prompt_tokens)||0;
+            a.total_completion_tokens += Number(d.completion_tokens)||0;
+            a.total_thoughts_tokens += Number(d.thoughts_tokens)||0;
+            a.total_tokens += Number(d.total_tokens)||0;
+        });
+        const filteredSummary = Object.values(filteredSummaryAgg);
+
+        const totalRequests = filteredSummary.reduce((s,r)=>s+(r.total_requests||0),0);
+        const totalTokens = filteredSummary.reduce((s,r)=>s+(r.total_tokens||0),0);
+        const totalThoughts = filteredSummary.reduce((s,r)=>s+(r.total_thoughts_tokens||0),0);
+        const totalCost = filteredSummary.reduce((s,r)=>s+calcServerCost(r.model_name,r.total_prompt_tokens||0,r.total_completion_tokens||0,r.total_thoughts_tokens||0),0);
+        const backfillDocs = filteredSummary.filter(r=>r.is_backfill).reduce((s,r)=>s+(r.total_requests||0),0);
         const today24h = Number(last24h.total_tokens)||0;
 
         document.getElementById('htaCServerKpis').innerHTML = `
@@ -1329,57 +1654,82 @@
             ${createKpiCard('Dados Reais', fmt(totalRequests-backfillDocs)+' docs')}
         `;
 
-        const allDays = [...new Set(daily.map(d=>d.day))].sort();
-        const filteredDays = filterDays(allDays, f);
-        const dLabels = filteredDays.map(dayLabel);
-        const sources = [...new Set(daily.map(d=>d.source))];
+        const allDays = [...new Set(filteredDaily.map(d=>d.day))].sort();
+        const sources = [...new Set(filteredDaily.map(d=>d.source))];
+        const granDaysS = aggregateDayList(allDays, f.gran);
+        const dayBktsS = buildDayBuckets(allDays, f.gran);
+        const dLabelsS = granDaysS.map(d => formatLabel(d, f.gran));
+
         const dayMap = {};
-        daily.forEach(d=>{const bfTag=d.is_backfill?':bf':':real';const k=d.source+bfTag+'|'+d.day;if(!dayMap[k])dayMap[k]={prompt:0,completion:0,thoughts:0,total:0,requests:0,model:d.model_name};dayMap[k].prompt+=Number(d.prompt_tokens)||0;dayMap[k].completion+=Number(d.completion_tokens)||0;dayMap[k].thoughts+=Number(d.thoughts_tokens)||0;dayMap[k].total+=Number(d.total_tokens)||0;dayMap[k].requests+=Number(d.requests)||0;});
+        filteredDaily.forEach(d=>{const bfTag=d.is_backfill?':bf':':real';const k=d.source+bfTag+'|'+d.day;if(!dayMap[k])dayMap[k]={prompt:0,completion:0,thoughts:0,total:0,requests:0,model:d.model_name};dayMap[k].prompt+=Number(d.prompt_tokens)||0;dayMap[k].completion+=Number(d.completion_tokens)||0;dayMap[k].thoughts+=Number(d.thoughts_tokens)||0;dayMap[k].total+=Number(d.total_tokens)||0;dayMap[k].requests+=Number(d.requests)||0;});
+
+        function srvGranAgg(src, tag, field) {
+            return granDaysS.map((gd, i) => dayBktsS[i].reduce((s, day) => {
+                const d = dayMap[src+':'+tag+'|'+day];
+                return s + (d ? (d[field]||0) : 0);
+            }, 0));
+        }
 
         const tokenDS = [];
-        sources.forEach(src=>{const lbl=SERVER_SOURCE_LABELS[src]||src;const c=SERVER_SOURCE_COLORS[src]||'#94a3b8';tokenDS.push({label:lbl+' (real)',data:filteredDays.map(day=>(dayMap[src+':real|'+day]||{}).total||0),backgroundColor:c,stack:'tokens'});tokenDS.push({label:lbl+' (backfill)',data:filteredDays.map(day=>(dayMap[src+':bf|'+day]||{}).total||0),backgroundColor:BACKFILL_COLOR+'90',borderColor:BACKFILL_COLOR,borderWidth:1,stack:'tokens'});});
+        sources.forEach(src=>{const lbl=SERVER_SOURCE_LABELS[src]||src;const c=SERVER_SOURCE_COLORS[src]||'#94a3b8';tokenDS.push({label:lbl+' (real)',data:srvGranAgg(src,'real','total'),backgroundColor:c,stack:'tokens'});tokenDS.push({label:lbl+' (backfill)',data:srvGranAgg(src,'bf','total'),backgroundColor:BACKFILL_COLOR+'90',borderColor:BACKFILL_COLOR,borderWidth:1,stack:'tokens'});});
         destroyChart('htaCServerDailyChart');
-        charts.htaCServerDailyChart = new Chart(document.getElementById('htaCServerDailyChart'),{type:'bar',data:{labels:dLabels,datasets:tokenDS},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}});
+        charts.htaCServerDailyChart = new Chart(document.getElementById('htaCServerDailyChart'),{type:'bar',data:{labels:dLabelsS,datasets:tokenDS},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}});
 
-        const costDS = sources.map(src=>{const c=SERVER_SOURCE_COLORS[src]||'#94a3b8';return{label:SERVER_SOURCE_LABELS[src]||src,data:filteredDays.map(day=>{let cost=0;['real','bf'].forEach(tag=>{const d=dayMap[src+':'+tag+'|'+day];if(d)cost+=calcServerCost(d.model,d.prompt,d.completion,d.thoughts);});return cost;}),borderColor:c,backgroundColor:c+'20',tension:0.4,fill:false,pointBackgroundColor:c};});
-        costDS.push({label:'Total',data:filteredDays.map(day=>{let cost=0;sources.forEach(src=>{['real','bf'].forEach(tag=>{const d=dayMap[src+':'+tag+'|'+day];if(d)cost+=calcServerCost(d.model,d.prompt,d.completion,d.thoughts);});});return cost;}),borderColor:'#ef4444',borderDash:[5,5],tension:0.4,fill:false,pointBackgroundColor:'#ef4444'});
+        const costDS = sources.map(src=>{const c=SERVER_SOURCE_COLORS[src]||'#94a3b8';return{label:SERVER_SOURCE_LABELS[src]||src,data:granDaysS.map((gd,i)=>{let cost=0;['real','bf'].forEach(tag=>{dayBktsS[i].forEach(day=>{const d=dayMap[src+':'+tag+'|'+day];if(d)cost+=calcServerCost(d.model,d.prompt,d.completion,d.thoughts);});});return cost;}),borderColor:c,backgroundColor:c+'20',tension:0.4,fill:false,pointBackgroundColor:c};});
+        costDS.push({label:'Total',data:granDaysS.map((gd,i)=>{let cost=0;sources.forEach(src=>{['real','bf'].forEach(tag=>{dayBktsS[i].forEach(day=>{const d=dayMap[src+':'+tag+'|'+day];if(d)cost+=calcServerCost(d.model,d.prompt,d.completion,d.thoughts);});});});return cost;}),borderColor:'#ef4444',borderDash:[5,5],tension:0.4,fill:false,pointBackgroundColor:'#ef4444'});
         destroyChart('htaCServerCostChart');
-        charts.htaCServerCostChart = new Chart(document.getElementById('htaCServerCostChart'),{type:'line',data:{labels:dLabels,datasets:costDS},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'},ticks:{callback:v=>'$'+v.toFixed(2)}}}}});
+        charts.htaCServerCostChart = new Chart(document.getElementById('htaCServerCostChart'),{type:'line',data:{labels:dLabelsS,datasets:costDS},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:ctx=>(ctx.dataset.label||'')+': $'+ctx.parsed.y.toFixed(4)}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'},ticks:{callback:v=>'$'+v.toFixed(2)}}}}});
 
         const reqDS = [];
-        sources.forEach(src=>{const lbl=SERVER_SOURCE_LABELS[src]||src;const c=SERVER_SOURCE_COLORS[src]||'#94a3b8';reqDS.push({label:lbl+' (real)',data:filteredDays.map(day=>(dayMap[src+':real|'+day]||{}).requests||0),backgroundColor:c,stack:'req'});reqDS.push({label:lbl+' (backfill)',data:filteredDays.map(day=>(dayMap[src+':bf|'+day]||{}).requests||0),backgroundColor:BACKFILL_COLOR+'90',borderColor:BACKFILL_COLOR,borderWidth:1,stack:'req'});});
+        sources.forEach(src=>{const lbl=SERVER_SOURCE_LABELS[src]||src;const c=SERVER_SOURCE_COLORS[src]||'#94a3b8';reqDS.push({label:lbl+' (real)',data:srvGranAgg(src,'real','requests'),backgroundColor:c,stack:'req'});reqDS.push({label:lbl+' (backfill)',data:srvGranAgg(src,'bf','requests'),backgroundColor:BACKFILL_COLOR+'90',borderColor:BACKFILL_COLOR,borderWidth:1,stack:'req'});});
         destroyChart('htaCServerReqChart');
-        charts.htaCServerReqChart = new Chart(document.getElementById('htaCServerReqChart'),{type:'bar',data:{labels:dLabels,datasets:reqDS},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}});
+        charts.htaCServerReqChart = new Chart(document.getElementById('htaCServerReqChart'),{type:'bar',data:{labels:dLabelsS,datasets:reqDS},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}});
 
-        // Distribution doughnut
-        const distData = summary.filter(s=>!s.is_backfill);
-        const distBackfill = summary.filter(s=>s.is_backfill);
+        // Distribution doughnut - use filtered summary
+        const distData = filteredSummary.filter(s=>!s.is_backfill);
+        const distBackfill = filteredSummary.filter(s=>s.is_backfill);
         const allSrc = [...new Set([...distData,...distBackfill].map(s=>s.source))];
         const dL=[],dV=[],dC=[];
-        allSrc.forEach(src=>{const real=distData.filter(s=>s.source===src).reduce((s,r)=>s+(Number(r.total_tokens)||0),0);const bf=distBackfill.filter(s=>s.source===src).reduce((s,r)=>s+(Number(r.total_tokens)||0),0);if(real>0){dL.push((SERVER_SOURCE_LABELS[src]||src)+' (real)');dV.push(real);dC.push(SERVER_SOURCE_COLORS[src]||'#94a3b8');}if(bf>0){dL.push((SERVER_SOURCE_LABELS[src]||src)+' (backfill)');dV.push(bf);dC.push(BACKFILL_COLOR);}});
+        allSrc.forEach(src=>{const real=distData.filter(s=>s.source===src).reduce((s,r)=>s+(r.total_tokens||0),0);const bf=distBackfill.filter(s=>s.source===src).reduce((s,r)=>s+(r.total_tokens||0),0);if(real>0){dL.push((SERVER_SOURCE_LABELS[src]||src)+' (real)');dV.push(real);dC.push(SERVER_SOURCE_COLORS[src]||'#94a3b8');}if(bf>0){dL.push((SERVER_SOURCE_LABELS[src]||src)+' (backfill)');dV.push(bf);dC.push(BACKFILL_COLOR);}});
         doughnutChart('htaCServerDistChart', dL, dV, dC);
 
-        // Summary table
-        const tableRows = summary.map(r=>{const cost=calcServerCost(r.model_name,Number(r.total_prompt_tokens)||0,Number(r.total_completion_tokens)||0,Number(r.total_thoughts_tokens)||0);const rowStyle=r.is_backfill?'color:#f97316;font-style:italic;':'';const tag=r.is_backfill?' <span style="background:#f97316;color:#000;padding:1px 6px;border-radius:4px;font-size:10px;font-style:normal;">BACKFILL</span>':'';return`<tr style="${rowStyle}"><td>${(SERVER_SOURCE_LABELS[r.source]||r.source)+tag}</td><td>${r.model_name}</td><td>${fmt(Number(r.total_requests)||0)}</td><td>${fmt(Number(r.total_prompt_tokens)||0)}</td><td>${fmt(Number(r.total_completion_tokens)||0)}</td><td>${fmt(Number(r.total_thoughts_tokens)||0)}</td><td><strong>${fmt(Number(r.total_tokens)||0)}</strong></td><td>$${cost.toFixed(2)}</td></tr>`;}).join('');
-        const gt = summary.reduce((t,r)=>({requests:t.requests+(Number(r.total_requests)||0),prompt:t.prompt+(Number(r.total_prompt_tokens)||0),completion:t.completion+(Number(r.total_completion_tokens)||0),thoughts:t.thoughts+(Number(r.total_thoughts_tokens)||0),total:t.total+(Number(r.total_tokens)||0),cost:t.cost+calcServerCost(r.model_name,Number(r.total_prompt_tokens)||0,Number(r.total_completion_tokens)||0,Number(r.total_thoughts_tokens)||0)}),{requests:0,prompt:0,completion:0,thoughts:0,total:0,cost:0});
+        // Summary table - use filtered summary
+        const tableRows = filteredSummary.map(r=>{const cost=calcServerCost(r.model_name,r.total_prompt_tokens||0,r.total_completion_tokens||0,r.total_thoughts_tokens||0);const rowStyle=r.is_backfill?'color:#f97316;font-style:italic;':'';const tag=r.is_backfill?' <span style="background:#f97316;color:#000;padding:1px 6px;border-radius:4px;font-size:10px;font-style:normal;">BACKFILL</span>':'';return`<tr style="${rowStyle}"><td>${(SERVER_SOURCE_LABELS[r.source]||r.source)+tag}</td><td>${r.model_name}</td><td>${fmt(r.total_requests||0)}</td><td>${fmt(r.total_prompt_tokens||0)}</td><td>${fmt(r.total_completion_tokens||0)}</td><td>${fmt(r.total_thoughts_tokens||0)}</td><td><strong>${fmt(r.total_tokens||0)}</strong></td><td>$${cost.toFixed(2)}</td></tr>`;}).join('');
+        const gt = filteredSummary.reduce((t,r)=>({requests:t.requests+(r.total_requests||0),prompt:t.prompt+(r.total_prompt_tokens||0),completion:t.completion+(r.total_completion_tokens||0),thoughts:t.thoughts+(r.total_thoughts_tokens||0),total:t.total+(r.total_tokens||0),cost:t.cost+calcServerCost(r.model_name,r.total_prompt_tokens||0,r.total_completion_tokens||0,r.total_thoughts_tokens||0)}),{requests:0,prompt:0,completion:0,thoughts:0,total:0,cost:0});
         document.getElementById('htaCServerSummaryTable').innerHTML = `<thead><tr><th>Fonte</th><th>Modelo</th><th>Docs</th><th>Prompt</th><th>Completion</th><th>Thinking</th><th>Total</th><th>Custo (USD)</th></tr></thead><tbody>${tableRows}<tr style="font-weight:bold;border-top:2px solid var(--bd);"><td>Total</td><td></td><td>${fmt(gt.requests)}</td><td>${fmt(gt.prompt)}</td><td>${fmt(gt.completion)}</td><td>${fmt(gt.thoughts)}</td><td>${fmt(gt.total)}</td><td>$${gt.cost.toFixed(2)}</td></tr></tbody>`;
+        makeSortable(document.getElementById('htaCServerSummaryTable'));
     }
 
     function renderErrorMetrics() {
-        const hta = dashboardData.hta;
+        const hta = dashboardData.hta; const f = globalFilters;
         const errorDaily = hta.proxy_error_daily || [];
         const errorSummary = hta.proxy_error_summary || [];
         const errorRateDaily = hta.proxy_error_rate_daily || [];
 
-        const totalErrors = errorSummary.reduce((s,r)=>s+(Number(r.error_count)||0),0);
-        const totalRequests = errorRateDaily.reduce((s,r)=>s+(Number(r.requests)||0),0);
-        const totalErrorsFromRate = errorRateDaily.reduce((s,r)=>s+(Number(r.errors)||0),0);
+        // Filter by date range
+        const filteredErrorDaily = filterSnapshot(errorDaily, f);
+        const filteredErrorRate = filterSnapshot(errorRateDaily, f);
+
+        // Aggregate error summary from filtered daily
+        const errSumAgg = {};
+        filteredErrorDaily.forEach(d => {
+            const k = (d.proxy_name||'') + '|' + (d.error_type||'');
+            if (!errSumAgg[k]) errSumAgg[k] = {proxy_name:d.proxy_name, error_type:d.error_type, status_code:d.status_code, error_count:0, first_seen:d.day, last_seen:d.day};
+            errSumAgg[k].error_count += Number(d.error_count)||0;
+            if (d.day < errSumAgg[k].first_seen) errSumAgg[k].first_seen = d.day;
+            if (d.day > errSumAgg[k].last_seen) errSumAgg[k].last_seen = d.day;
+        });
+        const filteredErrSummary = Object.values(errSumAgg);
+
+        const totalErrors = filteredErrSummary.reduce((s,r)=>s+(r.error_count||0),0);
+        const totalRequests = filteredErrorRate.reduce((s,r)=>s+(Number(r.requests)||0),0);
+        const totalErrorsFromRate = filteredErrorRate.reduce((s,r)=>s+(Number(r.errors)||0),0);
         const overallRate = (totalRequests+totalErrorsFromRate)>0?((totalErrorsFromRate/(totalRequests+totalErrorsFromRate))*100).toFixed(1):'0.0';
         const proxyErrorCounts = {};
-        errorSummary.forEach(r=>{proxyErrorCounts[r.proxy_name]=(proxyErrorCounts[r.proxy_name]||0)+(Number(r.error_count)||0);});
+        filteredErrSummary.forEach(r=>{proxyErrorCounts[r.proxy_name]=(proxyErrorCounts[r.proxy_name]||0)+(r.error_count||0);});
         const mostAffected = Object.entries(proxyErrorCounts).sort((a,b)=>b[1]-a[1])[0];
         const today = new Date().toISOString().split('T')[0];
-        const errorsToday = errorDaily.filter(d=>d.day===today).reduce((s,d)=>s+(Number(d.error_count)||0),0);
+        const errorsToday = filteredErrorDaily.filter(d=>d.day===today).reduce((s,d)=>s+(Number(d.error_count)||0),0);
 
         document.getElementById('htaCErrorKpis').innerHTML = `
             ${createKpiCard('Total Erros', fmt(totalErrors))}
@@ -1388,36 +1738,35 @@
             ${createKpiCard('Erros Hoje', fmt(errorsToday))}
         `;
 
-        const proxies = [...new Set(errorDaily.map(d=>d.proxy_name))];
-        const errorDays = [...new Set(errorDaily.map(d=>d.day))].sort();
-        const proxyDayErrorMap = {};
-        errorDaily.forEach(d=>{const k=d.proxy_name+'|'+d.day;proxyDayErrorMap[k]=(proxyDayErrorMap[k]||0)+(Number(d.error_count)||0);});
-
-        if (errorDays.length > 0) {
+        // Error daily with granularity
+        const proxies = [...new Set(filteredErrorDaily.map(d=>d.proxy_name))];
+        if (filteredErrorDaily.length > 0) {
+            const mcErr = prepareMultiCategoryTS(filteredErrorDaily, f, 'proxy_name', 'error_count');
             destroyChart('htaCErrorDailyChart');
             charts.htaCErrorDailyChart = new Chart(document.getElementById('htaCErrorDailyChart'),{
-                type:'bar',data:{labels:errorDays.map(dayLabel),datasets:proxies.map(proxy=>({label:proxy,data:errorDays.map(day=>proxyDayErrorMap[proxy+'|'+day]||0),backgroundColor:PROXY_COLORS[proxy]||'#94a3b8'}))},
-                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+                type:'bar',data:{labels:mcErr.labels,datasets:mcErr.categories.map(proxy=>({label:proxy,data:mcErr.getValues(proxy),backgroundColor:PROXY_COLORS[proxy]||'#94a3b8'}))},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
             });
         }
 
-        const rateProxies = [...new Set(errorRateDaily.map(d=>d.proxy_name))];
-        const rateDays = [...new Set(errorRateDaily.map(d=>d.day))].sort();
-        const rateMap = {};
-        errorRateDaily.forEach(d=>{rateMap[d.proxy_name+'|'+d.day]=Number(d.error_rate)||0;});
-        if (rateDays.length > 0) {
+        // Error rate with granularity
+        if (filteredErrorRate.length > 0) {
+            const mcRate = prepareMultiCategoryTS(filteredErrorRate, f, 'proxy_name', 'error_rate');
             destroyChart('htaCErrorRateChart');
             charts.htaCErrorRateChart = new Chart(document.getElementById('htaCErrorRateChart'),{
-                type:'line',data:{labels:rateDays.map(dayLabel),datasets:rateProxies.map(proxy=>({label:proxy,data:rateDays.map(day=>rateMap[proxy+'|'+day]||0),borderColor:PROXY_COLORS[proxy]||'#94a3b8',backgroundColor:(PROXY_COLORS[proxy]||'#94a3b8')+'20',tension:0.4,fill:false}))},
-                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'},ticks:{callback:v=>v+'%'}}}}
+                type:'line',data:{labels:mcRate.labels,datasets:mcRate.categories.map(proxy=>({label:proxy,data:mcRate.getValues(proxy),borderColor:PROXY_COLORS[proxy]||'#94a3b8',backgroundColor:(PROXY_COLORS[proxy]||'#94a3b8')+'20',tension:0.4,fill:false}))},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'},ticks:{callback:v=>v+'%'}}}}
             });
         }
 
         const errorTable = document.getElementById('htaCErrorTable');
-        if (errorSummary.length > 0) {
-            errorTable.innerHTML = `<thead><tr><th>Proxy</th><th>Tipo</th><th>Status Code</th><th>Count</th><th>Primeiro</th><th>Ultimo</th></tr></thead><tbody>${errorSummary.map(e=>{const first=e.first_seen?new Date(e.first_seen).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'-';const last=e.last_seen?new Date(e.last_seen).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'-';return`<tr><td>${e.proxy_name}</td><td>${e.error_type}</td><td>${e.status_code||'-'}</td><td>${fmt(Number(e.error_count)||0)}</td><td>${first}</td><td>${last}</td></tr>`;}).join('')}</tbody>`;
-        } else {
+        if (filteredErrSummary.length > 0) {
+            errorTable.innerHTML = `<thead><tr><th>Proxy</th><th>Tipo</th><th>Status Code</th><th>Count</th><th>Primeiro</th><th>Ultimo</th></tr></thead><tbody>${filteredErrSummary.map(e=>`<tr><td>${e.proxy_name}</td><td>${e.error_type}</td><td>${e.status_code||'-'}</td><td>${fmt(e.error_count||0)}</td><td>${e.first_seen||'-'}</td><td>${e.last_seen||'-'}</td></tr>`).join('')}</tbody>`;
+            makeSortable(errorTable);
+        } else if (errorSummary.length === 0) {
             errorTable.innerHTML = '<tbody><tr><td colspan="6" style="text-align:center;color:var(--m);padding:20px">Nenhum erro registrado ainda</td></tr></tbody>';
+        } else {
+            errorTable.innerHTML = '<tbody><tr><td colspan="6" style="text-align:center;color:var(--m);padding:20px">Nenhum erro no periodo selecionado</td></tr></tbody>';
         }
     }
 
@@ -1458,8 +1807,10 @@
         barChart('htaDetTickersChart', tickersSearched.map(t=>t.ticker||'Unknown'), [{label:'Buscas',data:tickersSearched.map(t=>t.cnt||0),backgroundColor:'#6366f1'}], {horizontal:true});
 
         document.getElementById('htaDetEventsTable').innerHTML = `<thead><tr><th>Feature</th><th>Acao</th><th>Eventos</th><th>Tempo Medio (ms)</th></tr></thead><tbody>${terminalEvents.map(e=>`<tr><td>${e.feature||'-'}</td><td>${e.action||'-'}</td><td>${fmt(e.event_count||0)}</td><td>${(e.avg_duration_ms||0).toFixed(0)}</td></tr>`).join('')}</tbody>`;
+        makeSortable(document.getElementById('htaDetEventsTable'));
 
         document.getElementById('htaDetTableSizes').innerHTML = `<thead><tr><th>Tabela</th><th>Tamanho</th><th>Rows</th></tr></thead><tbody>${tableSizes.map(t=>`<tr><td>${t.table_name||'-'}</td><td>${fmtBytes(t.total_bytes||0)}</td><td>${fmt(t.row_count||0)}</td></tr>`).join('')}</tbody>`;
+        makeSortable(document.getElementById('htaDetTableSizes'));
     }
 
     // ===== IACOES TAB =====
@@ -1488,8 +1839,10 @@
         const loginRate = bhSessions>0?((bhLogins/bhSessions)*100).toFixed(1):'0';
         const paywallRate = bhSessions>0?((bhPaywall/bhSessions)*100).toFixed(1):'0';
 
-        const totalViews = ov.total_views||0;
-        const totalSessions = ov.total_sessions||0;
+        // Recalculate overview from daily for date filtering
+        const filteredIacoesDaily = filterSnapshot(daily, f);
+        const totalViews = filteredIacoesDaily.reduce((s,d)=>s+(d.views||0),0) || (ov.total_views||0);
+        const totalSessions = filteredIacoesDaily.reduce((s,d)=>s+(d.sessions||0),0) || (ov.total_sessions||0);
 
         buildHTML('iacoes', `
             <div class="kpi-grid" id="iacoesConvKpis"></div>
@@ -1536,16 +1889,18 @@
             {label:'Pagamentos',data:convDailyPrep.data.map(d=>d.payments||0),backgroundColor:'#3b82f6'}
         ]);
 
+        // Comparison chart - snapshot data, filter not applicable
         const srcColors = {'iAcoes':'#f97316','Google':'#4285f4','Direto':'#94a3b8','Outros':'#64748b'};
         destroyChart('iacoesVsOtherChart');
         charts.iacoesVsOtherChart = new Chart(document.getElementById('iacoesVsOtherChart'),{
             type:'bar',data:{labels:convComparison.map(c=>`${c.source} (${fmt(c.sessions||0)})`),datasets:[
                 {label:'Login %',data:convComparison.map(c=>c.login_rate||0),backgroundColor:convComparison.map(c=>srcColors[c.source]||'#6366f1')},
                 {label:'Paywall %',data:convComparison.map(c=>c.paywall_rate||0),backgroundColor:convComparison.map(c=>(srcColors[c.source]||'#6366f1')+'99')}
-            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:10}}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:10}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
         });
 
         document.getElementById('iacoesConvTickersTable').innerHTML = `<thead><tr><th>Pagina</th><th>Sessoes</th><th>Usuarios</th><th>Logins</th><th>Taxa Login</th><th>Paywall</th><th>Taxa Paywall</th></tr></thead><tbody>${convTickers.map(t=>{const lr=t.sessions>0?((t.led_to_login/t.sessions)*100).toFixed(1):'0';const pr=t.sessions>0?((t.led_to_paywall/t.sessions)*100).toFixed(1):'0';return`<tr><td>${t.ticker}</td><td>${fmt(t.sessions||0)}</td><td>${fmt(t.unique_users||0)}</td><td>${fmt(t.led_to_login||0)}</td><td>${lr}%</td><td>${fmt(t.led_to_paywall||0)}</td><td>${pr}%</td></tr>`;}).join('')}</tbody>`;
+        makeSortable(document.getElementById('iacoesConvTickersTable'));
 
         document.getElementById('iacoesTrafficKpis').innerHTML = `
             ${createKpiCard('Page Views', fmt(totalViews))}
@@ -1560,12 +1915,14 @@
             type:'bar',data:{labels:dailyPrep.labels,datasets:[
                 {label:'Views',data:dailyPrep.data.map(d=>d.views||0),backgroundColor:'#3ecf8e',order:2},
                 {label:'Sessoes',data:dailyPrep.data.map(d=>d.sessions||0),type:'line',borderColor:'#6366f1',backgroundColor:'transparent',borderWidth:2,pointRadius:2,order:1}
-            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:10}}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:10}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
         });
 
+        // Referrer - filter from daily if available, else use snapshot
         doughnutChart('iacoesReferrerChart', referrers.map(r=>`${r.source} (${r.sessions||0})`), referrers.map(r=>r.views||0), COLORS);
 
         document.getElementById('iacoesTopPagesTable').innerHTML = `<thead><tr><th>Pagina</th><th>Views</th><th>Sessoes</th><th>CTA Clicks</th><th>Taxa CTA</th></tr></thead><tbody>${topPages.map(p=>{const pCtaClicks=Number(p.cta_clicks)||0;const pSessions=Number(p.sessions)||0;const pCtaRate=pSessions>0?((pCtaClicks/pSessions)*100).toFixed(1):'0';return`<tr><td>${p.page_path==='/'?'Home (/)':p.page_path}</td><td>${fmt(p.views||0)}</td><td>${fmt(pSessions)}</td><td>${fmt(pCtaClicks)}</td><td>${pCtaRate}%</td></tr>`;}).join('')}</tbody>`;
+        makeSortable(document.getElementById('iacoesTopPagesTable'));
 
         doughnutChart('iacoesDeviceChart', devices.map(d=>d.device_type), devices.map(d=>d.views||0), ['#3ecf8e','#6366f1','#f59e0b']);
 
