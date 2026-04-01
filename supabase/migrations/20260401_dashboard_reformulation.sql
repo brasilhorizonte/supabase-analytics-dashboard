@@ -1,0 +1,22 @@
+-- Dashboard Reformulation Migration (2026-04-01)
+-- Applied via execute_sql to both BH and HTA projects
+--
+-- Changes:
+-- BH (dawvgbopyemcayavcatd):
+--   - FIXED: retention_cohorts - check activity within specific 7-day windows instead of "any event after X days"
+--   - FIXED: conversion_funnel - use COUNT(DISTINCT user_id) instead of raw event counts
+--   - NEW: ticker_by_feature - top tickers grouped by feature (tool)
+--   - NEW: ticker_trend_daily - top 10 tickers over time
+--   - NEW: feature_usage_trend - feature adoption over time (ticker-related events only)
+--   - NEW: user_inactivity - per-user last activity and days_inactive
+--   - NEW: inactivity_distribution - buckets of inactivity (active today, 1-3d, 4-7d, 8-14d, 15-30d, 30d+)
+--   - NEW: user_feature_breadth - users by number of distinct features used (1, 2, 3, 4+)
+--
+-- HTA (llqhmywodxzstjlrulcw):
+--   - FIXED: last_24h tokens - use COALESCE(NULLIF(total_prompt_tokens, 0), input_tokens) instead of input_tokens
+--   - NEW: ticker_by_feature, ticker_trend_daily, feature_usage_trend (same as BH but from terminal_events)
+--   - NEW: user_inactivity, inactivity_distribution, user_feature_breadth (same as BH but from terminal_events)
+--
+-- NOTE: This migration was applied directly via Supabase MCP execute_sql tool.
+-- The full CREATE OR REPLACE FUNCTION statements are too large for a single migration file.
+-- See the get_analytics_data() function source in each project for the complete implementation.

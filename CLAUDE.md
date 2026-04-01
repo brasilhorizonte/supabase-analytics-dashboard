@@ -6,7 +6,7 @@ Dashboard de analytics em tempo real para os projetos **brasilhorizonte** e **Ho
 
 O projeto tem duas camadas separadas:
 
-1. **Frontend** (`index.html`): Single-page app com login, sidebar lateral dark, area de conteudo light, filtros globais e 5 abas de metricas. Hospedado como arquivo estatico (GitHub Pages ou Supabase Storage). Nao usa framework — tudo inline (CSS + JS).
+1. **Frontend** (`index.html`): Single-page app com login, sidebar lateral dark com grupos colapsaveis por plataforma (BH: 6 sub-abas, HTA: 6 sub-abas, iAcoes standalone), area de conteudo light, filtros globais. Hospedado como arquivo estatico (GitHub Pages ou Supabase Storage). Nao usa framework — tudo inline (CSS + JS).
 
 2. **API** (`supabase/functions/analytics-dashboard/index.ts`): Edge Function no Supabase que retorna JSON. Verifica JWT do usuario via Supabase Auth e checa role `admin` na tabela `user_roles`. Busca dados de ambos os projetos via RPC functions.
 
@@ -89,7 +89,14 @@ A Edge Function retorna:
 - `daily_activity`: ultimos 30 dias (day, events, dau)
 - `usage_events_summary`: eventos agrupados por nome
 - `feature_usage`: features mais usadas
-- `conversion_funnel`: sessions → logins → paywall → checkout → payments → cancels
+- `conversion_funnel`: users unicos (DISTINCT) por step: sessions → logins → paywall → checkout → payments → cancels
+- `retention_cohorts`: cohorts mensais com retencao em janelas de 7d (window 7-14d, 30-37d, 60-67d, 90-97d)
+- `ticker_by_feature`: tickers agrupados por ferramenta (qualitativo_ai, valuai, validador, etc.)
+- `ticker_trend_daily`: top 10 tickers ao longo do tempo
+- `feature_usage_trend`: adocao de ferramentas ao longo do tempo (eventos com ticker)
+- `user_inactivity`: lista de users com last_event_ts, days_inactive, email, total_events
+- `inactivity_distribution`: buckets de inatividade (ativo hoje, 1-3d, 4-7d, 8-14d, 15-30d, 30d+)
+- `user_feature_breadth`: distribuicao de users por numero de ferramentas usadas (1, 2, 3, 4+)
 - `top_tickers_market`: tickers por market cap com preco, setor, DY, P/L
 - `sector_distribution`: tickers agrupados por setor
 - `report_downloads_daily`: downloads de relatorios por dia
@@ -124,6 +131,12 @@ A Edge Function retorna:
 - `proxy_error_daily`: erros por dia/proxy/tipo (da tabela `proxy_error_log`)
 - `proxy_error_summary`: resumo de erros por proxy/tipo/status_code com first_seen e last_seen
 - `proxy_error_rate_daily`: taxa de erro diaria por proxy (erro / (requests + erros) * 100)
+- `ticker_by_feature`: tickers agrupados por feature (agent, chat, tabs)
+- `ticker_trend_daily`: top 10 tickers ao longo do tempo
+- `feature_usage_trend`: adocao de features ao longo do tempo (eventos com ticker)
+- `user_inactivity`: lista de users com last_event_ts, days_inactive, email, total_events
+- `inactivity_distribution`: buckets de inatividade (ativo hoje, 1-3d, 4-7d, 8-14d, 15-30d, 30d+)
+- `user_feature_breadth`: distribuicao de users por numero de features usadas (1, 2, 3, 4+)
 
 ## Deploy
 
@@ -241,9 +254,13 @@ O dashboard usa layout com sidebar lateral + area de conteudo light (estilo Kond
 
 ### Estrutura visual
 - **Login page**: tema dark standalone (variaveis CSS scopadas no `.login-container`)
-- **Sidebar** (220px, fixed): dark (#1a1d2e), com logo, 5 itens de navegacao (Sumario, brasilhorizonte, Horizon Terminal, iAcoes, Geografia)
+- **Sidebar** (240px, fixed): dark (#1a1d2e), com logo + grupos colapsaveis por plataforma
+  - BH (6 sub-abas): Visao Geral, Aquisicao, Engajamento, Retencao, Custos, Detalhes
+  - HTA (6 sub-abas): Visao Geral, Aquisicao, Engajamento, Retencao, Custos, Detalhes
+  - iAcoes (standalone)
 - **Top bar** (sticky): titulo da aba + filtros globais + admin info
 - **Area de conteudo**: fundo claro (#f5f7fa), cards brancos com sombra sutil
+- **Regra**: dados BH e HTA nunca combinados num mesmo grafico/tabela/KPI
 
 ### Filtros globais
 - **Presets**: 7d, 30d (default), 90d, Custom
