@@ -97,6 +97,9 @@ A Edge Function retorna:
 - `user_inactivity`: lista de users com last_event_ts, days_inactive, email, total_events
 - `inactivity_distribution`: buckets de inatividade (ativo hoje, 1-3d, 4-7d, 8-14d, 15-30d, 30d+)
 - `user_feature_breadth`: distribuicao de users por numero de ferramentas usadas (1, 2, 3, 4+)
+- `ticker_ranking`: ranking consolidado dos top 20 tickers por uso total (ticker, cnt)
+- `user_ticker_usage`: uso por usuario com tickers (email, total_queries, unique_tickers, top_ticker, top_feature, last_activity) LIMIT 100
+- `user_ticker_detail`: breakdown detalhado por usuario/ticker/feature (user_id, ticker, feature, cnt)
 - `top_tickers_market`: tickers por market cap com preco, setor, DY, P/L
 - `sector_distribution`: tickers agrupados por setor
 - `report_downloads_daily`: downloads de relatorios por dia
@@ -137,6 +140,9 @@ A Edge Function retorna:
 - `user_inactivity`: lista de users com last_event_ts, days_inactive, email, total_events
 - `inactivity_distribution`: buckets de inatividade (ativo hoje, 1-3d, 4-7d, 8-14d, 15-30d, 30d+)
 - `user_feature_breadth`: distribuicao de users por numero de features usadas (1, 2, 3, 4+)
+- `ticker_ranking`: ranking consolidado dos top 20 tickers por uso total (ticker, cnt)
+- `user_ticker_usage`: uso por usuario com tickers (email, total_queries, unique_tickers, top_ticker, top_feature, last_activity) LIMIT 100
+- `user_ticker_detail`: breakdown detalhado por usuario/ticker/feature (user_id, ticker, feature, cnt)
 
 ## Deploy
 
