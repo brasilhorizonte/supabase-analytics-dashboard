@@ -11,6 +11,11 @@
             --bg: #f5f7fa; --c: #ffffff; --bd: #e2e8f0; --bd-subtle: #f1f5f9; --t: #1e293b; --m: #64748b;
             --sidebar: #1a1d2e; --sidebar-hover: #242738; --sidebar-active: #2a2d3e;
             --g: #3ecf8e; --p: #6366f1; --a: #f59e0b; --r: #ef4444;
+            /* shadcn chart palette (oklch) */
+            --chart-1: oklch(0.646 0.222 41.116); --chart-2: oklch(0.6 0.118 184.704);
+            --chart-3: oklch(0.398 0.07 227.392); --chart-4: oklch(0.828 0.189 84.429);
+            --chart-5: oklch(0.769 0.188 70.08); --chart-6: oklch(0.627 0.265 303.9);
+            --chart-7: oklch(0.532 0.157 131.589); --chart-8: oklch(0.7 0.2 22.18);
             /* shadcn aliases */
             --card: var(--c); --card-foreground: var(--t); --muted-foreground: var(--m);
             --border: var(--bd); --ring: var(--p); --background: var(--bg);
@@ -96,7 +101,7 @@
         .kpi-card { background: var(--c); border: 1px solid var(--bd); border-radius: 12px; padding: 24px 20px; transition: background-color 0.15s, box-shadow 0.15s; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
         .kpi-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
         .kpi-label { font-size: 13px; color: var(--m); font-weight: 500; margin-bottom: 8px; }
-        .kpi-value { font-size: 26px; font-weight: 700; color: var(--t); margin-bottom: 8px; }
+        .kpi-value { font-size: 28px; font-weight: 700; color: var(--t); margin-bottom: 4px; letter-spacing: -0.025em; }
         .kpi-change { font-size: 12px; color: var(--m); }
         .kpi-change.positive { color: var(--g); }
         .kpi-change.negative { color: var(--r); }
@@ -115,7 +120,8 @@
         th .sort-indicator.active { color: var(--p); }
         td { padding: 8px 12px; border-bottom: 1px solid var(--bd-subtle); color: var(--t); white-space: nowrap; }
         tr { transition: background-color 0.15s; }
-        tr:hover { background: rgba(0,0,0,0.02); }
+        tbody tr:nth-child(even) { background: rgba(0,0,0,0.015); }
+        tr:hover { background: rgba(0,0,0,0.04); }
         .status-badge { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 9999px; font-size: 12px; font-weight: 500; line-height: 1.4; border: 1px solid transparent; }
         .status-active { background: #dcfce7; color: #16a34a; }
         .status-inactive { background: #f1f5f9; color: var(--m); }
@@ -136,7 +142,9 @@
         .gran-btn { padding: 6px 14px; background: var(--bg); border: 1px solid var(--bd); color: var(--m); border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background-color 0.15s, color 0.15s, border-color 0.15s; }
         .gran-btn:hover { border-color: var(--p); color: var(--t); }
         .gran-btn.active { background: var(--t); color: white; border-color: var(--t); }
-        .section-title { font-size: 16px; font-weight: 700; color: var(--t); margin: 32px 0 16px; padding-top: 24px; border-top: 1px solid var(--bd); }
+        .section-title { font-size: 16px; font-weight: 700; color: var(--t); margin: 32px 0 4px; padding-top: 24px; border-top: 1px solid var(--bd); }
+        .section-desc { font-size: 13px; color: var(--m); margin-bottom: 16px; }
+        td.email-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
         .filter-bar { display: flex; gap: 16px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
         .filter-bar select { background: var(--bg); border: 1px solid var(--bd); color: var(--t); padding: 6px 10px; border-radius: 6px; font-size: 13px; font-family: inherit; }
@@ -157,8 +165,6 @@
         .export-csv-btn { padding: 4px 10px; background: transparent; border: 1px solid var(--bd); border-radius: 6px; font-size: 11px; color: var(--m); cursor: pointer; transition: background-color 0.15s, color 0.15s, border-color 0.15s; float: right; margin-left: 8px; }
         .export-csv-btn:hover { border-color: var(--p); color: var(--p); }
 
-        .doughnut-reset-btn { position: absolute; top: 12px; right: 12px; padding: 3px 8px; background: var(--r); color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer; display: none; z-index: 5; }
-        .doughnut-reset-btn.show { display: block; }
 
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -306,7 +312,17 @@
     Chart.defaults.elements.line.tension = 0.4;
     Chart.defaults.elements.point.radius = 3;
 
-    const COLORS = ['#6366f1','#3ecf8e','#f59e0b','#3b82f6','#ec4899','#22c55e','#818cf8','#fbbf24','#a78bfa','#fb923c','#ef4444','#94a3b8'];
+    const COLORS = [
+        getComputedStyle(document.documentElement).getPropertyValue('--chart-1').trim() || '#e76e50',
+        getComputedStyle(document.documentElement).getPropertyValue('--chart-2').trim() || '#2a9d8f',
+        getComputedStyle(document.documentElement).getPropertyValue('--chart-3').trim() || '#264653',
+        getComputedStyle(document.documentElement).getPropertyValue('--chart-4').trim() || '#e9c46a',
+        getComputedStyle(document.documentElement).getPropertyValue('--chart-5').trim() || '#f4a261',
+        getComputedStyle(document.documentElement).getPropertyValue('--chart-6').trim() || '#7c3aed',
+        getComputedStyle(document.documentElement).getPropertyValue('--chart-7').trim() || '#059669',
+        getComputedStyle(document.documentElement).getPropertyValue('--chart-8').trim() || '#dc2626',
+        '#6366f1','#3ecf8e','#f59e0b','#3b82f6'
+    ];
 
     const TAB_TITLES = {
         bhVisao: 'BH - Visao Geral', bhAquisicao: 'BH - Aquisicao', bhEngajamento: 'BH - Engajamento',
@@ -372,9 +388,21 @@
     function showLoading(s=true) { document.getElementById('loadingOverlay').classList.toggle('show',s); }
     function destroyChart(id) { if(charts[id]) { charts[id].destroy(); delete charts[id]; } }
 
-    function createKpiCard(label, value, change=null) {
+    function createKpiCard(label, value, change=null, sparkData=null) {
         const pos = change !== null && change >= 0;
-        return `<div class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div>${change !== null ? `<div class="kpi-change ${pos?'positive':'negative'}">${pos?'&uarr;':'&darr;'} ${Math.abs(change)}%</div>`:''}</div>`;
+        let sparkSvg = '';
+        if (sparkData && sparkData.length > 1) {
+            const vals = sparkData.map(Number).filter(v=>!isNaN(v));
+            if (vals.length > 1) {
+                const max = Math.max(...vals)||1; const min = Math.min(...vals);
+                const range = max - min || 1;
+                const w = 80; const h = 24;
+                const points = vals.map((v,i)=>`${(i/(vals.length-1))*w},${h-((v-min)/range)*h}`).join(' ');
+                const color = vals[vals.length-1] >= vals[0] ? 'var(--g)' : 'var(--r)';
+                sparkSvg = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block;margin-top:8px;"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+            }
+        }
+        return `<div class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div>${change !== null ? `<div class="kpi-change ${pos?'positive':'negative'}">${pos?'&#9650;':'&#9660;'} ${Math.abs(change).toFixed(1)}%</div>`:''}${sparkSvg}</div>`;
     }
 
     function filterByDateRange(data, from, to) {
@@ -557,6 +585,15 @@
                 totalRows.forEach(r => tbody.appendChild(r));
             });
         });
+        // Add row count footer
+        const tbody = tableEl.querySelector('tbody');
+        const rowCount = tbody ? tbody.querySelectorAll('tr').length : 0;
+        if (rowCount > 0 && !tableEl.querySelector('tfoot')) {
+            const tfoot = document.createElement('tfoot');
+            const cols = headers.length;
+            tfoot.innerHTML = `<tr><td colspan="${cols}" style="padding:8px 12px;font-size:12px;color:var(--m);border-top:1px solid var(--bd);">${rowCount} registro${rowCount!==1?'s':''}</td></tr>`;
+            tableEl.appendChild(tfoot);
+        }
     }
 
     /** After building a table, call this to make it sortable and add export button */
@@ -622,13 +659,13 @@
             options: { responsive:true, maintainAspectRatio:true, indexAxis:opts.horizontal?'y':'x', plugins:{legend:{display:datasets.length>1,position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks},...(opts.pluginsOpts||{})}, scales:opts.horizontal?{x:{beginAtZero:true,grid:{color:'#f1f5f9'}}}:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}},...(opts.scales||{})}, ...opts.extra }
         });
     }
-    function doughnutChart(canvasId, labels, data, colors, onClick) {
+    function doughnutChart(canvasId, labels, data, colors) {
+        // Replaced: doughnut → horizontal bar (shadcn-style)
         destroyChart(canvasId);
-        const chartOpts = {responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'right'},tooltip:{callbacks:doughnutTooltipCallbacks}}};
-        if (onClick) chartOpts.onClick = onClick;
+        const barColors = (colors && colors.length >= labels.length) ? colors : labels.map((_,i) => (colors && colors[i]) || COLORS[i % COLORS.length]);
         charts[canvasId] = new Chart(document.getElementById(canvasId), {
-            type:'doughnut', data:{labels,datasets:[{data,backgroundColor:colors||COLORS}]},
-            options: chartOpts
+            type:'bar', data:{labels, datasets:[{data, backgroundColor:barColors, borderRadius:4}]},
+            options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{beginAtZero:true,grid:{color:'#f1f5f9'}},y:{grid:{display:false}}}}
         });
     }
 
@@ -636,11 +673,11 @@
 
     function canvasHTML(id, title, extra='') { return `<div class="chart-container ${extra}"><div class="chart-title">${title}</div><canvas id="${id}"></canvas></div>`; }
 
-    // ===== DOUGHNUT CLICK-TO-FILTER HELPERS =====
-    function setupDoughnutFilter(doughnutCanvasId, relatedChartId, rawData, f, categoryField, valueField, dateField, colorMap, colorArray) {
+    // ===== CHART HELPERS =====
+    // (doughnut click-to-filter removed — replaced by horizontal bars)
+    function _unused_setupDoughnutFilter(doughnutCanvasId, relatedChartId, rawData, f, categoryField, valueField, dateField, colorMap, colorArray) {
         const container = document.getElementById(doughnutCanvasId)?.closest('.chart-container');
         if (!container) return;
-        // Add reset button
         let resetBtn = container.querySelector('.doughnut-reset-btn');
         if (!resetBtn) {
             resetBtn = document.createElement('button');
@@ -690,12 +727,16 @@
             </div>
         `);
 
+        const filteredBhDaily = filterSnapshot(bhDaily, f);
+        const dauSpark = filteredBhDaily.slice(-14).map(d=>d.dau||0);
+        const eventsSpark = filteredBhDaily.slice(-14).map(d=>d.events||0);
+        const stickSpark = filterSnapshot(stickinessData, f).slice(-14).map(d=>d.dau_mau_pct||0);
         document.getElementById('bhVisaoKpis').innerHTML = `
             ${createKpiCard('Usuarios Totais', fmt(bh.overview.total_users||0))}
-            ${createKpiCard('DAU (ultimo)', fmt(lastStick.dau||bhDaily[bhDaily.length-1]?.dau||0))}
+            ${createKpiCard('DAU (ultimo)', fmt(lastStick.dau||bhDaily[bhDaily.length-1]?.dau||0), null, dauSpark)}
             ${createKpiCard('Cadastros 24h', fmt(bh24.signups||0))}
-            ${createKpiCard('Eventos 24h', fmt(bh24.events||0))}
-            ${createKpiCard('Stickiness DAU/MAU', (lastStick.dau_mau_pct||0)+'%')}
+            ${createKpiCard('Eventos 24h', fmt(bh24.events||0), null, eventsSpark)}
+            ${createKpiCard('Stickiness DAU/MAU', (lastStick.dau_mau_pct||0)+'%', null, stickSpark)}
             ${createKpiCard('Sessoes Auth', fmt(bh.overview.active_sessions||0))}
         `;
 
@@ -1226,12 +1267,16 @@
             </div>
         `);
 
+        const filteredTermDaily = filterSnapshot(terminalDaily, f);
+        const tasksSpark = filteredTermDaily.slice(-14).map(d=>d.tasks||0);
+        const sessionsSpark = filteredTermDaily.slice(-14).map(d=>d.sessions||0);
+        const loginSpark = filterSnapshot(loginDaily, f).slice(-14).map(d=>d.logins||0);
         document.getElementById('htaVisaoKpis').innerHTML = `
             ${createKpiCard('Usuarios Totais', fmt(hta.overview.total_users||0))}
             ${createKpiCard('DAU (hoje)', fmt(hta24.unique_users||0))}
-            ${createKpiCard('Sessoes 24h', fmt(hta24.sessions||0))}
-            ${createKpiCard('Perguntas 24h', fmt(hta24.tasks||0))}
-            ${createKpiCard('Logins 24h', fmt(hta24.logins||0))}
+            ${createKpiCard('Sessoes 24h', fmt(hta24.sessions||0), null, sessionsSpark)}
+            ${createKpiCard('Perguntas 24h', fmt(hta24.tasks||0), null, tasksSpark)}
+            ${createKpiCard('Logins 24h', fmt(hta24.logins||0), null, loginSpark)}
             ${createKpiCard('Custo IA (hoje)', '$'+hta24Cost.toFixed(2))}
         `;
 
@@ -1547,6 +1592,7 @@
             </div>
             <div class="table-container"><div class="table-title">Top Queries por Token</div><table id="htaCTopQueriesTable"></table></div>
             <h3 class="section-title">Tokens Backend (Server-Side)</h3>
+            <p class="section-desc">Tokens rastreados diretamente pelas Edge Functions (gemini-proxy, anthropic-proxy)</p>
             <div class="kpi-grid" id="htaCServerKpis"></div>
             <div class="charts-grid">
                 ${canvasHTML('htaCServerDailyChart','Tokens Backend por Dia')}
@@ -1558,6 +1604,7 @@
             </div>
             <div class="table-container"><div class="table-title">Resumo por Fonte</div><table id="htaCServerSummaryTable"></table></div>
             <h3 class="section-title">Erros de API</h3>
+            <p class="section-desc">Erros registrados pelos proxies IA ao chamar APIs upstream</p>
             <div class="kpi-grid" id="htaCErrorKpis"></div>
             <div class="charts-grid">
                 ${canvasHTML('htaCErrorDailyChart','Erros por Dia')}
@@ -1905,6 +1952,7 @@
             </div>
             <div class="table-container"><div class="table-title">Paginas que Mais Convertem</div><table id="iacoesConvTickersTable"></table></div>
             <h3 class="section-title">Trafego do Site iAcoes</h3>
+            <p class="section-desc">Page views, sessoes e fontes de trafego do site iacoes.brasilhorizonte.com.br</p>
             <div class="kpi-grid" id="iacoesTrafficKpis"></div>
             <div class="chart-container mb-2"><div class="chart-title">Views & Sessoes (diario)</div><canvas id="iacoesViewsDailyChart"></canvas></div>
             <div class="chart-container mb-2"><div class="chart-title">Origem do Trafego (diario)</div><canvas id="iacoesReferrerChart"></canvas></div>
