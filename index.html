@@ -1875,6 +1875,7 @@
         const daily = bh.iacoes_daily || [];
         const topPages = bh.iacoes_top_pages || [];
         const referrers = bh.iacoes_referrers || [];
+        const referrerDaily = bh.iacoes_referrer_daily || [];
         const devices = bh.iacoes_devices || [];
         const utmData = bh.iacoes_utm || [];
         const browsers = bh.iacoes_browsers || [];
@@ -1905,10 +1906,8 @@
             <div class="table-container"><div class="table-title">Paginas que Mais Convertem</div><table id="iacoesConvTickersTable"></table></div>
             <h3 class="section-title">Trafego do Site iAcoes</h3>
             <div class="kpi-grid" id="iacoesTrafficKpis"></div>
-            <div class="charts-grid">
-                ${canvasHTML('iacoesViewsDailyChart','Views & Sessoes (diario)')}
-                ${canvasHTML('iacoesReferrerChart','Origem do Trafego')}
-            </div>
+            <div class="chart-container mb-2"><div class="chart-title">Views & Sessoes (diario)</div><canvas id="iacoesViewsDailyChart"></canvas></div>
+            <div class="chart-container mb-2"><div class="chart-title">Origem do Trafego (diario)</div><canvas id="iacoesReferrerChart"></canvas></div>
             <div class="table-container"><div class="table-title">Top Paginas</div><table id="iacoesTopPagesTable"></table></div>
             <div class="charts-grid">
                 ${canvasHTML('iacoesDeviceChart','Dispositivos')}
@@ -1969,8 +1968,18 @@
             ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:10}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
         });
 
-        // Referrer - filter from daily if available, else use snapshot
-        doughnutChart('iacoesReferrerChart', referrers.map(r=>`${r.source} (${r.sessions||0})`), referrers.map(r=>r.views||0), COLORS);
+        // Referrer daily (stacked bar over time)
+        if (referrerDaily.length > 0) {
+            const mcRef = prepareMultiCategoryTS(referrerDaily, f, 'source', 'views');
+            const refSources = mcRef.categories.slice(0,8);
+            destroyChart('iacoesReferrerChart');
+            charts.iacoesReferrerChart = new Chart(document.getElementById('iacoesReferrerChart'), {
+                type:'bar',data:{labels:mcRef.labels,datasets:refSources.map((s,i)=>({label:s,data:mcRef.getValues(s),backgroundColor:COLORS[i%COLORS.length]}))},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
+        } else if (referrers.length > 0) {
+            barChart('iacoesReferrerChart', referrers.map(r=>r.source), [{label:'Views',data:referrers.map(r=>r.views||0),backgroundColor:COLORS}], {horizontal:true});
+        }
 
         document.getElementById('iacoesTopPagesTable').innerHTML = `<thead><tr><th>Pagina</th><th>Views</th><th>Sessoes</th><th>CTA Clicks</th><th>Taxa CTA</th></tr></thead><tbody>${topPages.map(p=>{const pCtaClicks=Number(p.cta_clicks)||0;const pSessions=Number(p.sessions)||0;const pCtaRate=pSessions>0?((pCtaClicks/pSessions)*100).toFixed(1):'0';return`<tr><td>${p.page_path==='/'?'Home (/)':p.page_path}</td><td>${fmt(p.views||0)}</td><td>${fmt(pSessions)}</td><td>${fmt(pCtaClicks)}</td><td>${pCtaRate}%</td></tr>`;}).join('')}</tbody>`;
         makeSortable(document.getElementById('iacoesTopPagesTable'));
