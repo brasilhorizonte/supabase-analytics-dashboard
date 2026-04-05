@@ -341,12 +341,16 @@
         'gemini-2.0-flash-lite': { input: 0.10, output: 0.40, label: 'Gemini 2.0 Flash Lite' },
         'gemini-2.5-flash-lite': { input: 0.075, output: 0.30, label: 'Gemini 2.5 Flash Lite' },
         'gpt-5.1': { input: 5.00, output: 15.00, label: 'GPT-5.1' },
+        'gemini': { input: 0.30, output: 2.50, label: 'Gemini (proxy)' },
+        'anthropic': { input: 3.00, output: 15.00, label: 'Anthropic (proxy)' },
+        'openai': { input: 5.00, output: 15.00, label: 'OpenAI (proxy)' },
     };
     const MODEL_COLORS = {
         'claude-sonnet-4-20250514': '#f59e0b', 'claude-opus-4-20250514': '#ef4444',
         'gemini-3.1-pro-preview': '#10b981', 'gemini-2.5-pro': '#3ecf8e',
         'gemini-2.5-flash': '#6366f1', 'gemini-2.0-flash-lite': '#8b5cf6',
         'gemini-2.5-flash-lite': '#06b6d4', 'gpt-5.1': '#3b82f6',
+        'gemini': '#3ecf8e', 'anthropic': '#f59e0b', 'openai': '#3b82f6',
     };
 
     function calcTokenCost(model, input, output, thoughts = 0) {
@@ -372,6 +376,7 @@
         'gemini-2.5-flash': { prompt: 0.15, completion: 0.60, thoughts: 3.50 },
         'gemini-2.5-flash-lite': { prompt: 0.075, completion: 0.30, thoughts: 0 },
         'gemini-2.5-pro': { prompt: 1.25, completion: 10.00, thoughts: 0 },
+        'gemini': { prompt: 0.15, completion: 0.60, thoughts: 3.50 },
     };
     function calcServerCost(model, prompt, completion, thoughts) {
         const p = SERVER_TOKEN_PRICING[model] || { prompt: 0.15, completion: 0.60, thoughts: 3.50 };
@@ -379,7 +384,7 @@
     }
 
     const PROXY_COLORS = { 'gemini': '#3ecf8e', 'anthropic': '#f59e0b', 'gemini-market': '#6366f1' };
-    const isAiToken = d => d.model_name && d.model_name !== 'unknown' && !['brapi','partnr-news'].includes(d.proxy_name);
+    const isAiToken = d => !['brapi','partnr-news'].includes(d.proxy_name) && (d.model_name ? d.model_name !== 'unknown' : true);
 
     // Helpers
     function fmt(n) { if (n >= 1e9) return (n/1e9).toFixed(1)+"B"; if (n >= 1e6) return (n/1e6).toFixed(1)+"M"; if (n >= 1e3) return (n/1e3).toFixed(1)+"K"; return n.toString(); }
@@ -1357,18 +1362,20 @@
     }
 
     function computeTodayCost(hta24, todaySummary) {
-        const todayInput = Number(hta24.input_tokens)||0;
-        const todayOutput = Number(hta24.output_tokens)||0;
-        if (todaySummary.length === 0 || todaySummary.reduce((s,r)=>s+(Number(r.total_input_tokens)||0)+(Number(r.total_output_tokens)||0),0)===0) {
+        const todayInput = Number(hta24.input_tokens || hta24.prompt_tokens)||0;
+        const todayOutput = Number(hta24.output_tokens || hta24.completion_tokens)||0;
+        const sumInput = r => Number(r.total_input_tokens || r.total_prompt_tokens)||0;
+        const sumOutput = r => Number(r.total_output_tokens || r.total_completion_tokens)||0;
+        if (todaySummary.length === 0 || todaySummary.reduce((s,r)=>s+sumInput(r)+sumOutput(r),0)===0) {
             return calcTokenCost('gemini-2.5-pro', todayInput, todayOutput);
         }
-        const totalSumInput = todaySummary.reduce((s,r)=>s+(Number(r.total_input_tokens)||0),0);
-        const totalSumOutput = todaySummary.reduce((s,r)=>s+(Number(r.total_output_tokens)||0),0);
+        const totalSumInput = todaySummary.reduce((s,r)=>s+sumInput(r),0);
+        const totalSumOutput = todaySummary.reduce((s,r)=>s+sumOutput(r),0);
         if (totalSumInput+totalSumOutput===0) return calcTokenCost('gemini-2.5-pro', todayInput, todayOutput);
         return todaySummary.reduce((cost,r)=>{
-            const iS = totalSumInput>0?(Number(r.total_input_tokens)||0)/totalSumInput:0;
-            const oS = totalSumOutput>0?(Number(r.total_output_tokens)||0)/totalSumOutput:0;
-            return cost+calcTokenCost(r.model_name, todayInput*iS, todayOutput*oS);
+            const iS = totalSumInput>0?sumInput(r)/totalSumInput:0;
+            const oS = totalSumOutput>0?sumOutput(r)/totalSumOutput:0;
+            return cost+calcTokenCost(r.model_name||r.proxy_name, todayInput*iS, todayOutput*oS);
         },0);
     }
 
@@ -1595,9 +1602,13 @@
 
     function renderHtaCustos() {
         const hta = dashboardData.hta; const f = globalFilters;
-        const tokenDaily = (hta.token_usage_daily||[]).filter(isAiToken);
-        const tokenSummary = (hta.token_usage_summary||[]).filter(isAiToken);
-        const tokenByUser = (hta.token_usage_by_user||[]).filter(isAiToken);
+        // Normalize field names: API returns proxy_name/prompt_tokens/completion_tokens
+        // but frontend expects model_name/input_tokens/output_tokens
+        const normalizeToken = d => ({...d, model_name: d.model_name || d.proxy_name, input_tokens: d.input_tokens ?? d.prompt_tokens, output_tokens: d.output_tokens ?? d.completion_tokens});
+        const normalizeUserToken = d => ({...d, model_name: d.model_name || d.proxy_name, total_input_tokens: d.total_input_tokens ?? d.total_prompt_tokens, total_output_tokens: d.total_output_tokens ?? d.total_completion_tokens});
+        const tokenDaily = (hta.token_usage_daily||[]).map(normalizeToken).filter(isAiToken);
+        const tokenSummary = (hta.token_usage_summary||[]).map(normalizeToken).filter(isAiToken);
+        const tokenByUser = (hta.token_usage_by_user||[]).map(normalizeUserToken).filter(isAiToken);
         const questionsByUser = hta.questions_by_user || [];
         const questionsMap = {}; questionsByUser.forEach(q=>{questionsMap[q.email]=Number(q.total_questions)||0;});
         const tokenStats = hta.token_stats || {};
@@ -1772,8 +1783,9 @@
 
     function renderServerTokenSection() {
         const hta = dashboardData.hta; const f = globalFilters;
-        const daily = hta.server_token_daily || [];
-        const summary = hta.server_token_summary || [];
+        // Normalize: is_backfill defaults to false if missing
+        const daily = (hta.server_token_daily || []).map(d => ({...d, is_backfill: d.is_backfill || false}));
+        const summary = (hta.server_token_summary || []).map(d => ({...d, is_backfill: d.is_backfill || false}));
         const last24h = hta.server_token_last_24h || {};
 
         // Filter daily by date range
