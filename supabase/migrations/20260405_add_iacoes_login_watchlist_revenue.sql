@@ -1,0 +1,318 @@
+-- Migration: Add iAcoes analytics, login_daily, watchlist_summary, revenue_by_plan, top_reports_downloaded
+-- Applied to: BH (dawvgbopyemcayavcatd) via Supabase MCP execute_sql
+-- Date: 2026-04-05
+--
+-- Adds these new sections to get_analytics_data() RPC:
+--   - iacoes_overview, iacoes_daily, iacoes_top_pages, iacoes_referrers
+--   - iacoes_referrer_daily, iacoes_devices, iacoes_utm, iacoes_browsers, iacoes_os
+--   - iacoes_conversion_funnel, iacoes_conversion_daily, iacoes_converting_tickers, iacoes_vs_other_conversion
+--   - login_daily (from user_login_events if table exists, else usage_events login events)
+--   - watchlist_summary (from user_watchlist)
+--   - revenue_by_plan (estimated from subscribers_by_plan with known pricing)
+--   - top_reports_downloaded (from report_downloads JOIN research_reports)
+--   - referrer_daily (from usage_events, new time-series section)
+--   - referrer_detail (full referrer URLs)
+--
+-- NOTE: This migration documents the changes. The full CREATE OR REPLACE FUNCTION
+-- must be applied via Supabase MCP execute_sql tool since it replaces the entire function.
+-- Copy the existing get_analytics_data() and append these new sections before the closing
+-- `) INTO result;`
+
+-- =====================================================
+-- NEW SECTIONS TO ADD TO get_analytics_data() RPC
+-- Insert these before the final `) INTO result;` line
+-- =====================================================
+
+-- iAcoes Overview (aggregate)
+-- 'iacoes_overview', (
+--   SELECT jsonb_build_object(
+--     'total_views', (SELECT count(*) FROM public.iacoes_page_views),
+--     'total_sessions', (SELECT count(DISTINCT session_id) FROM public.iacoes_page_views),
+--     'total_pages', (SELECT count(DISTINCT page_path) FROM public.iacoes_page_views)
+--   )
+-- ),
+
+-- iAcoes Daily
+-- 'iacoes_daily', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT (created_at AT TIME ZONE 'America/Sao_Paulo')::date as day,
+--            count(*) as views,
+--            count(DISTINCT session_id) as sessions
+--     FROM public.iacoes_page_views
+--     GROUP BY day ORDER BY day ASC
+--   ) t
+-- ),
+
+-- iAcoes Top Pages
+-- 'iacoes_top_pages', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT page_path,
+--            count(*) as views,
+--            count(DISTINCT session_id) as sessions,
+--            0 as cta_clicks
+--     FROM public.iacoes_page_views
+--     GROUP BY page_path
+--     ORDER BY views DESC LIMIT 20
+--   ) t
+-- ),
+
+-- iAcoes Referrers (aggregated by source)
+-- 'iacoes_referrers', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT CASE
+--              WHEN referrer IS NULL OR referrer = '' THEN 'Direto'
+--              WHEN referrer LIKE '%google%' THEN 'Google'
+--              WHEN referrer LIKE '%bing%' THEN 'Bing'
+--              WHEN referrer LIKE '%facebook%' OR referrer LIKE '%instagram%' THEN 'Social'
+--              WHEN referrer LIKE '%brasilhorizonte%' THEN 'BH (interno)'
+--              ELSE split_part(replace(replace(referrer, 'https://', ''), 'http://', ''), '/', 1)
+--            END as source,
+--            count(*) as views,
+--            count(DISTINCT session_id) as unique_sessions
+--     FROM public.iacoes_page_views
+--     GROUP BY source ORDER BY views DESC LIMIT 10
+--   ) t
+-- ),
+
+-- iAcoes Referrer Daily
+-- 'iacoes_referrer_daily', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT (created_at AT TIME ZONE 'America/Sao_Paulo')::date as day,
+--            CASE
+--              WHEN referrer IS NULL OR referrer = '' THEN 'Direto'
+--              WHEN referrer LIKE '%google%' THEN 'Google'
+--              WHEN referrer LIKE '%bing%' THEN 'Bing'
+--              WHEN referrer LIKE '%facebook%' OR referrer LIKE '%instagram%' THEN 'Social'
+--              WHEN referrer LIKE '%brasilhorizonte%' THEN 'BH (interno)'
+--              ELSE split_part(replace(replace(referrer, 'https://', ''), 'http://', ''), '/', 1)
+--            END as source,
+--            count(*) as views
+--     FROM public.iacoes_page_views
+--     GROUP BY day, source ORDER BY day ASC
+--   ) t
+-- ),
+
+-- iAcoes Devices
+-- 'iacoes_devices', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT coalesce(device_type, 'unknown') as device_type, count(*) as views
+--     FROM public.iacoes_page_views
+--     GROUP BY device_type ORDER BY views DESC
+--   ) t
+-- ),
+
+-- iAcoes UTM Campaigns
+-- 'iacoes_utm', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT utm_source, utm_medium, utm_campaign, count(*) as views
+--     FROM public.iacoes_page_views
+--     WHERE utm_source IS NOT NULL AND utm_source != ''
+--     GROUP BY utm_source, utm_medium, utm_campaign
+--     ORDER BY views DESC LIMIT 20
+--   ) t
+-- ),
+
+-- iAcoes Browsers
+-- 'iacoes_browsers', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT coalesce(browser, 'N/A') as browser, count(*) as cnt
+--     FROM public.iacoes_page_views
+--     WHERE browser IS NOT NULL
+--     GROUP BY browser ORDER BY cnt DESC
+--   ) t
+-- ),
+
+-- iAcoes OS
+-- 'iacoes_os', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT coalesce(os, 'N/A') as os, count(*) as cnt
+--     FROM public.iacoes_page_views
+--     WHERE os IS NOT NULL
+--     GROUP BY os ORDER BY cnt DESC
+--   ) t
+-- ),
+
+-- iAcoes Conversion Funnel (cross-reference iacoes_page_views with usage_events)
+-- Sessions from iAcoes referrer are identified by referrer containing 'iacoes'
+-- 'iacoes_conversion_funnel', (
+--   SELECT jsonb_build_object(
+--     'iacoes_views', (SELECT count(*) FROM public.iacoes_page_views),
+--     'cta_clicks', (SELECT count(*) FROM public.iacoes_page_views WHERE page_path LIKE '%/acoes/%' OR page_path LIKE '%cta%'),
+--     'bh_sessions', (SELECT count(DISTINCT session_id) FROM public.usage_events WHERE referrer LIKE '%iacoes%'),
+--     'bh_unique_users', (SELECT count(DISTINCT user_id) FROM public.usage_events WHERE referrer LIKE '%iacoes%'),
+--     'bh_logins', (SELECT count(*) FROM public.usage_events WHERE event_name = 'login' AND referrer LIKE '%iacoes%'),
+--     'bh_paywall', (SELECT count(*) FROM public.usage_events WHERE event_name = 'paywall_block' AND referrer LIKE '%iacoes%'),
+--     'bh_payments', (SELECT count(*) FROM public.usage_events WHERE event_name = 'payment_succeeded' AND referrer LIKE '%iacoes%')
+--   )
+-- ),
+
+-- iAcoes Conversion Daily
+-- 'iacoes_conversion_daily', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT date_trunc('day', event_ts AT TIME ZONE 'America/Sao_Paulo')::date as day,
+--            count(DISTINCT session_id) as sessions,
+--            count(DISTINCT user_id) as unique_users,
+--            count(*) FILTER (WHERE event_name = 'login') as logins,
+--            count(*) FILTER (WHERE event_name = 'paywall_block') as paywall,
+--            count(*) FILTER (WHERE event_name = 'payment_succeeded') as payments
+--     FROM public.usage_events
+--     WHERE referrer LIKE '%iacoes%'
+--     GROUP BY day ORDER BY day ASC
+--   ) t
+-- ),
+
+-- iAcoes Converting Tickers (pages that lead to BH sessions)
+-- 'iacoes_converting_tickers', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     WITH iacoes_sessions AS (
+--       SELECT DISTINCT session_id, user_id,
+--              split_part(referrer, '/', -1) as ticker
+--       FROM public.usage_events
+--       WHERE referrer LIKE '%iacoes%'
+--     )
+--     SELECT ticker,
+--            count(DISTINCT session_id) as sessions,
+--            count(DISTINCT user_id) as unique_users,
+--            count(DISTINCT session_id) FILTER (WHERE session_id IN (SELECT session_id FROM public.usage_events WHERE event_name = 'login')) as led_to_login,
+--            count(DISTINCT session_id) FILTER (WHERE session_id IN (SELECT session_id FROM public.usage_events WHERE event_name = 'paywall_block')) as led_to_paywall
+--     FROM iacoes_sessions
+--     WHERE ticker IS NOT NULL AND ticker != ''
+--     GROUP BY ticker ORDER BY sessions DESC LIMIT 20
+--   ) t
+-- ),
+
+-- iAcoes vs Other Sources (conversion rate comparison)
+-- 'iacoes_vs_other_conversion', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     WITH source_sessions AS (
+--       SELECT session_id, user_id, event_name,
+--              CASE
+--                WHEN referrer LIKE '%iacoes%' THEN 'iAcoes'
+--                WHEN referrer LIKE '%google%' THEN 'Google'
+--                WHEN referrer IS NULL OR referrer = '' THEN 'Direto'
+--                ELSE 'Outros'
+--              END as source
+--       FROM public.usage_events
+--     ),
+--     source_stats AS (
+--       SELECT source,
+--              count(DISTINCT session_id) as sessions,
+--              count(DISTINCT session_id) FILTER (WHERE event_name = 'login') as logins,
+--              count(DISTINCT session_id) FILTER (WHERE event_name = 'paywall_block') as paywall
+--       FROM source_sessions
+--       GROUP BY source
+--     )
+--     SELECT source, sessions,
+--            CASE WHEN sessions > 0 THEN round(logins::numeric / sessions * 100, 1) ELSE 0 END as login_rate,
+--            CASE WHEN sessions > 0 THEN round(paywall::numeric / sessions * 100, 1) ELSE 0 END as paywall_rate
+--     FROM source_stats
+--     WHERE sessions > 10
+--     ORDER BY sessions DESC LIMIT 5
+--   ) t
+-- ),
+
+-- Login Daily (from usage_events login events)
+-- 'login_daily', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT date_trunc('day', event_ts AT TIME ZONE 'America/Sao_Paulo')::date as day,
+--            count(*) as logins,
+--            count(DISTINCT user_id) as unique_users
+--     FROM public.usage_events
+--     WHERE event_name = 'login'
+--     GROUP BY day ORDER BY day ASC
+--   ) t
+-- ),
+
+-- Watchlist Summary
+-- 'watchlist_summary', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT ticker, count(*) as cnt
+--     FROM public.user_watchlist
+--     GROUP BY ticker ORDER BY cnt DESC LIMIT 20
+--   ) t
+-- ),
+
+-- Revenue by Plan (estimated based on known pricing)
+-- Prices: essencial monthly R$29.90, yearly R$239.90; fundamentalista monthly R$49.90, yearly R$449.90;
+-- ianalista monthly R$99.90, yearly R$899.90; valor monthly R$149.90, yearly R$1349.90
+-- 'revenue_by_plan', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT plan, billing_period, count(*) as subscribers,
+--            CASE
+--              WHEN plan = 'essencial' AND billing_period = 'monthly' THEN count(*) * 29.90
+--              WHEN plan = 'essencial' AND billing_period = 'yearly' THEN count(*) * 239.90 / 12
+--              WHEN plan = 'fundamentalista' AND billing_period = 'monthly' THEN count(*) * 49.90
+--              WHEN plan = 'fundamentalista' AND billing_period = 'yearly' THEN count(*) * 449.90 / 12
+--              WHEN plan = 'ianalista' AND billing_period = 'monthly' THEN count(*) * 99.90
+--              WHEN plan = 'ianalista' AND billing_period = 'yearly' THEN count(*) * 899.90 / 12
+--              WHEN plan = 'valor' AND billing_period = 'monthly' THEN count(*) * 149.90
+--              WHEN plan = 'valor' AND billing_period = 'yearly' THEN count(*) * 1349.90 / 12
+--              ELSE 0
+--            END as mrr_estimate
+--     FROM public.profiles
+--     WHERE subscription_status = 'active' AND plan IS NOT NULL AND plan != 'free'
+--     GROUP BY plan, billing_period
+--     ORDER BY mrr_estimate DESC
+--   ) t
+-- ),
+
+-- Top Reports Downloaded (with ticker info)
+-- 'top_reports_downloaded', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT rr.ticker as title, rr.report_type, count(*) as downloads
+--     FROM public.report_downloads rd
+--     JOIN public.research_reports rr ON rr.id = rd.report_id
+--     GROUP BY rr.ticker, rr.report_type
+--     ORDER BY downloads DESC LIMIT 20
+--   ) t
+-- ),
+
+-- Referrer Daily (usage_events time-series)
+-- 'referrer_daily', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT date_trunc('day', event_ts AT TIME ZONE 'America/Sao_Paulo')::date as day,
+--            CASE
+--              WHEN referrer IS NULL OR referrer = '' THEN 'Direto'
+--              WHEN referrer LIKE '%stripe.com%' THEN 'Stripe Checkout'
+--              WHEN referrer LIKE '%lovable%' THEN 'Lovable (Dev)'
+--              WHEN referrer LIKE '%brasilhorizonte%' THEN 'App BH (interno)'
+--              WHEN referrer LIKE '%localhost%' THEN 'Localhost (Dev)'
+--              WHEN referrer LIKE '%google%' THEN 'Google'
+--              WHEN referrer LIKE '%iacoes%' THEN 'iAcoes'
+--              ELSE split_part(replace(replace(referrer, 'https://', ''), 'http://', ''), '/', 1)
+--            END as source,
+--            count(*) as visits,
+--            count(DISTINCT user_id) as unique_users
+--     FROM public.usage_events
+--     GROUP BY day, source ORDER BY day ASC
+--   ) t
+-- ),
+
+-- Referrer Detail (full referrer URLs)
+-- 'referrer_detail', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT split_part(replace(replace(referrer, 'https://', ''), 'http://', ''), '?', 1) as referrer_clean,
+--            count(*) as visits,
+--            count(DISTINCT user_id) as unique_users
+--     FROM public.usage_events
+--     WHERE referrer IS NOT NULL AND referrer != ''
+--     GROUP BY referrer_clean ORDER BY visits DESC LIMIT 20
+--   ) t
+-- )

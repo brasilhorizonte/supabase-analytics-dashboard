@@ -219,7 +219,7 @@
                         <div class="sidebar-sub-item" data-tab="bhAquisicao">Aquisicao</div>
                         <div class="sidebar-sub-item" data-tab="bhEngajamento">Engajamento</div>
                         <div class="sidebar-sub-item" data-tab="bhRetencao">Retencao</div>
-                        <div class="sidebar-sub-item" data-tab="bhCustos">Custos</div>
+                        <div class="sidebar-sub-item" data-tab="bhCustos">Receita & Assinaturas</div>
                         <div class="sidebar-sub-item" data-tab="bhDetalhes">Detalhes</div>
                     </div>
                 </div>
@@ -326,7 +326,7 @@
 
     const TAB_TITLES = {
         bhVisao: 'BH - Visao Geral', bhAquisicao: 'BH - Aquisicao', bhEngajamento: 'BH - Engajamento',
-        bhRetencao: 'BH - Retencao', bhCustos: 'BH - Custos', bhDetalhes: 'BH - Detalhes',
+        bhRetencao: 'BH - Retencao', bhCustos: 'BH - Receita & Assinaturas', bhDetalhes: 'BH - Detalhes',
         htaVisao: 'HTA - Visao Geral', htaAquisicao: 'HTA - Aquisicao', htaEngajamento: 'HTA - Engajamento',
         htaRetencao: 'HTA - Retencao', htaCustos: 'HTA - Custos', htaDetalhes: 'HTA - Detalhes',
         iacoes: 'iAcoes'
@@ -757,6 +757,7 @@
         const landings = bh.top_landing_pages || [];
         const nvr = bh.new_vs_returning_daily || [];
         const funnel = bh.conversion_funnel || {};
+        const loginDaily = bh.login_daily || [];
 
         buildHTML('bhAquisicao', `
             <div class="charts-grid">
@@ -778,6 +779,7 @@
             </div>
             <div class="charts-grid">
                 ${canvasHTML('bhAqNvrChart','Novos vs Retornantes')}
+                ${canvasHTML('bhAqLoginDailyChart','Logins Diarios')}
             </div>
             <div class="chart-container mb-2"><div class="chart-title">Funil de Conversao</div><div class="funnel" id="bhAqFunnel"></div></div>
         `);
@@ -816,11 +818,28 @@
             {label:'Novos',data:nvrPrep.data.map(d=>d.new_users||0),backgroundColor:'#3b82f6'}
         ], {scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}});
 
-        // Funnel
-        document.getElementById('bhAqFunnel').innerHTML = [
+        // Funnel with drop-off rates
+        const funnelSteps = [
             {l:'Sessions',v:funnel.sessions||0},{l:'Logins',v:funnel.logins||0},{l:'Paywall Blocks',v:funnel.paywall_blocks||0},
             {l:'Checkout Starts',v:funnel.checkout_starts||0},{l:'Payments',v:funnel.payments||0},{l:'Cancels',v:funnel.cancels||0}
-        ].map(s=>`<div class="funnel-step"><span class="funnel-step-label">${s.l}</span><span class="funnel-step-value">${fmt(s.v)}</span></div>`).join('');
+        ];
+        document.getElementById('bhAqFunnel').innerHTML = funnelSteps.map((step,i)=>{
+            const prev = i > 0 ? funnelSteps[i-1].v : 0;
+            const rate = prev > 0 ? ((step.v/prev)*100).toFixed(1)+'%' : '';
+            return `<div class="funnel-step"><span class="funnel-step-label">${step.l}${rate?' <span style="color:#3ecf8e;font-size:11px">('+rate+')</span>':''}</span><span class="funnel-step-value">${fmt(step.v)}</span></div>`;
+        }).join('');
+
+        // Login daily
+        if (loginDaily.length > 0) {
+            const ldPrep = prepareTimeSeries(loginDaily, f, ['logins','unique_users']);
+            destroyChart('bhAqLoginDailyChart');
+            charts.bhAqLoginDailyChart = new Chart(document.getElementById('bhAqLoginDailyChart'), {
+                type:'bar', data:{labels:ldPrep.labels,datasets:[
+                    {label:'Logins',data:ldPrep.data.map(d=>d.logins||0),backgroundColor:'#6366f1',order:2},
+                    {label:'Usuarios Unicos',data:ldPrep.data.map(d=>d.unique_users||0),type:'line',borderColor:'#3ecf8e',backgroundColor:'transparent',borderWidth:2,pointRadius:2,order:1}
+                ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
+        }
     }
 
     function buildRefDailyChart(consolidated) {
@@ -894,11 +913,14 @@
         const events = (bh.usage_events_summary||[]).slice(0,8);
         doughnutChart('bhEngEventsChart', events.map(e=>e.event_name||'Unknown'), events.map(e=>e.cnt||0), COLORS);
 
-        // Feature daily with granularity
-        const fdFeatures = [...new Set(featureDaily.map(d=>d.feature))].slice(0,8);
+        // Feature daily with granularity (stacked bar)
         const mcFD = prepareMultiCategoryTS(featureDaily, f, 'feature', 'cnt');
         const topFdFeats = mcFD.categories.slice(0,8);
-        lineChart('bhEngFeatureDailyChart', mcFD.labels, topFdFeats.map((feat,i)=>({label:feat,data:mcFD.getValues(feat),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
+        destroyChart('bhEngFeatureDailyChart');
+        charts.bhEngFeatureDailyChart = new Chart(document.getElementById('bhEngFeatureDailyChart'), {
+            type:'bar', data:{labels:mcFD.labels,datasets:topFdFeats.map((feat,i)=>({label:feat,data:mcFD.getValues(feat),backgroundColor:COLORS[i%COLORS.length]}))},
+            options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+        });
 
         // Ticker ranking (horizontal bar)
         if (tickerRanking.length > 0) {
@@ -922,18 +944,26 @@
             });
         }
 
-        // Ticker trend daily with granularity
+        // Ticker trend daily with granularity (stacked bar)
         if (tickerTrend.length > 0) {
             const mcTT = prepareMultiCategoryTS(tickerTrend, f, 'ticker', 'cnt');
-            const ttTickers = mcTT.categories.slice(0,6);
-            lineChart('bhEngTickerTrendChart', mcTT.labels, ttTickers.map((t,i)=>({label:t,data:mcTT.getValues(t),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
+            const ttTickers = mcTT.categories.slice(0,10);
+            destroyChart('bhEngTickerTrendChart');
+            charts.bhEngTickerTrendChart = new Chart(document.getElementById('bhEngTickerTrendChart'), {
+                type:'bar', data:{labels:mcTT.labels,datasets:ttTickers.map((t,i)=>({label:t,data:mcTT.getValues(t),backgroundColor:COLORS[i%COLORS.length]}))},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
         }
 
-        // Feature adoption curves with granularity
+        // Feature adoption curves with granularity (stacked bar)
         if (featureTrend.length > 0) {
             const mcFT = prepareMultiCategoryTS(featureTrend, f, 'feature', 'unique_users');
             const ftFeatures = mcFT.categories.slice(0,8);
-            lineChart('bhEngFeatureTrendChart', mcFT.labels, ftFeatures.map((feat,i)=>({label:feat,data:mcFT.getValues(feat),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
+            destroyChart('bhEngFeatureTrendChart');
+            charts.bhEngFeatureTrendChart = new Chart(document.getElementById('bhEngFeatureTrendChart'), {
+                type:'bar', data:{labels:mcFT.labels,datasets:ftFeatures.map((feat,i)=>({label:feat,data:mcFT.getValues(feat),backgroundColor:COLORS[i%COLORS.length]}))},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
         }
 
         // User feature breadth (pre-aggregated snapshot, no time dimension)
@@ -1033,6 +1063,11 @@
         const subAge = bh.subscription_age || [];
         const ttc = bh.time_to_convert || [];
         const fp = bh.feature_paywall || [];
+        const revenueByPlan = bh.revenue_by_plan || [];
+        const watchlist = bh.watchlist_summary || [];
+
+        // Calculate total MRR from revenue_by_plan
+        const totalMrr = revenueByPlan.reduce((s,r)=>s+(r.mrr_estimate||0),0);
 
         buildHTML('bhCustos', `
             <div class="kpi-grid" id="bhCustosSubsKpis"></div>
@@ -1043,6 +1078,10 @@
             <div class="charts-grid">
                 ${canvasHTML('bhCActiveByPlanChart','Usuarios Ativos por Plano')}
                 ${canvasHTML('bhCStatusByPlanChart','Ativos vs Inativos por Plano')}
+            </div>
+            <div class="charts-grid">
+                ${canvasHTML('bhCRevenueByPlanChart','MRR Estimado por Plano (R$)')}
+                ${canvasHTML('bhCWatchlistChart','Top Tickers na Watchlist')}
             </div>
             <div class="charts-grid">
                 ${canvasHTML('bhCSubEventsChart','Eventos de Assinatura (diario)')}
@@ -1122,6 +1161,7 @@
         lineChart('bhCChurnChart', churnPrep.labels, [{label:'Cancelamentos',data:churnPrep.data.map(d=>d.cancels||0),borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,0.1)',fill:true,pointBackgroundColor:'#ef4444'}]);
 
         document.getElementById('bhCustosMrrKpis').innerHTML = `
+            ${createKpiCard('MRR Estimado', 'R$ '+totalMrr.toLocaleString('pt-BR',{minimumFractionDigits:2}))}
             ${createKpiCard('Assinantes Mensal', fmt(mrr.monthly_subs||0))}
             ${createKpiCard('Assinantes Anual', fmt(mrr.yearly_subs||0))}
             ${createKpiCard('Assinantes Vitalicio', fmt(mrr.lifetime_subs||0))}
@@ -1140,6 +1180,22 @@
 
         barChart('bhCTtcChart', ttc.map(t=>t.bucket), [{label:'Conversoes',data:ttc.map(t=>t.conversions||0),backgroundColor:'#3ecf8e'}], {horizontal:true});
         barChart('bhCPaywallChart', fp.map(f=>f.feature||'N/A'), [{label:'Paywall Hits',data:fp.map(f=>f.paywall_hits||0),backgroundColor:'#f59e0b'}], {horizontal:true});
+
+        // Revenue by plan (MRR estimate)
+        if (revenueByPlan.length > 0) {
+            const planColors = {'essencial':'#3ecf8e','fundamentalista':'#6366f1','ianalista':'#f59e0b','valor':'#3b82f6'};
+            const revLabels = revenueByPlan.map(r=>`${(r.plan||'').charAt(0).toUpperCase()+(r.plan||'').slice(1)} (${r.billing_period||''})`);
+            destroyChart('bhCRevenueByPlanChart');
+            charts.bhCRevenueByPlanChart = new Chart(document.getElementById('bhCRevenueByPlanChart'), {
+                type:'bar',data:{labels:revLabels,datasets:[{label:'MRR (R$)',data:revenueByPlan.map(r=>Math.round(r.mrr_estimate||0)),backgroundColor:revenueByPlan.map(r=>planColors[r.plan]||'#94a3b8'),borderRadius:6}]},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'R$ '+ctx.parsed.y.toLocaleString('pt-BR',{minimumFractionDigits:2})}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'},ticks:{callback:v=>'R$'+v}}}}
+            });
+        }
+
+        // Watchlist summary
+        if (watchlist.length > 0) {
+            barChart('bhCWatchlistChart', watchlist.map(w=>w.ticker), [{label:'Usuarios',data:watchlist.map(w=>w.cnt||0),backgroundColor:'#3b82f6'}], {horizontal:true});
+        }
     }
 
     function renderBhDetalhes() {
