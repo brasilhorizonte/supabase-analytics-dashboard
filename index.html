@@ -1984,11 +1984,11 @@
         const bh = dashboardData.bh; const f = globalFilters;
         const convFunnel = bh.iacoes_conversion_funnel || {};
         const convDaily = bh.iacoes_conversion_daily || [];
-        const convTickers = bh.iacoes_converting_tickers || [];
+        const convTickersDaily = bh.iacoes_converting_tickers_daily || [];
         const convComparison = bh.iacoes_vs_other_conversion || [];
         const ov = bh.iacoes_overview || {};
         const daily = bh.iacoes_daily || [];
-        const topPages = bh.iacoes_top_pages || [];
+        const pagesDaily = bh.iacoes_pages_daily || [];
         const referrers = bh.iacoes_referrers || [];
         const referrerDaily = bh.iacoes_referrer_daily || [];
         const devices = bh.iacoes_devices || [];
@@ -2110,6 +2110,16 @@
             ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:10}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
         });
 
+        // Aggregate converting tickers from daily data, filtered by date
+        const filteredConvTickers = filterSnapshot(convTickersDaily, f);
+        const convTickersAgg = {};
+        filteredConvTickers.forEach(d => {
+            if (!convTickersAgg[d.ticker]) convTickersAgg[d.ticker] = {ticker:d.ticker, sessions:0, unique_users:0, led_to_login:0, led_to_paywall:0};
+            const a = convTickersAgg[d.ticker];
+            a.sessions += d.sessions||0; a.unique_users += d.unique_users||0;
+            a.led_to_login += d.led_to_login||0; a.led_to_paywall += d.led_to_paywall||0;
+        });
+        const convTickers = Object.values(convTickersAgg).sort((a,b)=>b.sessions-a.sessions).slice(0,20);
         document.getElementById('iacoesConvTickersTable').innerHTML = `<thead><tr><th>Pagina</th><th>Sessoes</th><th>Usuarios</th><th>Logins</th><th>Taxa Login</th><th>Paywall</th><th>Taxa Paywall</th></tr></thead><tbody>${convTickers.map(t=>{const lr=t.sessions>0?((t.led_to_login/t.sessions)*100).toFixed(1):'0';const pr=t.sessions>0?((t.led_to_paywall/t.sessions)*100).toFixed(1):'0';return`<tr><td>${t.ticker}</td><td>${fmt(t.sessions||0)}</td><td>${fmt(t.unique_users||0)}</td><td>${fmt(t.led_to_login||0)}</td><td>${lr}%</td><td>${fmt(t.led_to_paywall||0)}</td><td>${pr}%</td></tr>`;}).join('')}</tbody>`;
         makeSortable(document.getElementById('iacoesConvTickersTable'));
 
@@ -2142,6 +2152,15 @@
             barChart('iacoesReferrerChart', referrers.map(r=>r.source), [{label:'Views',data:referrers.map(r=>r.views||0),backgroundColor:COLORS}], {horizontal:true});
         }
 
+        // Aggregate top pages from daily data, filtered by date
+        const filteredPagesDaily = filterSnapshot(pagesDaily, f);
+        const pagesAgg = {};
+        filteredPagesDaily.forEach(d => {
+            if (!pagesAgg[d.page_path]) pagesAgg[d.page_path] = {page_path:d.page_path, views:0, sessions:0, cta_clicks:0};
+            const a = pagesAgg[d.page_path];
+            a.views += d.views||0; a.sessions += d.sessions||0; a.cta_clicks += d.cta_clicks||0;
+        });
+        const topPages = Object.values(pagesAgg).sort((a,b)=>b.views-a.views).slice(0,20);
         document.getElementById('iacoesTopPagesTable').innerHTML = `<thead><tr><th>Pagina</th><th>Views</th><th>Sessoes</th><th>CTA Clicks</th><th>Taxa CTA</th></tr></thead><tbody>${topPages.map(p=>{const pCtaClicks=Number(p.cta_clicks)||0;const pSessions=Number(p.sessions)||0;const pCtaRate=pSessions>0?((pCtaClicks/pSessions)*100).toFixed(1):'0';return`<tr><td>${p.page_path==='/'?'Home (/)':p.page_path}</td><td>${fmt(p.views||0)}</td><td>${fmt(pSessions)}</td><td>${fmt(pCtaClicks)}</td><td>${pCtaRate}%</td></tr>`;}).join('')}</tbody>`;
         makeSortable(document.getElementById('iacoesTopPagesTable'));
 
