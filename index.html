@@ -1996,20 +1996,29 @@
         const browsers = bh.iacoes_browsers || [];
         const osSummary = bh.iacoes_os || [];
 
-        const iacoesViews = convFunnel.iacoes_views||0;
-        const ctaClicks = convFunnel.cta_clicks||0;
-        const bhSessions = convFunnel.bh_sessions||0;
-        const bhUniqueUsers = convFunnel.bh_unique_users||0;
-        const bhLogins = convFunnel.bh_logins||0;
-        const bhPaywall = convFunnel.bh_paywall||0;
-        const bhPayments = convFunnel.bh_payments||0;
+        // Merge iacoes_daily (views, cta_clicks) + iacoes_conversion_daily (sessions, logins, paywall, payments) by day
+        const funnelByDay = {};
+        daily.forEach(d => { funnelByDay[d.day] = { views: d.views||0, cta_clicks: d.cta_clicks||0, sessions:0, unique_users:0, logins:0, paywall:0, payments:0 }; });
+        convDaily.forEach(d => { if (!funnelByDay[d.day]) funnelByDay[d.day] = { views:0, cta_clicks:0 }; Object.assign(funnelByDay[d.day], { sessions: d.sessions||0, unique_users: d.unique_users||0, logins: d.logins||0, paywall: d.paywall||0, payments: d.payments||0 }); });
+        const funnelDailyMerged = Object.entries(funnelByDay).map(([day,v])=>({day,...v})).sort((a,b)=>a.day.localeCompare(b.day));
+
+        // Filter by global date range and recalculate all funnel/overview values
+        const filteredFunnel = filterSnapshot(funnelDailyMerged, f);
+        const iacoesViews = filteredFunnel.reduce((s,d)=>s+(d.views||0),0);
+        const ctaClicks = filteredFunnel.reduce((s,d)=>s+(d.cta_clicks||0),0);
+        const bhSessions = filteredFunnel.reduce((s,d)=>s+(d.sessions||0),0);
+        const bhUniqueUsers = filteredFunnel.reduce((s,d)=>s+(d.unique_users||0),0);
+        const bhLogins = filteredFunnel.reduce((s,d)=>s+(d.logins||0),0);
+        const bhPaywall = filteredFunnel.reduce((s,d)=>s+(d.paywall||0),0);
+        const bhPayments = filteredFunnel.reduce((s,d)=>s+(d.payments||0),0);
         const loginRate = bhSessions>0?((bhLogins/bhSessions)*100).toFixed(1):'0';
         const paywallRate = bhSessions>0?((bhPaywall/bhSessions)*100).toFixed(1):'0';
 
-        // Recalculate overview from daily for date filtering
+        // Recalculate overview from filtered daily
         const filteredIacoesDaily = filterSnapshot(daily, f);
         const totalViews = filteredIacoesDaily.reduce((s,d)=>s+(d.views||0),0) || (ov.total_views||0);
         const totalSessions = filteredIacoesDaily.reduce((s,d)=>s+(d.sessions||0),0) || (ov.total_sessions||0);
+        const totalCtaClicks = filteredIacoesDaily.reduce((s,d)=>s+(d.cta_clicks||0),0);
 
         buildHTML('iacoes', `
             <div class="kpi-grid" id="iacoesConvKpis"></div>
@@ -2049,11 +2058,6 @@
         const funnelSteps = [{l:'iAcoes Views',v:iacoesViews},{l:'CTA Clicks',v:ctaClicks},{l:'Sessoes BH',v:bhSessions},{l:'Logins',v:bhLogins},{l:'Paywall',v:bhPaywall},{l:'Pagamentos',v:bhPayments}];
         document.getElementById('iacoesConvFunnel').innerHTML = funnelSteps.map((step,i)=>{const prev=i>0?funnelSteps[i-1].v:0;const rate=prev>0?((step.v/prev)*100).toFixed(1)+'%':'';return`<div class="funnel-step"><span class="funnel-step-label">${step.l}${rate?' <span style="color:#3ecf8e;font-size:11px">('+rate+')</span>':''}</span><span class="funnel-step-value">${fmt(step.v)}</span></div>`;}).join('');
 
-        // Merge iacoes_daily (views, cta_clicks) + iacoes_conversion_daily (sessions, logins, paywall, payments) by day
-        const funnelByDay = {};
-        daily.forEach(d => { funnelByDay[d.day] = { views: d.views||0, cta_clicks: d.cta_clicks||0, sessions:0, logins:0, paywall:0, payments:0 }; });
-        convDaily.forEach(d => { if (!funnelByDay[d.day]) funnelByDay[d.day] = { views:0, cta_clicks:0 }; Object.assign(funnelByDay[d.day], { sessions: d.sessions||0, logins: d.logins||0, paywall: d.paywall||0, payments: d.payments||0 }); });
-        const funnelDailyMerged = Object.entries(funnelByDay).map(([day,v])=>({day,...v})).sort((a,b)=>a.day.localeCompare(b.day));
         const funnelTSPrep = prepareTimeSeries(funnelDailyMerged, f, ['views','cta_clicks','sessions','logins','paywall','payments']);
 
         // Funnel over time (multi-line, log scale)
@@ -2113,7 +2117,7 @@
             ${createKpiCard('Page Views', fmt(totalViews))}
             ${createKpiCard('Sessoes', fmt(totalSessions))}
             ${createKpiCard('Views/Sessao', totalSessions>0?(totalViews/totalSessions).toFixed(1):'0')}
-            ${createKpiCard('Paginas Unicas', fmt(ov.total_pages||0))}
+            ${createKpiCard('CTA Clicks', fmt(totalCtaClicks))}
         `;
 
         const dailyPrep = prepareTimeSeries(daily, f, ['views','sessions']);
