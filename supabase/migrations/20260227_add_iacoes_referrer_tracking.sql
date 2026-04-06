@@ -1,0 +1,10 @@
+-- Migration: Add iAcoes referrer tracking in BH get_analytics_data()
+-- Apply to: brasilhorizonte (dawvgbopyemcayavcatd)
+-- Applied via Supabase MCP as: add_iacoes_referrer_tracking
+--
+-- Changes:
+--   - Added 'iAcoes' category to referrer_summary and referrer_daily CASE WHEN
+--   - Matches both iacoes.com.br and iacoes.brasilhorizonte.com.br
+--   - Placed BEFORE 'Interno' (%brasilhorizonte%) so iacoes.brasilhorizonte.com.br
+--     is correctly classified as 'iAcoes' instead of 'Interno'
+--   - Frontend: added orange (#f97316) color for 'iAcoes' in REF_COLORS

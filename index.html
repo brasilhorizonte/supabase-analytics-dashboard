@@ -2056,7 +2056,7 @@
         ]);
 
         // Comparison chart - snapshot data, filter not applicable
-        const srcColors = {'iAcoes':'#f97316','Google':'#4285f4','Direto':'#94a3b8','Outros':'#64748b'};
+        const srcColors = {'iAcoes':'#f97316','Google':'#4285f4','Direto':'#94a3b8','Stripe':'#635bff','App BH':'#3ecf8e','Twitter/X':'#1d9bf0','Facebook':'#1877f2','Instagram':'#e4405f','LinkedIn':'#0a66c2','WhatsApp':'#25d366','YouTube':'#ff0000','Telegram':'#26a5e4','Reddit':'#ff4500','Lovable (Dev)':'#d946ef','Localhost (Dev)':'#a1a1aa'};
         destroyChart('iacoesVsOtherChart');
         charts.iacoesVsOtherChart = new Chart(document.getElementById('iacoesVsOtherChart'),{
             type:'bar',data:{labels:convComparison.map(c=>`${c.source} (${fmt(c.sessions||0)})`),datasets:[

@@ -1,0 +1,43 @@
+-- Migration: Expand iAcoes vs Other Conversion source categories
+-- Applied to: BH (dawvgbopyemcayavcatd) via Supabase MCP execute_sql
+-- Date: 2026-04-06
+--
+-- Changes:
+--   - Replaced simplified 4-source CASE (iAcoes/Google/Direto/Outros) in
+--     iacoes_vs_other_conversion with full 15+ category classification
+--   - Now matches same categories as referrer_summary: Lovable (Dev),
+--     Localhost (Dev), App BH, Stripe, Google, Facebook, Instagram,
+--     Twitter/X, LinkedIn, WhatsApp, Telegram, YouTube, Reddit
+--   - Unknown referrers show raw domain via split_part() instead of "Outros"
+--   - "Direto" verified clean (854 sessions, no dev/internal traffic mixed in)
+--
+-- Frontend:
+--   - Updated srcColors map with brand colors for all new sources
+
+-- Applied via DO block that used pg_get_functiondef + text replace + EXECUTE
+-- Old CASE in iacoes_vs_other_conversion:
+--   CASE WHEN referrer ILIKE '%iacoes%' THEN 'iAcoes'
+--        WHEN referrer ILIKE '%google%' THEN 'Google'
+--        WHEN referrer IS NULL OR referrer = '' THEN 'Direto'
+--        ELSE 'Outros'
+--   END as source
+--
+-- New CASE:
+--   CASE
+--     WHEN referrer ILIKE '%iacoes%' THEN 'iAcoes'
+--     WHEN referrer ILIKE '%lovable.dev%' OR ... THEN 'Lovable (Dev)'
+--     WHEN referrer ILIKE '%localhost%' THEN 'Localhost (Dev)'
+--     WHEN referrer ILIKE '%brasilhorizonte%' THEN 'App BH'
+--     WHEN referrer ILIKE '%checkout.stripe.com%' OR ... THEN 'Stripe'
+--     WHEN referrer ILIKE '%google%' OR ... THEN 'Google'
+--     WHEN referrer ILIKE '%facebook%' OR ... THEN 'Facebook'
+--     WHEN referrer ILIKE '%instagram%' THEN 'Instagram'
+--     WHEN referrer ILIKE '%twitter%' OR ... THEN 'Twitter/X'
+--     WHEN referrer ILIKE '%linkedin%' THEN 'LinkedIn'
+--     WHEN referrer ILIKE '%whatsapp%' THEN 'WhatsApp'
+--     WHEN referrer ILIKE '%telegram%' OR ... THEN 'Telegram'
+--     WHEN referrer ILIKE '%youtube%' OR ... THEN 'YouTube'
+--     WHEN referrer ILIKE '%reddit%' THEN 'Reddit'
+--     WHEN referrer IS NULL OR referrer = '' THEN 'Direto'
+--     ELSE split_part(replace(replace(referrer, 'https://', ''), 'http://', ''), '/', 1)
+--   END as source
