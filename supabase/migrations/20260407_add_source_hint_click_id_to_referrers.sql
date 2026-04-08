@@ -1,0 +1,49 @@
+-- Migration: Add source_hint and click_id_source to iAcoes referrer classification
+-- Applied to: BH (dawvgbopyemcayavcatd) via Supabase MCP execute_sql
+-- Date: 2026-04-07
+--
+-- Changes:
+--   1. Modified CASE in iacoes_referrers and iacoes_referrer_daily to use
+--      click_id_source and source_hint as fallbacks when referrer is empty.
+--      Priority: referrer (traditional) > click_id_source (ads) > source_hint (in-app UA)
+--   2. Added new section iacoes_source_detection for diagnostic visibility
+--      into dark social and ad click detection.
+--
+-- New source categories added:
+--   - Facebook (ads), Google (ads), TikTok (ads), LinkedIn (ads), Twitter/X (ads), Bing (ads)
+--   - Facebook (app), Instagram (app), LinkedIn (app), WhatsApp (app), Telegram (app), Twitter/X (app)
+--
+-- Frontend:
+--   - Updated REF_COLORS and srcColors with brand colors for new categories
+--   - Added "Deteccao de Fonte (Dark Social & Ads)" diagnostic table in iAcoes tab
+--
+-- The columns source_hint and click_id_source were already added to iacoes_page_views
+-- and the JS tracking code was already updated in a prior migration.
+-- This migration only changes the RPC classification logic and dashboard frontend.
+
+-- Applied via DO block with pg_get_functiondef + replace + EXECUTE
+-- Old CASE (in both iacoes_referrers and iacoes_referrer_daily):
+--   WHEN referrer IS NULL OR referrer = '' THEN 'Direto'
+--   WHEN referrer ILIKE '%google%' ... THEN 'Google'
+--   ... (12 categories)
+--   ELSE 'Outro'
+--
+-- New CASE preserves all original rules, then adds:
+--   WHEN click_id_source = 'facebook' THEN 'Facebook (ads)'
+--   WHEN click_id_source = 'google_ads' THEN 'Google (ads)'
+--   WHEN click_id_source = 'tiktok' THEN 'TikTok (ads)'
+--   WHEN click_id_source = 'linkedin' THEN 'LinkedIn (ads)'
+--   WHEN click_id_source = 'twitter' THEN 'Twitter/X (ads)'
+--   WHEN click_id_source = 'microsoft_ads' THEN 'Bing (ads)'
+--   WHEN source_hint = 'facebook' THEN 'Facebook (app)'
+--   WHEN source_hint = 'instagram' THEN 'Instagram (app)'
+--   WHEN source_hint = 'linkedin' THEN 'LinkedIn (app)'
+--   WHEN source_hint = 'whatsapp' THEN 'WhatsApp (app)'
+--   WHEN source_hint = 'telegram' THEN 'Telegram (app)'
+--   WHEN source_hint = 'twitter' THEN 'Twitter/X (app)'
+--   WHEN referrer IS NOT NULL AND referrer != '' THEN 'Outro'
+--   ELSE 'Direto'
+--
+-- New section iacoes_source_detection:
+--   Groups by source_hint, click_id_source, and referrer_status (vazio/presente)
+--   For diagnostic/debug purposes to validate detection quality

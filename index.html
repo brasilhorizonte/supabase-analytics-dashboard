@@ -800,7 +800,7 @@
         doughnutChart('bhAqReferrerChart', filteredReferrers.map(r=>r.source||'Outro'), filteredReferrers.map(r=>r.visits||0), COLORS);
 
         // Referrer daily with date+granularity filtering
-        const REF_COLORS = {'Direto':'#3b82f6','Google':'#ef4444','Twitter/X':'#1da1f2','LinkedIn':'#0a66c2','Reddit':'#ff4500','Facebook':'#1877f2','Instagram':'#e4405f','YouTube':'#ff0000','WhatsApp':'#25d366','Telegram':'#0088cc','Email':'#f59e0b','Stripe':'#635bff','iAcoes':'#f97316','Interno':'#3ecf8e','Lovable (Dev)':'#a78bfa','Localhost (Dev)':'#94a3b8','Outro':'#6b7280'};
+        const REF_COLORS = {'Direto':'#3b82f6','Google':'#ef4444','Google (ads)':'#4285f4','Twitter/X':'#1da1f2','Twitter/X (ads)':'#1d9bf0','Twitter/X (app)':'#1d9bf0','LinkedIn':'#0a66c2','LinkedIn (ads)':'#0a66c2','LinkedIn (app)':'#0a66c2','Reddit':'#ff4500','Facebook':'#1877f2','Facebook (ads)':'#1877f2','Facebook (app)':'#1877f2','Instagram':'#e4405f','Instagram (app)':'#e4405f','YouTube':'#ff0000','WhatsApp':'#25d366','WhatsApp (app)':'#25d366','Telegram':'#0088cc','Telegram (app)':'#0088cc','TikTok (ads)':'#010101','Bing':'#00809d','Bing (ads)':'#00809d','Email':'#f59e0b','Stripe':'#635bff','iAcoes':'#f97316','Interno':'#3ecf8e','Lovable (Dev)':'#a78bfa','Localhost (Dev)':'#94a3b8','Outro':'#6b7280'};
         const refExclude = new Set(['Lovable (Dev)','Localhost (Dev)','Interno','Stripe']);
         window._refDailyData = {filteredRefDaily,refExclude,REF_COLORS,f};
         window._refDailyConsolidated = false;
@@ -2035,6 +2035,7 @@
             <div class="kpi-grid" id="iacoesTrafficKpis"></div>
             <div class="chart-container mb-2"><div class="chart-title">Views & Sessoes (diario)</div><canvas id="iacoesViewsDailyChart"></canvas></div>
             <div class="chart-container mb-2"><div class="chart-title">Origem do Trafego (diario)</div><canvas id="iacoesReferrerChart"></canvas></div>
+            <div class="table-container"><div class="table-title">Deteccao de Fonte (Dark Social & Ads)</div><table id="iacoesSourceDetectionTable"></table></div>
             <div class="table-container"><div class="table-title">Top Paginas</div><table id="iacoesTopPagesTable"></table></div>
             <div class="charts-grid">
                 ${canvasHTML('iacoesDeviceChart','Dispositivos')}
@@ -2101,7 +2102,7 @@
         ]);
 
         // Comparison chart - snapshot data, filter not applicable
-        const srcColors = {'iAcoes':'#f97316','Google':'#4285f4','Direto':'#94a3b8','Stripe':'#635bff','App BH':'#3ecf8e','Twitter/X':'#1d9bf0','Facebook':'#1877f2','Instagram':'#e4405f','LinkedIn':'#0a66c2','WhatsApp':'#25d366','YouTube':'#ff0000','Telegram':'#26a5e4','Reddit':'#ff4500','Lovable (Dev)':'#d946ef','Localhost (Dev)':'#a1a1aa'};
+        const srcColors = {'iAcoes':'#f97316','Google':'#4285f4','Google (ads)':'#4285f4','Direto':'#94a3b8','Stripe':'#635bff','App BH':'#3ecf8e','Twitter/X':'#1d9bf0','Twitter/X (ads)':'#1d9bf0','Twitter/X (app)':'#1d9bf0','Facebook':'#1877f2','Facebook (ads)':'#1877f2','Facebook (app)':'#1877f2','Instagram':'#e4405f','Instagram (app)':'#e4405f','LinkedIn':'#0a66c2','LinkedIn (ads)':'#0a66c2','LinkedIn (app)':'#0a66c2','WhatsApp':'#25d366','WhatsApp (app)':'#25d366','YouTube':'#ff0000','Telegram':'#26a5e4','Telegram (app)':'#26a5e4','TikTok (ads)':'#010101','Bing (ads)':'#00809d','Reddit':'#ff4500','Lovable (Dev)':'#d946ef','Localhost (Dev)':'#a1a1aa'};
         destroyChart('iacoesVsOtherChart');
         charts.iacoesVsOtherChart = new Chart(document.getElementById('iacoesVsOtherChart'),{
             type:'bar',data:{labels:convComparison.map(c=>`${c.source} (${fmt(c.sessions||0)})`),datasets:[
@@ -2150,6 +2151,19 @@
             });
         } else if (referrers.length > 0) {
             barChart('iacoesReferrerChart', referrers.map(r=>r.source), [{label:'Views',data:referrers.map(r=>r.views||0),backgroundColor:COLORS}], {horizontal:true});
+        }
+
+        // Source detection diagnostic table
+        const detection = bh.iacoes_source_detection || [];
+        const detTable = document.getElementById('iacoesSourceDetectionTable');
+        if (detection.length > 0 && detection.some(d => d.source_hint !== 'nenhum' || d.click_id_source !== 'nenhum')) {
+            detTable.innerHTML = '<thead><tr><th>Source Hint (UA)</th><th>Click ID</th><th>Referrer</th><th>Total</th></tr></thead><tbody>' +
+                detection.filter(d => d.source_hint !== 'nenhum' || d.click_id_source !== 'nenhum')
+                    .map(d => `<tr><td>${d.source_hint}</td><td>${d.click_id_source}</td><td>${d.referrer_status}</td><td>${fmt(d.total)}</td></tr>`).join('') +
+                '</tbody>';
+            makeSortable(detTable);
+        } else {
+            detTable.closest('.table-container').innerHTML = '<div class="table-title">Deteccao de Fonte (Dark Social & Ads)</div><p style="color:var(--m);font-size:13px;padding:12px">Nenhum dado de source_hint ou click_id_source detectado ainda. Os dados aparecerao conforme usuarios acessem via in-app browsers ou links com click IDs.</p>';
         }
 
         // Aggregate top pages from daily data, filtered by date
