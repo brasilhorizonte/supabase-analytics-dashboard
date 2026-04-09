@@ -2143,7 +2143,11 @@
         // Referrer daily (stacked bar over time)
         if (referrerDaily.length > 0) {
             const mcRef = prepareMultiCategoryTS(referrerDaily, f, 'source', 'views');
-            const refSources = mcRef.categories.slice(0,8);
+            const refSources = mcRef.categories
+                .map(cat => ({ cat, total: mcRef.getValues(cat).reduce((s, v) => s + v, 0) }))
+                .sort((a, b) => b.total - a.total)
+                .slice(0, 8)
+                .map(x => x.cat);
             destroyChart('iacoesReferrerChart');
             charts.iacoesReferrerChart = new Chart(document.getElementById('iacoesReferrerChart'), {
                 type:'bar',data:{labels:mcRef.labels,datasets:refSources.map((s,i)=>({label:s,data:mcRef.getValues(s),backgroundColor:COLORS[i%COLORS.length]}))},
