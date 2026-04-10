@@ -724,6 +724,10 @@
         buildHTML('bhVisao', `
             <div class="kpi-grid" id="bhVisaoKpis"></div>
             <div class="charts-grid">
+                ${canvasHTML('bhMauChart','MAU — Usuarios Ativos por Mes')}
+                ${canvasHTML('bhCumulativeSignupsChart','Base Acumulada de Cadastros')}
+            </div>
+            <div class="charts-grid">
                 ${canvasHTML('bhDailyEventsChart','Eventos (diario)')}
                 ${canvasHTML('bhDailyDauChart','DAU (diario)')}
             </div>
@@ -744,6 +748,39 @@
             ${createKpiCard('Stickiness DAU/MAU', (lastStick.dau_mau_pct||0)+'%', null, stickSpark)}
             ${createKpiCard('Sessoes Auth', fmt(bh.overview.active_sessions||0))}
         `;
+
+        // === MAU Chart (bars) + Avg DAU 30d (line) ===
+        const mauData = bh.monthly_active_users || [];
+        const mauLabels = mauData.map(d => { const dt = new Date(d.month+'T00:00:00'); return dt.toLocaleString('pt-BR',{month:'short',year:'2-digit'}); });
+        const mauValues = mauData.map(d => d.unique_users||0);
+        // Rolling 30d avg DAU: for each month, avg of DAU in that month's days
+        const dauByMonth = {};
+        filteredBhDaily.forEach(d => { const mk = d.day.slice(0,7); if (!dauByMonth[mk]) dauByMonth[mk] = []; dauByMonth[mk].push(d.dau||0); });
+        const avgDauPerMonth = mauData.map(d => { const mk = d.month.slice(0,7); const vals = dauByMonth[mk]||[]; return vals.length>0 ? Math.round(vals.reduce((s,v)=>s+v,0)/vals.length) : 0; });
+        destroyChart('bhMauChart');
+        charts.bhMauChart = new Chart(document.getElementById('bhMauChart'), {
+            type:'bar', data:{labels:mauLabels, datasets:[
+                {label:'MAU (usuarios unicos)',data:mauValues,backgroundColor:'#6366f1',borderRadius:6,order:2},
+                {label:'Media DAU no mes',data:avgDauPerMonth,type:'line',borderColor:'#f59e0b',backgroundColor:'transparent',borderWidth:2,pointRadius:3,pointBackgroundColor:'#f59e0b',tension:0.4,order:1}
+            ]}, options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:10}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+        });
+
+        // === Cumulative Signups Chart (bars) + Avg Signups/day 30d (line) ===
+        const filteredSignups = filterSnapshot(signupsDaily, f);
+        const signupsByMonth = {};
+        filteredSignups.forEach(d => { const mk = d.day.slice(0,7); if (!signupsByMonth[mk]) signupsByMonth[mk] = {signups:0, days:0}; signupsByMonth[mk].signups += d.signups||0; signupsByMonth[mk].days++; });
+        const signupMonths = Object.keys(signupsByMonth).sort();
+        const cumLabels = signupMonths.map(mk => { const dt = new Date(mk+'-01T00:00:00'); return dt.toLocaleString('pt-BR',{month:'short',year:'2-digit'}); });
+        let cumTotal = 0;
+        const cumValues = signupMonths.map(mk => { cumTotal += signupsByMonth[mk].signups; return cumTotal; });
+        const avgSignupsPerMonth = signupMonths.map(mk => { const m = signupsByMonth[mk]; return m.days>0 ? Math.round(m.signups/m.days*10)/10 : 0; });
+        destroyChart('bhCumulativeSignupsChart');
+        charts.bhCumulativeSignupsChart = new Chart(document.getElementById('bhCumulativeSignupsChart'), {
+            type:'bar', data:{labels:cumLabels, datasets:[
+                {label:'Cadastros acumulados',data:cumValues,backgroundColor:'#3ecf8e',borderRadius:6,order:2},
+                {label:'Media cadastros/dia',data:avgSignupsPerMonth,type:'line',borderColor:'#ec4899',backgroundColor:'transparent',borderWidth:2,pointRadius:3,pointBackgroundColor:'#ec4899',tension:0.4,order:1,yAxisID:'y1'}
+            ]}, options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:10}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'},title:{display:true,text:'Acumulado'}},y1:{position:'right',beginAtZero:true,grid:{display:false},title:{display:true,text:'Media/dia'}}}}
+        });
 
         const prep = prepareTimeSeries(bhDaily, f, ['events','dau']);
         lineChart('bhDailyEventsChart', prep.labels, [{label:'Eventos',data:prep.data.map(d=>d.events||0),borderColor:'#3ecf8e',backgroundColor:'rgba(62,207,142,0.1)',fill:true,pointBackgroundColor:'#3ecf8e'}]);
