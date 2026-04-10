@@ -1,0 +1,64 @@
+-- Migration: Add iAcoes CTA breakdown tracking
+-- Applied to: BH (dawvgbopyemcayavcatd) via Supabase MCP execute_sql
+-- Date: 2026-04-10
+--
+-- Prerequisites:
+--   - Column cta_id (text, nullable) added to iacoes_page_views on BH project
+--   - iAcoes site updated: _iaClick reads data-cta attribute and passes to _iaTrack
+--   - Each CTA button now has data-cta="..." identifying it
+--
+-- Changes:
+--   1. Added iacoes_cta_breakdown: aggregate clicks by cta_id
+--   2. Added iacoes_cta_by_page: clicks by cta_id + page_path (top 50)
+--   3. Added iacoes_cta_daily: time-series of clicks by cta_id per day
+--
+-- CTA IDs in use:
+--   Ticker pages: nav-app, nav-assinar, valuation, disclaimer, nota-qualitativa, footer
+--   Landing page: nav-comecar, hero, metodologias, comparativo,
+--                 preco-ianalista, preco-ialocador, preco-fundamentalista, footer
+--   Index page:   nav-app, nav-assinar
+--
+-- Frontend:
+--   - Added "Performance por CTA" section in iAcoes tab
+--   - Horizontal bar chart (Cliques por CTA)
+--   - Table (CTA x Pagina)
+--   - Graceful fallback for pre-cta_id data ("sem_id")
+
+-- New sections added to get_analytics_data() RPC via DO block:
+--
+-- 'iacoes_cta_breakdown', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT coalesce(cta_id, 'sem_id') as cta_id,
+--            count(*) as clicks,
+--            count(DISTINCT session_id) as unique_sessions
+--     FROM public.iacoes_page_views
+--     WHERE event_type = 'cta_click'
+--     GROUP BY cta_id
+--     ORDER BY clicks DESC
+--   ) t
+-- ),
+-- 'iacoes_cta_by_page', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT coalesce(cta_id, 'sem_id') as cta_id,
+--            page_path,
+--            count(*) as clicks
+--     FROM public.iacoes_page_views
+--     WHERE event_type = 'cta_click'
+--     GROUP BY cta_id, page_path
+--     ORDER BY clicks DESC LIMIT 50
+--   ) t
+-- ),
+-- 'iacoes_cta_daily', (
+--   SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--   FROM (
+--     SELECT (created_at AT TIME ZONE 'America/Sao_Paulo')::date as day,
+--            coalesce(cta_id, 'sem_id') as cta_id,
+--            count(*) as clicks
+--     FROM public.iacoes_page_views
+--     WHERE event_type = 'cta_click'
+--     GROUP BY day, cta_id
+--     ORDER BY day ASC
+--   ) t
+-- )

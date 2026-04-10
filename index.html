@@ -2037,6 +2037,10 @@
             <div class="chart-container mb-2"><div class="chart-title">Origem do Trafego (diario)</div><canvas id="iacoesReferrerChart"></canvas></div>
             <div class="table-container"><div class="table-title">Deteccao de Fonte (Dark Social & Ads)</div><table id="iacoesSourceDetectionTable"></table></div>
             <div class="table-container"><div class="table-title">Top Paginas</div><table id="iacoesTopPagesTable"></table></div>
+            <h3 class="section-title">Performance por CTA</h3>
+            <p class="section-desc">Breakdown de cliques por botao de conversao (data-cta). Dados disponíveis a partir de 10/abr/2026.</p>
+            <div class="chart-container mb-2"><div class="chart-title">Cliques por CTA</div><canvas id="iacoesCtaChart"></canvas></div>
+            <div class="table-container"><div class="table-title">CTA x Pagina</div><table id="iacoesCtaTable"></table></div>
             <div class="charts-grid">
                 ${canvasHTML('iacoesDeviceChart','Dispositivos')}
                 ${canvasHTML('iacoesUtmChart','Campanhas UTM')}
@@ -2177,6 +2181,36 @@
         const topPages = Object.values(pagesAgg).sort((a,b)=>b.views-a.views).slice(0,20);
         document.getElementById('iacoesTopPagesTable').innerHTML = `<thead><tr><th>Pagina</th><th>Views</th><th>Sessoes</th><th>CTA Clicks</th><th>Taxa CTA</th></tr></thead><tbody>${topPages.map(p=>{const pCtaClicks=Number(p.cta_clicks)||0;const pSessions=Number(p.sessions)||0;const pCtaRate=pSessions>0?((pCtaClicks/pSessions)*100).toFixed(1):'0';return`<tr><td>${p.page_path==='/'?'Home (/)':p.page_path}</td><td>${fmt(p.views||0)}</td><td>${fmt(pSessions)}</td><td>${fmt(pCtaClicks)}</td><td>${pCtaRate}%</td></tr>`;}).join('')}</tbody>`;
         makeSortable(document.getElementById('iacoesTopPagesTable'));
+
+        // CTA Breakdown
+        const ctaBreakdown = bh.iacoes_cta_breakdown || [];
+        const ctaByPage = bh.iacoes_cta_by_page || [];
+        const ctaDaily = bh.iacoes_cta_daily || [];
+        const filteredCtaDaily = filterSnapshot(ctaDaily, f);
+
+        if (ctaBreakdown.length > 0 && ctaBreakdown.some(c => c.cta_id !== 'sem_id')) {
+            const ctaLabels = ctaBreakdown.map(c => c.cta_id);
+            const ctaClicks2 = ctaBreakdown.map(c => c.clicks);
+            barChart('iacoesCtaChart', ctaLabels, [{label:'Cliques',data:ctaClicks2,backgroundColor:'#3ecf8e'}], {horizontal:true});
+        } else if (filteredCtaDaily.length > 0) {
+            // Aggregate from daily
+            const ctaAgg = {};
+            filteredCtaDaily.forEach(d => { ctaAgg[d.cta_id] = (ctaAgg[d.cta_id]||0) + d.clicks; });
+            const sorted = Object.entries(ctaAgg).sort((a,b)=>b[1]-a[1]);
+            barChart('iacoesCtaChart', sorted.map(s=>s[0]), [{label:'Cliques',data:sorted.map(s=>s[1]),backgroundColor:'#3ecf8e'}], {horizontal:true});
+        } else {
+            document.getElementById('iacoesCtaChart').closest('.chart-container').innerHTML = '<div class="chart-title">Cliques por CTA</div><p style="color:var(--m);font-size:13px;padding:12px">Dados de CTA por botao disponiveis a partir de 10/abr/2026. Os cliques anteriores aparecem como "sem_id".</p>';
+        }
+
+        const ctaTable = document.getElementById('iacoesCtaTable');
+        if (ctaByPage.length > 0 && ctaByPage.some(c => c.cta_id !== 'sem_id')) {
+            ctaTable.innerHTML = '<thead><tr><th>CTA</th><th>Pagina</th><th>Cliques</th></tr></thead><tbody>' +
+                ctaByPage.filter(c => c.cta_id !== 'sem_id').map(c => `<tr><td><code>${c.cta_id}</code></td><td>${c.page_path==='/'?'Home (/)':c.page_path}</td><td>${fmt(c.clicks)}</td></tr>`).join('') +
+                '</tbody>';
+            makeSortable(ctaTable);
+        } else {
+            ctaTable.closest('.table-container').innerHTML = '<div class="table-title">CTA x Pagina</div><p style="color:var(--m);font-size:13px;padding:12px">Aguardando dados de cta_id. Os novos cliques serao classificados automaticamente.</p>';
+        }
 
         doughnutChart('iacoesDeviceChart', devices.map(d=>d.device_type), devices.map(d=>d.views||0), ['#3ecf8e','#6366f1','#f59e0b']);
 
