@@ -919,6 +919,17 @@
         const tickerRanking = bh.ticker_ranking || [];
         const userTickerUsage = bh.user_ticker_usage || [];
 
+        // Notification & Telegram data
+        const notifDelivery = bh.notifications_delivery || {};
+        const notifByTypeDaily = bh.notifications_by_type_daily || [];
+        const notifDeliveryDaily = bh.notifications_delivery_daily || [];
+        const notifTopTickers = bh.notifications_top_tickers || [];
+        const telegramOv = bh.telegram_overview || {};
+        const telegramLinksDaily = bh.telegram_links_daily || [];
+        const notifFunnel = bh.notification_funnel || {};
+        const notifPrefsSummary = bh.notification_prefs_summary || {};
+        const notifTypePop = bh.notification_type_popularity || [];
+
         buildHTML('bhEngajamento', `
             <div class="charts-grid">
                 ${canvasHTML('bhEngFeaturesChart','Uso de Recursos (top 10)')}
@@ -942,6 +953,27 @@
                 ${canvasHTML('bhEngSessDurChart','Duracao de Sessao (min)')}
             </div>
             <div class="chart-container mb-2"><div class="chart-title">Mapa de Calor de Atividade (BRT)</div><div id="bhEngHeatmap" style="overflow-x:auto"></div></div>
+
+            <div style="margin-top:32px;padding-top:24px;border-top:2px solid var(--bd)">
+                <h3 style="font-size:16px;font-weight:700;color:var(--t);margin-bottom:16px;display:flex;align-items:center;gap:8px">&#x1f514; Notificacoes & Telegram</h3>
+                <div class="kpi-grid" id="bhNotifKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhNotifFunnelChart','Funil de Adocao de Notificacoes')}
+                    ${canvasHTML('bhNotifDeliveryChart','Entrega: Total vs Lidas vs Telegram')}
+                </div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhNotifByTypeChart','Notificacoes por Tipo (diario)')}
+                    ${canvasHTML('bhNotifDeliveryDailyChart','Volume de Notificacoes (diario)')}
+                </div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhNotifTopTickersChart','Top Tickers Notificados')}
+                    ${canvasHTML('bhNotifTypePopChart','Tipos Habilitados pelos Usuarios')}
+                </div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhTelegramLinksChart','Novos Links Telegram (diario)')}
+                    ${canvasHTML('bhNotifPrefsChart','Fontes de Monitoramento')}
+                </div>
+            </div>
         `);
 
         // Filter feature usage by date (aggregate from featureDaily for date-filtered view)
@@ -1025,6 +1057,102 @@
         ]);
 
         renderHeatmap('bhEngHeatmap', bh.activity_heatmap || []);
+
+        // ===== NOTIFICAÇÕES & TELEGRAM =====
+
+        // KPI cards
+        const notifKpiHtml = [
+            createKpiCard('Total Notificacoes', fmt(notifDelivery.total||0)),
+            createKpiCard('Taxa de Leitura', (notifDelivery.read_rate_pct||0)+'%'),
+            createKpiCard('Entregues via Telegram', fmt(notifDelivery.telegram_delivered||0)),
+            createKpiCard('Telegram Ativos', fmt(telegramOv.active_links||0)),
+            createKpiCard('Usuarios Notificados', fmt(notifDelivery.unique_users||0)),
+            createKpiCard('Prefs Habilitadas', (notifPrefsSummary.enabled_pct||0)+'%')
+        ].join('');
+        document.getElementById('bhNotifKpis').innerHTML = notifKpiHtml;
+
+        // Funnel chart (horizontal bar)
+        const funnelLabels = ['Total Usuarios','Com Notificacao','Leram','Configuraram Prefs','Telegram Ativo','Telegram Entregue'];
+        const funnelValues = [
+            notifFunnel.total_users||0,
+            notifFunnel.users_with_notifications||0,
+            notifFunnel.users_who_read||0,
+            notifFunnel.users_with_prefs_enabled||0,
+            notifFunnel.users_with_telegram||0,
+            notifFunnel.users_telegram_delivered||0
+        ];
+        barChart('bhNotifFunnelChart', funnelLabels, [{label:'Usuarios',data:funnelValues,backgroundColor:['#3ecf8e','#6366f1','#f59e0b','#3b82f6','#8b5cf6','#06b6d4']}], {horizontal:true});
+
+        // Delivery overview (doughnut)
+        const delLabels = ['Lidas','Nao Lidas','Telegram'];
+        const delValues = [
+            notifDelivery.read_count||0,
+            (notifDelivery.total||0)-(notifDelivery.read_count||0),
+            notifDelivery.telegram_delivered||0
+        ];
+        doughnutChart('bhNotifDeliveryChart', delLabels, delValues, ['#3ecf8e','#94a3b8','#8b5cf6']);
+
+        // Notifications by type daily (stacked bar)
+        if (notifByTypeDaily.length > 0) {
+            const mcNT = prepareMultiCategoryTS(notifByTypeDaily, f, 'alert_type', 'cnt');
+            const ntTypes = mcNT.categories.slice(0,8);
+            const ALERT_TYPE_LABELS = {cvm_fr:'Fato Relevante',cvm_cm:'Comunicado',dividend_ex_date:'Ex-Dividendo',dividend_payment:'Pagamento Div.',fair_value_cross:'Fair Value',fundamental_change:'Mudanca Fundamental',price_above:'Preco Acima',price_below:'Preco Abaixo',target_reached:'Alvo Atingido'};
+            destroyChart('bhNotifByTypeChart');
+            charts.bhNotifByTypeChart = new Chart(document.getElementById('bhNotifByTypeChart'), {
+                type:'bar', data:{labels:mcNT.labels,datasets:ntTypes.map((t,i)=>({label:ALERT_TYPE_LABELS[t]||t,data:mcNT.getValues(t),backgroundColor:COLORS[i%COLORS.length]}))},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
+        }
+
+        // Notification volume daily (line: total, read, telegram)
+        if (notifDeliveryDaily.length > 0) {
+            const ndPrep = prepareTimeSeries(notifDeliveryDaily, f, ['total','read_count','telegram_delivered']);
+            lineChart('bhNotifDeliveryDailyChart', ndPrep.labels, [
+                {label:'Total',data:ndPrep.data.map(d=>d.total||0),borderColor:'#6366f1',fill:false,pointBackgroundColor:'#6366f1'},
+                {label:'Lidas',data:ndPrep.data.map(d=>d.read_count||0),borderColor:'#3ecf8e',fill:false,pointBackgroundColor:'#3ecf8e'},
+                {label:'Telegram',data:ndPrep.data.map(d=>d.telegram_delivered||0),borderColor:'#8b5cf6',fill:false,pointBackgroundColor:'#8b5cf6'}
+            ]);
+        }
+
+        // Top tickers notificados (horizontal bar)
+        if (notifTopTickers.length > 0) {
+            const sorted = notifTopTickers.sort((a,b)=>(b.cnt||0)-(a.cnt||0)).slice(0,15);
+            destroyChart('bhNotifTopTickersChart');
+            charts.bhNotifTopTickersChart = new Chart(document.getElementById('bhNotifTopTickersChart'), {
+                type:'bar', data:{labels:sorted.map(d=>d.ticker),datasets:[
+                    {label:'Total',data:sorted.map(d=>d.cnt||0),backgroundColor:'#6366f1',borderRadius:6},
+                    {label:'Lidas',data:sorted.map(d=>d.read_count||0),backgroundColor:'#3ecf8e',borderRadius:6},
+                    {label:'Telegram',data:sorted.map(d=>d.telegram_delivered||0),backgroundColor:'#8b5cf6',borderRadius:6}
+                ]},
+                options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
+        }
+
+        // Type popularity (horizontal bar - from preferences)
+        if (notifTypePop.length > 0) {
+            const TYPE_LABELS = {cvm_fr:'Fato Relevante',cvm_cm:'Comunicado',dividend_ex_date:'Ex-Dividendo',dividend_payment:'Pagamento Div.',fair_value_cross:'Fair Value Cross',fundamental_change:'Mudanca Fundamental'};
+            barChart('bhNotifTypePopChart', notifTypePop.map(d=>TYPE_LABELS[d.type_name]||d.type_name), [{label:'Usuarios',data:notifTypePop.map(d=>d.user_count||0),backgroundColor:'#3ecf8e'}], {horizontal:true});
+        }
+
+        // Telegram links daily (bar)
+        if (telegramLinksDaily.length > 0) {
+            const tlPrep = prepareTimeSeries(telegramLinksDaily, f, ['new_links','active_links']);
+            barChart('bhTelegramLinksChart', tlPrep.labels, [
+                {label:'Novos Links',data:tlPrep.data.map(d=>d.new_links||0),backgroundColor:'#8b5cf6'},
+                {label:'Links Ativos',data:tlPrep.data.map(d=>d.active_links||0),backgroundColor:'#3ecf8e'}
+            ]);
+        }
+
+        // Notification prefs sources (doughnut)
+        const prefsLabels = ['Carteira','Teses','Analises Salvas'];
+        const prefsValues = [
+            notifPrefsSummary.watch_portfolio_count||0,
+            notifPrefsSummary.watch_teses_count||0,
+            notifPrefsSummary.watch_analyses_count||0
+        ];
+        if (prefsValues.some(v=>v>0)) {
+            doughnutChart('bhNotifPrefsChart', prefsLabels, prefsValues, ['#3ecf8e','#6366f1','#f59e0b']);
+        }
     }
 
     function renderBhRetencao() {
