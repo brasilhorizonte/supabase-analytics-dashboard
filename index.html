@@ -836,6 +836,13 @@
             <div class="charts-grid">
                 ${canvasHTML('bhSignupsDailyChart','Novos Cadastros (diario)')}
             </div>
+            <div class="section-block">
+                ${createSectionHeader('Funil de Ativacao', 'Jornada dos usuarios pelos estagios do IAnalista companion.')}
+                <div class="kpi-grid-compact" id="bhVisaoActivationKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhVisaoActivationChart','Usuarios por Estagio')}
+                </div>
+            </div>
         `);
 
         const filteredBhDaily = filterSnapshot(bhDaily, f);
@@ -890,6 +897,26 @@
 
         const sPrep = prepareTimeSeries(signupsDaily, f, ['signups']);
         barChart('bhSignupsDailyChart', sPrep.labels, [{label:'Cadastros',data:sPrep.data.map(d=>d.signups||0),backgroundColor:'#22c55e'}]);
+
+        // Activation funnel
+        const actFunnel = bh.activation_funnel || [];
+        const actSum = bh.activation_summary || {};
+        const powerUser = (actFunnel.find(s=>s.stage==='power_user')||{}).users || 0;
+        const totalAct = actFunnel.reduce((s,r)=>s+(r.users||0),0);
+        const powerPct = totalAct > 0 ? (powerUser/totalAct*100) : 0;
+        document.getElementById('bhVisaoActivationKpis').innerHTML = `
+            ${createKpiCardV2('Total Perfis', fmt(actSum.total_profiles||0), { hint:'Usuarios com investor_profile' })}
+            ${createKpiCardV2('Power Users', fmt(powerUser), { unit:` (${powerPct.toFixed(1)}%)`, intent:'positive' })}
+            ${createKpiCardV2('Trials Companion', fmt(actSum.companion_trials||0), { hint:'Usaram trial do IAnalista' })}
+            ${createKpiCardV2('Profiling Completo', fmt(actSum.profiling_completed||0), { hint:'Questionario inicial concluido' })}
+            ${createKpiCardV2('Media Tools/User', (actSum.avg_companion_tools||0).toString(), { hint:'Ferramentas IA usadas em media' })}
+        `;
+        if (!showEmptyIfNeeded('bhVisaoActivationChart', actFunnel, 'Sem dados de ativacao', 'Tabela investor_profiles vazia.')) {
+            const stageColors = {'new':'#94a3b8','exploring':'#60a5fa','portfolio_set':'#f59e0b','active':'#6366f1','power_user':'#3ecf8e'};
+            barChart('bhVisaoActivationChart', actFunnel.map(s=>s.stage), [
+                {label:'Usuarios',data:actFunnel.map(s=>s.users||0),backgroundColor:actFunnel.map(s=>stageColors[s.stage]||'#94a3b8')}
+            ], {horizontal:true});
+        }
     }
 
     function renderBhAquisicao() {
@@ -1055,6 +1082,37 @@
                 ${canvasHTML('bhEngSessDurChart','Duracao de Sessao (min)')}
             </div>
             <div class="chart-container mb-2"><div class="chart-title">Mapa de Calor de Atividade (BRT)</div><div id="bhEngHeatmap" style="overflow-x:auto"></div></div>
+
+            <div class="section-block">
+                ${createSectionHeader('Portfolio activity', 'Eventos de manipulacao da carteira do usuario (add/remove/save/load + filtros de conteudo/CVM).')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhEngPortfolioDailyChart','Eventos de Portfolio (diario)')}
+                    ${canvasHTML('bhEngPortfolioTickersChart','Top Tickers Adicionados')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('CVM activity', 'Interacoes com documentos CVM e filtro CVM no portfolio.')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhEngCvmDailyChart','CVM doc expand + filter (diario)')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Alertas configurados', 'Regras de alerta criadas pelos usuarios na plataforma.')}
+                <div class="kpi-grid-compact" id="bhEngAlertKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhEngAlertByTypeChart','Regras por Tipo')}
+                    ${canvasHTML('bhEngAlertTopTickersChart','Tickers com Mais Alertas')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Tab views', 'Visualizacoes de abas internas por feature (evento tab_view).')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhEngTabUsageChart','Tabs mais visitadas')}
+                </div>
+            </div>
 
             <div style="margin-top:32px;padding-top:24px;border-top:2px solid var(--bd)">
                 <h3 style="font-size:16px;font-weight:700;color:var(--t);margin-bottom:16px;display:flex;align-items:center;gap:8px">&#x1f514; Notificacoes & Telegram</h3>
@@ -1275,6 +1333,67 @@
                 options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{const total=prefsValues.reduce((s,v)=>s+v,0);const pct=total>0?((ctx.parsed.x/total)*100).toFixed(1):'0';return ctx.label+': '+ctx.parsed.x+' ('+pct+'%)';}}}},scales:{x:{beginAtZero:true,ticks:{stepSize:1,precision:0},grid:{color:'#f1f5f9'}},y:{grid:{display:false}}}}
             });
         }
+
+        // ===== Portfolio activity =====
+        const portfolioDaily = bh.portfolio_activity_daily || [];
+        const portfolioTickers = bh.portfolio_top_tickers || [];
+        const pdFiltered = filterSnapshot(portfolioDaily, f);
+        if (!showEmptyIfNeeded('bhEngPortfolioDailyChart', pdFiltered, 'Sem atividade de portfolio no periodo')) {
+            const labels = pdFiltered.map(d=>dayLabel(d.day));
+            destroyChart('bhEngPortfolioDailyChart');
+            charts.bhEngPortfolioDailyChart = new Chart(document.getElementById('bhEngPortfolioDailyChart'), {
+                type:'bar', data:{labels,datasets:[
+                    {label:'Add',data:pdFiltered.map(d=>d.adds||0),backgroundColor:'#3ecf8e'},
+                    {label:'Save',data:pdFiltered.map(d=>d.saves||0),backgroundColor:'#6366f1'},
+                    {label:'Load',data:pdFiltered.map(d=>d.loads||0),backgroundColor:'#06b6d4'},
+                    {label:'Remove',data:pdFiltered.map(d=>d.removes||0),backgroundColor:'#ef4444'},
+                    {label:'Content Filter',data:pdFiltered.map(d=>d.content_filters||0),backgroundColor:'#f59e0b'},
+                    {label:'CVM Filter',data:pdFiltered.map(d=>d.cvm_filters||0),backgroundColor:'#ec4899'}
+                ]},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
+        }
+        if (!showEmptyIfNeeded('bhEngPortfolioTickersChart', portfolioTickers, 'Sem tickers adicionados a portfolios')) {
+            barChart('bhEngPortfolioTickersChart', portfolioTickers.map(t=>t.ticker), [{label:'Adicionados',data:portfolioTickers.map(t=>t.adds||0),backgroundColor:'#3ecf8e'}], {horizontal:true});
+        }
+
+        // ===== CVM activity =====
+        const cvmDaily = bh.cvm_activity_daily || [];
+        const cvmFiltered = filterSnapshot(cvmDaily, f);
+        if (!showEmptyIfNeeded('bhEngCvmDailyChart', cvmFiltered, 'Sem atividade CVM no periodo', 'Eventos cvm_doc_expand e cvm_filter_portfolio_apply.')) {
+            lineChart('bhEngCvmDailyChart', cvmFiltered.map(d=>dayLabel(d.day)), [
+                {label:'Doc expand',data:cvmFiltered.map(d=>d.expansions||0),borderColor:'#6366f1',fill:false},
+                {label:'Filter apply',data:cvmFiltered.map(d=>d.filters||0),borderColor:'#ec4899',fill:false}
+            ]);
+        }
+
+        // ===== Alert rules =====
+        const alertSum = bh.alert_rules_summary || {};
+        const alertTopTickers = bh.alert_rules_top_tickers || [];
+        document.getElementById('bhEngAlertKpis').innerHTML = `
+            ${createKpiCardV2('Total Regras', fmt(alertSum.total_rules||0))}
+            ${createKpiCardV2('Ativas', fmt(alertSum.active_rules||0), { intent:'positive' })}
+            ${createKpiCardV2('Usuarios', fmt(alertSum.unique_users||0), { hint:'Usuarios com regras configuradas' })}
+            ${createKpiCardV2('Media/Usuario', (alertSum.avg_rules_per_user||0).toString(), { hint:'Regras em media por usuario' })}
+        `;
+        const byType = alertSum.by_type || {};
+        const byTypeKeys = Object.keys(byType);
+        if (!showEmptyIfNeeded('bhEngAlertByTypeChart', byTypeKeys, 'Sem regras de alerta configuradas')) {
+            doughnutChart('bhEngAlertByTypeChart', byTypeKeys, byTypeKeys.map(k=>byType[k]), COLORS);
+        }
+        if (!showEmptyIfNeeded('bhEngAlertTopTickersChart', alertTopTickers, 'Nenhum ticker com regras')) {
+            barChart('bhEngAlertTopTickersChart', alertTopTickers.map(t=>t.ticker), [
+                {label:'Total',data:alertTopTickers.map(t=>t.cnt||0),backgroundColor:'#6366f1'},
+                {label:'Ativas',data:alertTopTickers.map(t=>t.active_cnt||0),backgroundColor:'#3ecf8e'}
+            ], {horizontal:true});
+        }
+
+        // ===== Tab usage =====
+        const tabUsage = bh.tab_usage || [];
+        if (!showEmptyIfNeeded('bhEngTabUsageChart', tabUsage, 'Sem tab views registradas')) {
+            const top = tabUsage.slice(0,15);
+            barChart('bhEngTabUsageChart', top.map(t=>`${t.feature}/${t.tab}`), [{label:'Views',data:top.map(t=>t.views||0),backgroundColor:'#6366f1'}], {horizontal:true});
+        }
     }
 
     function renderBhRetencao() {
@@ -1355,17 +1474,22 @@
         const subAge = bh.subscription_age || [];
         const ttc = bh.time_to_convert || [];
         const fp = bh.feature_paywall || [];
-        const revenueByPlan = bh.revenue_by_plan || [];
+        // revenue_by_plan_fixed is the authoritative version (correct pricing incl. ialocador). Fallback for compat.
+        const revenueByPlan = bh.revenue_by_plan_fixed || bh.revenue_by_plan || [];
         const watchlist = bh.watchlist_summary || [];
+        const activeSubsDaily = bh.active_subscribers_daily || [];
+        const newSubsDaily = bh.new_subscribers_daily || [];
+        const trialFunnelDaily = bh.trial_funnel_daily || [];
+        const trialsDaily = bh.subscription_trials_daily || [];
 
-        const totalMrr = revenueByPlan.reduce((s,r)=>s+(r.mrr_estimate||0),0);
+        const totalMrr = revenueByPlan.reduce((s,r)=>s+Number(r.mrr_estimate||0),0);
         const totalARR = totalMrr * 12;
         const activeSubsTotal = (mrr.monthly_subs||0) + (mrr.yearly_subs||0) + (mrr.lifetime_subs||0);
         const arpu = activeSubsTotal > 0 ? totalMrr / activeSubsTotal : 0;
 
-        // MRR trend from payments events (rolling sum / cumulative count as proxy)
         const paymentsSpark = prepareTimeSeries(subEvents, f, ['payments']).data.map(d=>d.payments||0);
         const cancelsSpark = prepareTimeSeries(subEvents, f, ['cancels']).data.map(d=>d.cancels||0);
+        const activeSubsSpark = (activeSubsDaily||[]).map(d=>d.active_subs||0);
 
         buildHTML('bhCustos', `
             <!-- Section 1: Receita & MRR -->
@@ -1373,8 +1497,15 @@
                 ${createSectionHeader('Receita & MRR', 'Fotografia da receita recorrente estimada a partir de planos ativos.')}
                 <div class="kpi-grid" id="bhCReceitaKpis"></div>
                 <div class="charts-grid">
+                    ${canvasHTML('bhCActiveSubsChart','Assinantes Ativos ao Longo do Tempo')}
+                    ${canvasHTML('bhCNetSubsChart','Novos vs Cancelados (diario)')}
+                </div>
+                <div class="charts-grid">
                     ${canvasHTML('bhCRevenueByPlanChart','MRR por Plano (R$)')}
                     ${canvasHTML('bhCSubAgeChart','Idade das Assinaturas (ativos vs churned)')}
+                </div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhCTrialFunnelChart','Trial Funnel (iniciados / convertidos / expirados)')}
                 </div>
             </div>
 
@@ -1417,11 +1548,49 @@
 
         // Section 1 KPIs — Hero MRR + supporting
         document.getElementById('bhCReceitaKpis').innerHTML = `
-            ${createKpiCardV2('MRR Estimado', 'R$ '+totalMrr.toLocaleString('pt-BR',{minimumFractionDigits:2}), { hero:true, hint:'Soma de planos ativos (mensais + anuais/12 + vitalicios a parte)', spark:paymentsSpark })}
+            ${createKpiCardV2('MRR Estimado', 'R$ '+totalMrr.toLocaleString('pt-BR',{minimumFractionDigits:2}), { hero:true, hint:'Soma de planos ativos (mensais + anuais/12)', spark:activeSubsSpark.length?activeSubsSpark:paymentsSpark })}
             ${createKpiCardV2('ARR Estimado', 'R$ '+totalARR.toLocaleString('pt-BR',{maximumFractionDigits:0}), { hint:'MRR x 12' })}
-            ${createKpiCardV2('Assinantes Ativos', fmt(activeSubsTotal), { hint:`${mrr.monthly_subs||0} mensais + ${mrr.yearly_subs||0} anuais + ${mrr.lifetime_subs||0} vitalicios` })}
+            ${createKpiCardV2('Assinantes Ativos', fmt(activeSubsTotal), { hint:`${mrr.monthly_subs||0} mensais + ${mrr.yearly_subs||0} anuais + ${mrr.lifetime_subs||0} vitalicios`, spark:activeSubsSpark })}
             ${createKpiCardV2('ARPU', 'R$ '+arpu.toLocaleString('pt-BR',{minimumFractionDigits:2}), { hint:'Receita media por assinante ativo' })}
         `;
+
+        // Active subscribers daily line chart
+        const activeFiltered = filterSnapshot(activeSubsDaily, f);
+        if (!showEmptyIfNeeded('bhCActiveSubsChart', activeFiltered, 'Sem dados de assinantes ativos no periodo')) {
+            lineChart('bhCActiveSubsChart', activeFiltered.map(d=>dayLabel(d.day)), [
+                {label:'Assinantes Ativos',data:activeFiltered.map(d=>d.active_subs||0),borderColor:'#3ecf8e',backgroundColor:'rgba(62,207,142,0.1)',fill:true,pointBackgroundColor:'#3ecf8e'}
+            ]);
+        }
+
+        // Net subscribers chart: new (positive bar) + cancels (negative bar) + net line
+        const newByDay = Object.fromEntries((newSubsDaily||[]).map(d=>[d.day,d.new_subs||0]));
+        const cancelsByDay = {};
+        (subEvents||[]).forEach(d=>{ if (d.cancels) cancelsByDay[d.day] = (cancelsByDay[d.day]||0) + d.cancels; });
+        const allDays = [...new Set([...Object.keys(newByDay), ...Object.keys(cancelsByDay)])].sort();
+        const filteredDays = filterDays(allDays, f);
+        const netData = filteredDays.map(d=>({ day:d, news:newByDay[d]||0, cancels:-(cancelsByDay[d]||0), net:(newByDay[d]||0)-(cancelsByDay[d]||0) }));
+        if (!showEmptyIfNeeded('bhCNetSubsChart', netData, 'Sem movimentos de assinantes no periodo')) {
+            destroyChart('bhCNetSubsChart');
+            charts.bhCNetSubsChart = new Chart(document.getElementById('bhCNetSubsChart'), {
+                type:'bar',
+                data:{labels:netData.map(d=>dayLabel(d.day)),datasets:[
+                    {label:'Novos',data:netData.map(d=>d.news),backgroundColor:'#3ecf8e',stack:'s'},
+                    {label:'Cancelados',data:netData.map(d=>d.cancels),backgroundColor:'#ef4444',stack:'s'},
+                    {label:'Liquido',type:'line',data:netData.map(d=>d.net),borderColor:'#6366f1',backgroundColor:'transparent',tension:0.4,pointBackgroundColor:'#6366f1'}
+                ]},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${Math.abs(ctx.parsed.y)}`}}},scales:{y:{grid:{color:'#f1f5f9'},ticks:{callback:v=>Math.abs(v)}}}}
+            });
+        }
+
+        // Trial funnel chart
+        const trialFiltered = filterSnapshot(trialFunnelDaily, f);
+        if (!showEmptyIfNeeded('bhCTrialFunnelChart', trialFiltered, 'Sem trials iniciados no periodo', 'Evento trial_start comecou a ser instrumentado em 2026-03-10.')) {
+            barChart('bhCTrialFunnelChart', trialFiltered.map(d=>dayLabel(d.day)), [
+                {label:'Iniciados',data:trialFiltered.map(d=>d.trials_started||0),backgroundColor:'#6366f1'},
+                {label:'Convertidos',data:trialFiltered.map(d=>d.trials_converted||0),backgroundColor:'#3ecf8e'},
+                {label:'Expirados',data:trialFiltered.map(d=>d.trials_expired||0),backgroundColor:'#94a3b8'}
+            ]);
+        }
 
         // Section 3 KPIs — Conversion
         const totalPayments = (subEvents||[]).reduce((s,d)=>s+(d.payments||0),0);
@@ -1586,6 +1755,19 @@
             </div>
             <div class="table-container"><div class="table-title">Top Tickers (Market Cap)</div><table id="bhDetTickersTable"></table></div>
             <div class="table-container"><div class="table-title">Tamanhos de Tabela</div><table id="bhDetTableSizes"></table></div>
+
+            <div class="section-block">
+                ${createSectionHeader('Comunicacao outbound', 'Volumes de email (email_log) e WhatsApp (whatsapp_log) enviados pela plataforma.')}
+                <div class="kpi-grid-compact" id="bhDetCommKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhDetEmailChart','Email por Tipo (totais)')}
+                    ${canvasHTML('bhDetWhatsappChart','WhatsApp por Categoria (totais)')}
+                </div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhDetEmailDailyChart','Emails enviados (diario)')}
+                    ${canvasHTML('bhDetWhatsappDailyChart','WhatsApp enviados (diario)')}
+                </div>
+            </div>
         `);
 
         renderDeviceCharts(bh, 'bhDet', f);
@@ -1624,6 +1806,53 @@
         const tableSizes = bh.table_sizes || [];
         document.getElementById('bhDetTableSizes').innerHTML = `<thead><tr><th>Tabela</th><th>Tamanho</th><th>Rows</th></tr></thead><tbody>${tableSizes.map(t=>`<tr><td>${t.table_name||'-'}</td><td>${fmtBytes(t.total_bytes||0)}</td><td>${fmt(t.row_count||0)}</td></tr>`).join('')}</tbody>`;
         makeSortable(document.getElementById('bhDetTableSizes'));
+
+        // ===== Comunicacao outbound =====
+        const emailDaily = bh.email_log_daily || [];
+        const emailSummary = bh.email_log_summary || [];
+        const whatsappDaily = bh.whatsapp_log_daily || [];
+        const whatsappSummary = bh.whatsapp_log_summary || [];
+        const totalEmails = emailSummary.reduce((s,r)=>s+(r.total||0),0);
+        const sentEmails = emailSummary.reduce((s,r)=>s+(r.sent||0),0);
+        const failedEmails = emailSummary.reduce((s,r)=>s+(r.failed||0),0);
+        const totalWhatsapp = whatsappSummary.reduce((s,r)=>s+(r.total||0),0);
+        const emailSuccessRate = totalEmails > 0 ? (sentEmails/totalEmails*100) : 0;
+        document.getElementById('bhDetCommKpis').innerHTML = `
+            ${createKpiCardV2('Emails Enviados', fmt(totalEmails), { hint:`${fmt(sentEmails)} sent, ${fmt(failedEmails)} failed` })}
+            ${createKpiCardV2('Taxa de Sucesso Email', emailSuccessRate.toFixed(1), { unit:'%', intent: emailSuccessRate > 95 ? 'positive' : 'warning' })}
+            ${createKpiCardV2('WhatsApp Enviados', fmt(totalWhatsapp))}
+            ${createKpiCardV2('Tipos Email', fmt(emailSummary.length))}
+            ${createKpiCardV2('Categorias WhatsApp', fmt(whatsappSummary.length))}
+        `;
+        if (!showEmptyIfNeeded('bhDetEmailChart', emailSummary, 'Nenhum email enviado')) {
+            barChart('bhDetEmailChart', emailSummary.map(r=>r.email_type||'-'), [
+                {label:'Sent',data:emailSummary.map(r=>r.sent||0),backgroundColor:'#3ecf8e'},
+                {label:'Failed',data:emailSummary.map(r=>r.failed||0),backgroundColor:'#ef4444'}
+            ], {horizontal:true});
+        }
+        if (!showEmptyIfNeeded('bhDetWhatsappChart', whatsappSummary, 'Nenhum WhatsApp enviado')) {
+            barChart('bhDetWhatsappChart', whatsappSummary.map(r=>r.category||'-'), [{label:'Total',data:whatsappSummary.map(r=>r.total||0),backgroundColor:'#25d366'}], {horizontal:true});
+        }
+        const emailDailyFiltered = filterSnapshot(emailDaily, f);
+        if (!showEmptyIfNeeded('bhDetEmailDailyChart', emailDailyFiltered, 'Sem emails no periodo')) {
+            const mcED = prepareMultiCategoryTS(emailDaily, f, 'email_type', 'sent');
+            const topTypes = mcED.categories.slice(0,6);
+            destroyChart('bhDetEmailDailyChart');
+            charts.bhDetEmailDailyChart = new Chart(document.getElementById('bhDetEmailDailyChart'), {
+                type:'bar',data:{labels:mcED.labels,datasets:topTypes.map((t,i)=>({label:t,data:mcED.getValues(t),backgroundColor:COLORS[i%COLORS.length]}))},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
+        }
+        const waDailyFiltered = filterSnapshot(whatsappDaily, f);
+        if (!showEmptyIfNeeded('bhDetWhatsappDailyChart', waDailyFiltered, 'Sem WhatsApp no periodo')) {
+            const mcWA = prepareMultiCategoryTS(whatsappDaily, f, 'category', 'sent');
+            const topCats = mcWA.categories.slice(0,6);
+            destroyChart('bhDetWhatsappDailyChart');
+            charts.bhDetWhatsappDailyChart = new Chart(document.getElementById('bhDetWhatsappDailyChart'), {
+                type:'bar',data:{labels:mcWA.labels,datasets:topCats.map((c,i)=>({label:c,data:mcWA.getValues(c),backgroundColor:COLORS[i%COLORS.length]}))},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
+        }
     }
 
     function renderDeviceCharts(data, prefix, filters) {

@@ -68,17 +68,18 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Fetch analytics data from both projects + notification analytics
-    const [bh, hta, bhGeo, htaGeo, bhNotif] = await Promise.all([
+    // Fetch analytics data from both projects + notification analytics + BH extras
+    const [bh, hta, bhGeo, htaGeo, bhNotif, bhExtras] = await Promise.all([
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data"),
       fetchRpc(HTA_URL, HTA_KEY, "get_analytics_data"),
       fetchRpc(BH_URL, BH_ANON, "get_geo_profiles"),
       fetchRpc(HTA_URL, HTA_KEY, "get_geo_profiles"),
       fetchRpc(BH_URL, BH_ANON, "get_notification_analytics"),
+      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_extras"),
     ]);
 
-    // Merge notification analytics into BH data
-    const bhMerged = { ...(bh || {}), ...(bhNotif || {}) };
+    // Merge BH data: base + notification analytics + extras (latest wins on conflict)
+    const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}) };
 
     return new Response(JSON.stringify({ admin: email, bh: bhMerged, hta, geo: { bh: bhGeo || [], hta: htaGeo || [] }, ts: new Date().toISOString() }), {
       headers: {
