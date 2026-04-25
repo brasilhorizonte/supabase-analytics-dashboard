@@ -1,14 +1,16 @@
-# Supabase Analytics Dashboard
+# iAcoes Analytics Dashboard
 
-Dashboard de analytics em tempo real para os projetos **brasilhorizonte** e **Horizon Terminal Access** da Brasil Horizonte.
+Dashboard de analytics em tempo real para os projetos **brasilhorizonte** (UI: "iAcoes") e **Horizon Terminal Access** da Brasil Horizonte.
+
+> **Nota de branding (2026-04-25):** O dashboard foi renomeado de "Brasil Horizonte / BH" para "iAcoes" apenas em UI/labels (sidebar, titulo, tabs). Variaveis JS internas (`bhData`, `bhSubFilters`, `renderBh*`), IDs de elementos (`bhVisao`, `bhEngajamento`...) e chaves do response da Edge Function (`bh: {...}`) **continuam usando o prefixo `bh`** para preservar compatibilidade.
 
 ## Arquitetura
 
 O projeto tem duas camadas separadas:
 
-1. **Frontend** (`index.html`): Single-page app com login, sidebar lateral dark com grupos colapsaveis por plataforma (BH: 6 sub-abas, HTA: 6 sub-abas, iAcoes standalone), area de conteudo light, filtros globais. Hospedado como arquivo estatico (GitHub Pages ou Supabase Storage). Nao usa framework — tudo inline (CSS + JS).
+1. **Frontend** (`index.html`): Single-page app com login, sidebar lateral dark com grupos colapsaveis por plataforma (iAcoes: 6 sub-abas, Horizon Terminal: 6 sub-abas, Landing iAcoes standalone), area de conteudo light, filtros globais. Hospedado como arquivo estatico (GitHub Pages ou Supabase Storage). Nao usa framework — tudo inline (CSS + JS).
 
-2. **API** (`supabase/functions/analytics-dashboard/index.ts`): Edge Function no Supabase que retorna JSON. Verifica JWT do usuario via Supabase Auth e checa role `admin` na tabela `user_roles`. Busca dados de ambos os projetos via RPC functions.
+2. **API** (`supabase/functions/analytics-dashboard/index.ts`): Edge Function no Supabase que retorna JSON. Verifica JWT do usuario via Supabase Auth e checa role `admin` na tabela `user_roles`. Busca dados de ambos os projetos via RPC functions (`get_analytics_data`, `get_analytics_data_bh_extras`, `get_notification_analytics`, `get_geo_profiles`).
 
 ## Projetos Supabase
 
@@ -43,6 +45,10 @@ supabase/
     20260216_enhance_token_analytics.sql    # Token stats, mode breakdown, top queries + COALESCE tokens reais
     20260226_add_error_metrics.sql          # proxy_error_log table, error_count column, log_proxy_error RPC
     20260301_filter_non_ai_proxies.sql      # Filtra brapi/partnr-news das metricas de tokens na RPC
+    20260418_bh_revenue_and_new_metrics.sql # Revenue fixes, trial funnel, portfolio/CVM/alert/email/whatsapp
+    20260420_email_log_welcome_idempotency.sql
+    20260422_filter_iacoes_bots.sql         # Filtra crawlers/bots de iacoes_page_views
+    20260425_iacoes_macro_beta_paywall_v2.sql # Macro Beta + Paywall v2 + CVM v2 + lifetime feature usage
 ```
 
 ## Edge Functions (Proxy)
@@ -84,7 +90,11 @@ A Edge Function retorna:
 }
 ```
 
-### Dados BH (brasilhorizonte)
+### Dados BH / iAcoes (brasilhorizonte)
+
+Edge Function faz merge de 3 RPCs no BH: `get_analytics_data` (base), `get_notification_analytics` (notificacoes/Telegram) e `get_analytics_data_bh_extras` (revenue + features novas). O resultado vai para `bh.*` no response.
+
+**Base (`get_analytics_data`):**
 - `overview`: db_size_bytes, total_users, active_sessions, storage_objects
 - `daily_activity`: ultimos 30 dias (day, events, dau)
 - `usage_events_summary`: eventos agrupados por nome
@@ -94,15 +104,38 @@ A Edge Function retorna:
 - `ticker_by_feature`: tickers agrupados por ferramenta (qualitativo_ai, valuai, validador, etc.)
 - `ticker_trend_daily`: top 10 tickers ao longo do tempo
 - `feature_usage_trend`: adocao de ferramentas ao longo do tempo (eventos com ticker)
-- `user_inactivity`: lista de users com last_event_ts, days_inactive, email, total_events
-- `inactivity_distribution`: buckets de inatividade (ativo hoje, 1-3d, 4-7d, 8-14d, 15-30d, 30d+)
-- `user_feature_breadth`: distribuicao de users por numero de ferramentas usadas (1, 2, 3, 4+)
-- `ticker_ranking`: ranking consolidado dos top 20 tickers por uso total (ticker, cnt)
-- `user_ticker_usage`: uso por usuario com tickers (email, total_queries, unique_tickers, top_ticker, top_feature, last_activity) LIMIT 100
-- `user_ticker_detail`: breakdown detalhado por usuario/ticker/feature (user_id, ticker, feature, cnt)
-- `top_tickers_market`: tickers por market cap com preco, setor, DY, P/L
-- `sector_distribution`: tickers agrupados por setor
-- `report_downloads_daily`: downloads de relatorios por dia
+- `user_inactivity` / `inactivity_distribution` / `user_feature_breadth`
+- `ticker_ranking` / `user_ticker_usage` / `user_ticker_detail`
+- `top_tickers_market`, `sector_distribution`, `report_downloads_daily`
+- `iacoes_*` (overview, daily, top_pages, referrers, devices, browsers, os, utm, conversion_funnel, cta_breakdown, ...) — landing page tracking
+
+**Notification (`get_notification_analytics`):**
+- `notifications_by_type_daily`, `notifications_delivery`, `notifications_delivery_daily`, `notifications_top_tickers`
+- `telegram_overview`, `telegram_links_daily`
+- `notification_funnel`, `notification_prefs_summary`, `notification_type_popularity`
+
+**Extras (`get_analytics_data_bh_extras` — revenue + features novas):**
+- `active_subscribers_daily`, `new_subscribers_daily`, `trial_funnel_daily`, `subscription_trials_daily`
+- `revenue_by_plan_fixed`: MRR estimado com pricing autoritativo (essencial 29.90, fundamentalista 49.90, ianalista 39.90, ialocador 59.90, valor 149.90)
+- `portfolio_activity_daily`: adds, removes, saves, loads, **deletes**, **ianalises**, content_filters, cvm_filters, **photo_imports**, unique_users
+- `portfolio_top_tickers`: top 15 tickers adicionados a portfolios
+- `cvm_activity_daily`: expansions, filters, **pdf_clicks**, **telegram_clicks**, **telegram_dismisses**, **type_toggles**
+- `cvm_interactions_summary`: KPIs agregados de todos os eventos `cvm_*`
+- `tab_usage`: top 30 (feature, tab) por views
+- `alert_rules_summary` / `alert_rules_daily` / `alert_rules_top_tickers`
+- `activation_funnel` / `activation_summary` (de `investor_profiles`)
+- `email_log_summary` / `email_log_daily` / `whatsapp_log_summary` / `whatsapp_log_daily`
+- **`macro_beta_overview`**: views, runs_success/error, verdicts, drill_downs, tooltips, sort_changes, upgrade_clicks, coupon_copies, saved_total/users (Macro Beta lancado em 2026-04-23)
+- **`macro_beta_daily`**: time series por evento `macro_*`
+- **`macro_beta_funnel`**: viewed → ran → drilled → saved → upgrade_clicked (usuarios unicos)
+- **`paywall_v2_summary`**: credit_exhausted, teaser_views/cta_clicks, hint_shown, export_paywall, passive_clicks, portfolio_detected, ticker_searches, unique_users_blocked
+- **`paywall_v2_daily`**: stacked time series dos 5 tipos de paywall
+- **`paywall_v2_funnel`**: bloqueados → teaser_views → cta_clicks → checkout
+- **`empty_portfolio_funnel`**: banner_views → cta_clicks → imports_confirmed → photo_imports OK/error
+- **`companion_messages_daily`**: mensagens enviadas ao IAnalista chat (`companion_message_sent`)
+- **`valuai_save_share_summary`**: analyses_started/completed, saves, shares, shared_loads, unique_savers/sharers
+- **`lifetime_feature_usage_summary`**: usos por feature gated (valuai, qualitativo, validador, macro) com unique_users
+- **`lifetime_feature_top_users`**: top 20 usuarios por uso lifetime (com email, features_used, last_used_at)
 
 ### Dados HTA (Horizon Terminal)
 - `overview`: db_size_bytes, total_users, active_sessions, storage_objects
@@ -260,13 +293,15 @@ O dashboard usa layout com sidebar lateral + area de conteudo light (estilo Kond
 
 ### Estrutura visual
 - **Login page**: tema dark standalone (variaveis CSS scopadas no `.login-container`)
-- **Sidebar** (240px, fixed): dark (#1a1d2e), com logo + grupos colapsaveis por plataforma
-  - BH (6 sub-abas): Visao Geral, Aquisicao, Engajamento, Retencao, Custos, Detalhes
-  - HTA (6 sub-abas): Visao Geral, Aquisicao, Engajamento, Retencao, Custos, Detalhes
-  - iAcoes (standalone)
-- **Top bar** (sticky): titulo da aba + filtros globais + admin info
+- **Sidebar** (240px, fixed): dark (#1a1d2e), logo "iAcoes" + grupos colapsaveis por plataforma
+  - **iAcoes** (6 sub-abas): Visao Geral, Aquisicao, Engajamento, Retencao, Receita & Assinaturas, Detalhes
+  - **Horizon Terminal** (6 sub-abas): Visao Geral, Aquisicao, Engajamento, Retencao, Custos, Detalhes
+  - **Landing iAcoes** (standalone — tracking do site `iacoes.brasilhorizonte.com.br`)
+- **Top bar** (sticky): titulo da aba (`iAcoes - X` / `HTA - X`) + filtros globais + admin info
 - **Area de conteudo**: fundo claro (#f5f7fa), cards brancos com sombra sutil
-- **Regra**: dados BH e HTA nunca combinados num mesmo grafico/tabela/KPI
+- **Regra**: dados iAcoes (BH) e HTA nunca combinados num mesmo grafico/tabela/KPI
+
+> **Internamente** as variaveis JS continuam com prefixo `bh` (`bhVisao`, `bhEngajamento`, `bhCustos`, `dashboardData.bh`, `bhSubFilters`, `renderBhEngajamento`...) — a renomeacao foi apenas em strings visiveis ao admin.
 
 ### Filtros globais
 - **Presets**: 7d, 30d (default), 90d, Custom
