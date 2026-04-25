@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Supabase Analytics Dashboard</title>
+    <title>iAcoes Analytics Dashboard</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -251,11 +251,11 @@
 
     <div class="dashboard" id="dashboard">
         <nav class="sidebar" id="sidebar">
-            <div class="sidebar-logo"><span class="live-dot"></span> Brasil Horizonte</div>
+            <div class="sidebar-logo"><span class="live-dot"></span> iAcoes</div>
             <div class="sidebar-nav">
                 <div class="sidebar-group">
                     <div class="sidebar-group-header open" data-group="bh">
-                        <span class="sidebar-icon">&#x1f4ca;</span> brasilhorizonte
+                        <span class="sidebar-icon">&#x1f4ca;</span> iAcoes
                         <span class="chevron">&#9654;</span>
                     </div>
                     <div class="sidebar-group-items open" id="group-bh">
@@ -281,7 +281,7 @@
                         <div class="sidebar-sub-item" data-tab="htaDetalhes">Detalhes</div>
                     </div>
                 </div>
-                <a class="sidebar-item" data-tab="iacoes"><span class="sidebar-icon">&#x1f517;</span> iAcoes</a>
+                <a class="sidebar-item" data-tab="iacoes"><span class="sidebar-icon">&#x1f517;</span> Landing iAcoes</a>
             </div>
         </nav>
         <div class="sidebar-overlay" id="sidebarOverlay"></div>
@@ -369,11 +369,11 @@
     ];
 
     const TAB_TITLES = {
-        bhVisao: 'BH - Visao Geral', bhAquisicao: 'BH - Aquisicao', bhEngajamento: 'BH - Engajamento',
-        bhRetencao: 'BH - Retencao', bhCustos: 'BH - Receita & Assinaturas', bhDetalhes: 'BH - Detalhes',
+        bhVisao: 'iAcoes - Visao Geral', bhAquisicao: 'iAcoes - Aquisicao', bhEngajamento: 'iAcoes - Engajamento',
+        bhRetencao: 'iAcoes - Retencao', bhCustos: 'iAcoes - Receita & Assinaturas', bhDetalhes: 'iAcoes - Detalhes',
         htaVisao: 'HTA - Visao Geral', htaAquisicao: 'HTA - Aquisicao', htaEngajamento: 'HTA - Engajamento',
         htaRetencao: 'HTA - Retencao', htaCustos: 'HTA - Custos', htaDetalhes: 'HTA - Detalhes',
-        iacoes: 'iAcoes'
+        iacoes: 'iAcoes - Landing'
     };
 
     const TOKEN_PRICING = {
@@ -1092,10 +1092,43 @@
             </div>
 
             <div class="section-block">
-                ${createSectionHeader('CVM activity', 'Interacoes com documentos CVM e filtro CVM no portfolio.')}
+                ${createSectionHeader('CVM activity', 'Interacoes com documentos CVM, filtro de portfolio e CTAs (PDF, Telegram).')}
+                <div class="kpi-grid-compact" id="bhEngCvmKpis"></div>
                 <div class="charts-grid">
-                    ${canvasHTML('bhEngCvmDailyChart','CVM doc expand + filter (diario)')}
+                    ${canvasHTML('bhEngCvmDailyChart','CVM interacoes ao longo do tempo (diario)')}
                 </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Macro Beta', 'Feature lancada em 2026-04-23. View -> run -> drill-down -> save funnel + verdicts gerados pela IA.')}
+                <div class="kpi-grid" id="bhEngMacroKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhEngMacroDailyChart','Macro Beta ao longo do tempo (views, runs, drill-downs)')}
+                    ${canvasHTML('bhEngMacroFunnelChart','Funil Macro Beta (usuarios unicos por etapa)')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Empty portfolio onboarding', 'Banner exibido quando o usuario chega sem ativos no portfolio. Funnel: view -> CTA -> import (foto ou manual).')}
+                <div class="kpi-grid-compact" id="bhEngEmptyPortfolioKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhEngEmptyPortfolioFunnelChart','Funil Empty Portfolio (totais)')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Companion (IAnalista)', 'Mensagens enviadas ao chat companion.')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhEngCompanionDailyChart','Mensagens Companion (diario)')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Lifetime feature usage', 'Consumo lifetime de features gated (valuai, qualitativo, validador, macro). Base para limites do plano free.')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhEngLifetimeFeatureChart','Usos por Feature (total)')}
+                </div>
+                <div class="table-container mb-2"><div class="table-title">Top 20 usuarios por uso lifetime</div><table id="bhEngLifetimeTopUsersTable"></table></div>
             </div>
 
             <div class="section-block">
@@ -1347,6 +1380,9 @@
                     {label:'Save',data:pdFiltered.map(d=>d.saves||0),backgroundColor:'#6366f1'},
                     {label:'Load',data:pdFiltered.map(d=>d.loads||0),backgroundColor:'#06b6d4'},
                     {label:'Remove',data:pdFiltered.map(d=>d.removes||0),backgroundColor:'#ef4444'},
+                    {label:'Delete',data:pdFiltered.map(d=>d.deletes||0),backgroundColor:'#dc2626'},
+                    {label:'iAnalise run',data:pdFiltered.map(d=>d.ianalises||0),backgroundColor:'#8b5cf6'},
+                    {label:'Photo Import',data:pdFiltered.map(d=>d.photo_imports||0),backgroundColor:'#10b981'},
                     {label:'Content Filter',data:pdFiltered.map(d=>d.content_filters||0),backgroundColor:'#f59e0b'},
                     {label:'CVM Filter',data:pdFiltered.map(d=>d.cvm_filters||0),backgroundColor:'#ec4899'}
                 ]},
@@ -1357,14 +1393,137 @@
             barChart('bhEngPortfolioTickersChart', portfolioTickers.map(t=>t.ticker), [{label:'Adicionados',data:portfolioTickers.map(t=>t.adds||0),backgroundColor:'#3ecf8e'}], {horizontal:true});
         }
 
-        // ===== CVM activity =====
+        // ===== CVM activity (expanded with new event types) =====
         const cvmDaily = bh.cvm_activity_daily || [];
+        const cvmInteractions = bh.cvm_interactions_summary || {};
+        document.getElementById('bhEngCvmKpis').innerHTML = `
+            ${createKpiCardV2('Filter applies', fmt(cvmInteractions.filter_applies||0), { hint:'cvm_filter_portfolio_apply' })}
+            ${createKpiCardV2('Doc expands', fmt(cvmInteractions.doc_expands||0))}
+            ${createKpiCardV2('PDF clicks', fmt(cvmInteractions.pdf_clicks||0))}
+            ${createKpiCardV2('Type toggles', fmt(cvmInteractions.type_toggles||0))}
+            ${createKpiCardV2('Telegram CTA', fmt(cvmInteractions.telegram_cta_clicks||0), { hint:`${cvmInteractions.telegram_cta_dismisses||0} dismisses` })}
+            ${createKpiCardV2('Usuarios unicos', fmt(cvmInteractions.unique_users||0))}
+        `;
         const cvmFiltered = filterSnapshot(cvmDaily, f);
-        if (!showEmptyIfNeeded('bhEngCvmDailyChart', cvmFiltered, 'Sem atividade CVM no periodo', 'Eventos cvm_doc_expand e cvm_filter_portfolio_apply.')) {
+        if (!showEmptyIfNeeded('bhEngCvmDailyChart', cvmFiltered, 'Sem atividade CVM no periodo', 'Eventos cvm_*.')) {
             lineChart('bhEngCvmDailyChart', cvmFiltered.map(d=>dayLabel(d.day)), [
+                {label:'Filter apply',data:cvmFiltered.map(d=>d.filters||0),borderColor:'#ec4899',fill:false},
                 {label:'Doc expand',data:cvmFiltered.map(d=>d.expansions||0),borderColor:'#6366f1',fill:false},
-                {label:'Filter apply',data:cvmFiltered.map(d=>d.filters||0),borderColor:'#ec4899',fill:false}
+                {label:'PDF click',data:cvmFiltered.map(d=>d.pdf_clicks||0),borderColor:'#3ecf8e',fill:false},
+                {label:'Type toggle',data:cvmFiltered.map(d=>d.type_toggles||0),borderColor:'#f59e0b',fill:false},
+                {label:'Telegram CTA',data:cvmFiltered.map(d=>d.telegram_clicks||0),borderColor:'#06b6d4',fill:false}
             ]);
+        }
+
+        // ===== Macro Beta =====
+        const macroOv = bh.macro_beta_overview || {};
+        const macroDaily = bh.macro_beta_daily || [];
+        const macroFunnel = bh.macro_beta_funnel || {};
+        const macroSuccessRate = (macroOv.runs_success||0) > 0
+            ? ((macroOv.runs_success / (macroOv.runs_success + (macroOv.runs_error||0))) * 100).toFixed(1)
+            : '0';
+        document.getElementById('bhEngMacroKpis').innerHTML = `
+            ${createKpiCardV2('Views', fmt(macroOv.views||0), { hero:true, hint:`${fmt(macroOv.unique_users||0)} usuarios unicos` })}
+            ${createKpiCardV2('Runs (sucesso)', fmt(macroOv.runs_success||0), { intent:'positive', hint:`${macroSuccessRate}% taxa de sucesso` })}
+            ${createKpiCardV2('Runs (erro)', fmt(macroOv.runs_error||0), { intent:(macroOv.runs_error||0) > 0 ? 'negative' : 'neutral' })}
+            ${createKpiCardV2('Verdicts IA', fmt(macroOv.verdicts_generated||0), { hint:'macro_verdict_generated' })}
+            ${createKpiCardV2('Drill-downs', fmt(macroOv.drill_downs||0))}
+            ${createKpiCardV2('Saved analyses', fmt(macroOv.saved_total||0), { hint:`${fmt(macroOv.saved_unique_users||0)} usuarios salvaram` })}
+            ${createKpiCardV2('Tooltip opens', fmt(macroOv.tooltip_opens||0), { hint:'macro_beta_factor_tooltip_open' })}
+            ${createKpiCardV2('Upgrade clicks', fmt(macroOv.upgrade_clicks||0), { hint:`${macroOv.coupon_copies||0} cupons copiados` })}
+        `;
+        const macroFiltered = filterSnapshot(macroDaily, f);
+        if (!showEmptyIfNeeded('bhEngMacroDailyChart', macroFiltered, 'Sem atividade Macro Beta no periodo', 'Feature lancada em 2026-04-23.')) {
+            lineChart('bhEngMacroDailyChart', macroFiltered.map(d=>dayLabel(d.day)), [
+                {label:'Views',data:macroFiltered.map(d=>d.views||0),borderColor:'#6366f1',fill:false},
+                {label:'Runs OK',data:macroFiltered.map(d=>d.runs_success||0),borderColor:'#3ecf8e',fill:false},
+                {label:'Runs ERR',data:macroFiltered.map(d=>d.runs_error||0),borderColor:'#ef4444',fill:false},
+                {label:'Verdicts',data:macroFiltered.map(d=>d.verdicts||0),borderColor:'#8b5cf6',fill:false},
+                {label:'Drill-downs',data:macroFiltered.map(d=>d.drill_downs||0),borderColor:'#f59e0b',fill:false}
+            ]);
+        }
+        const macroFunnelLabels = ['Viewed','Ran','Drilled','Saved','Upgrade Click'];
+        const macroFunnelValues = [
+            macroFunnel.viewed||0, macroFunnel.ran||0, macroFunnel.drilled||0,
+            macroFunnel.saved||0, macroFunnel.upgrade_clicked||0
+        ];
+        if (!showEmptyIfNeeded('bhEngMacroFunnelChart', macroFunnelValues.filter(v=>v>0), 'Sem dados de funil Macro')) {
+            destroyChart('bhEngMacroFunnelChart');
+            charts.bhEngMacroFunnelChart = new Chart(document.getElementById('bhEngMacroFunnelChart'), {
+                type:'bar', data:{labels:macroFunnelLabels,datasets:[{label:'Usuarios unicos',data:macroFunnelValues,backgroundColor:['#6366f1','#3ecf8e','#f59e0b','#8b5cf6','#ec4899'],borderRadius:6}]},
+                options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+ctx.parsed.x}}},scales:{x:{beginAtZero:true,ticks:{stepSize:1,precision:0},grid:{color:'#f1f5f9'}}}}
+            });
+        }
+
+        // ===== Empty portfolio funnel =====
+        const emptyFunnel = bh.empty_portfolio_funnel || {};
+        const emptyConvRate = (emptyFunnel.banner_views||0) > 0
+            ? (((emptyFunnel.cta_clicks||0) / emptyFunnel.banner_views) * 100).toFixed(1)
+            : '0';
+        const photoSuccessRate = ((emptyFunnel.photo_imports_success||0) + (emptyFunnel.photo_imports_error||0)) > 0
+            ? ((emptyFunnel.photo_imports_success / (emptyFunnel.photo_imports_success + (emptyFunnel.photo_imports_error||0))) * 100).toFixed(1)
+            : '0';
+        document.getElementById('bhEngEmptyPortfolioKpis').innerHTML = `
+            ${createKpiCardV2('Banner views', fmt(emptyFunnel.banner_views||0))}
+            ${createKpiCardV2('CTA clicks', fmt(emptyFunnel.cta_clicks||0), { hint:`${emptyConvRate}% taxa de clique` })}
+            ${createKpiCardV2('Imports confirmados', fmt(emptyFunnel.imports_confirmed||0))}
+            ${createKpiCardV2('Photo OK', fmt(emptyFunnel.photo_imports_success||0), { intent:'positive', hint:`${photoSuccessRate}% sucesso` })}
+            ${createKpiCardV2('Photo ERR', fmt(emptyFunnel.photo_imports_error||0), { intent:(emptyFunnel.photo_imports_error||0) > 0 ? 'negative' : 'neutral' })}
+            ${createKpiCardV2('Usuarios unicos', fmt(emptyFunnel.unique_users||0))}
+        `;
+        const epLabels = ['Banner View','CTA Click','Confirmado','Photo OK'];
+        const epValues = [
+            emptyFunnel.banner_views||0,
+            emptyFunnel.cta_clicks||0,
+            emptyFunnel.imports_confirmed||0,
+            emptyFunnel.photo_imports_success||0
+        ];
+        if (!showEmptyIfNeeded('bhEngEmptyPortfolioFunnelChart', epValues.filter(v=>v>0), 'Sem onboarding de portfolio vazio')) {
+            destroyChart('bhEngEmptyPortfolioFunnelChart');
+            charts.bhEngEmptyPortfolioFunnelChart = new Chart(document.getElementById('bhEngEmptyPortfolioFunnelChart'), {
+                type:'bar', data:{labels:epLabels,datasets:[{label:'Eventos',data:epValues,backgroundColor:['#6366f1','#f59e0b','#3ecf8e','#06b6d4'],borderRadius:6}]},
+                options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+ctx.parsed.x}}},scales:{x:{beginAtZero:true,ticks:{stepSize:1,precision:0},grid:{color:'#f1f5f9'}}}}
+            });
+        }
+
+        // ===== Companion messages =====
+        const companionDaily = bh.companion_messages_daily || [];
+        const companionFiltered = filterSnapshot(companionDaily, f);
+        if (!showEmptyIfNeeded('bhEngCompanionDailyChart', companionFiltered, 'Sem mensagens Companion no periodo', 'Evento companion_message_sent.')) {
+            lineChart('bhEngCompanionDailyChart', companionFiltered.map(d=>dayLabel(d.day)), [
+                {label:'Mensagens',data:companionFiltered.map(d=>d.messages||0),borderColor:'#8b5cf6',backgroundColor:'rgba(139,92,246,0.1)',fill:true,pointBackgroundColor:'#8b5cf6'},
+                {label:'Usuarios unicos',data:companionFiltered.map(d=>d.unique_users||0),borderColor:'#3ecf8e',fill:false}
+            ]);
+        }
+
+        // ===== Lifetime feature usage =====
+        const lifetimeSummary = bh.lifetime_feature_usage_summary || [];
+        const lifetimeTopUsers = bh.lifetime_feature_top_users || [];
+        if (!showEmptyIfNeeded('bhEngLifetimeFeatureChart', lifetimeSummary, 'Sem uso lifetime registrado')) {
+            const FEATURE_LABELS = {valuai:'ValuAI',qualitativo:'Qualitativo',validador:'Validador',macro:'Macro Beta'};
+            barChart('bhEngLifetimeFeatureChart',
+                lifetimeSummary.map(d=>FEATURE_LABELS[d.feature]||d.feature),
+                [
+                    {label:'Total usos',data:lifetimeSummary.map(d=>d.total_uses||0),backgroundColor:'#6366f1'},
+                    {label:'Usuarios unicos',data:lifetimeSummary.map(d=>d.unique_users||0),backgroundColor:'#3ecf8e'}
+                ],
+                { horizontal:true }
+            );
+        }
+        const lifetimeTable = document.getElementById('bhEngLifetimeTopUsersTable');
+        if (lifetimeTable) {
+            if (!lifetimeTopUsers.length) {
+                lifetimeTable.innerHTML = '<tr><td style="padding:16px;text-align:center;color:var(--m)">Sem usuarios com uso lifetime registrado</td></tr>';
+            } else {
+                lifetimeTable.innerHTML =
+                    '<thead><tr><th>Email</th><th style="text-align:right">Total usos</th><th style="text-align:right">Features</th><th style="text-align:right">Ultimo uso</th></tr></thead>' +
+                    '<tbody>' +
+                    lifetimeTopUsers.map(u => {
+                        const last = u.last_used_at ? new Date(u.last_used_at).toLocaleDateString('pt-BR') : '—';
+                        return `<tr><td>${u.email||u.user_id||'—'}</td><td style="text-align:right">${fmt(u.total_uses||0)}</td><td style="text-align:right">${u.features_used||0}</td><td style="text-align:right">${last}</td></tr>`;
+                    }).join('') +
+                    '</tbody>';
+            }
         }
 
         // ===== Alert rules =====
@@ -1544,6 +1703,22 @@
                     ${canvasHTML('bhCWatchlistChart','Top Tickers na Watchlist')}
                 </div>
             </div>
+
+            <!-- Section 4: Paywall v2 -->
+            <div class="section-block">
+                ${createSectionHeader('Paywall v2 (novos touchpoints)', 'Eventos de paywall lancados em 2026-04-23: credit_exhausted, teaser, hint, export_paywall, passive_paywall.')}
+                <div class="kpi-grid" id="bhCPaywallV2Kpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhCPaywallV2DailyChart','Paywall v2 ao longo do tempo (diario)')}
+                    ${canvasHTML('bhCPaywallV2FunnelChart','Funil teaser -> CTA -> checkout')}
+                </div>
+            </div>
+
+            <!-- Section 5: ValuAI saves & shares -->
+            <div class="section-block">
+                ${createSectionHeader('ValuAI saves & shares', 'Adocao do save/share em analises ValuAI (instrumentado em 2026-04-21).')}
+                <div class="kpi-grid-compact" id="bhCValuaiKpis"></div>
+            </div>
         `);
 
         // Section 1 KPIs — Hero MRR + supporting
@@ -1717,6 +1892,74 @@
         if (!showEmptyIfNeeded('bhCWatchlistChart', watchlist, 'Watchlist vazia')) {
             barChart('bhCWatchlistChart', watchlist.map(w=>w.ticker), [{label:'Usuarios',data:watchlist.map(w=>w.cnt||0),backgroundColor:'#3b82f6'}], {horizontal:true});
         }
+
+        // ===== Paywall v2 =====
+        const paywallV2 = bh.paywall_v2_summary || {};
+        const paywallV2Daily = bh.paywall_v2_daily || [];
+        const paywallV2Funnel = bh.paywall_v2_funnel || {};
+        const teaserConvRate = (paywallV2.teaser_views||0) > 0
+            ? (((paywallV2.teaser_cta_clicks||0) / paywallV2.teaser_views) * 100).toFixed(1)
+            : '0';
+        const creditConvRate = (paywallV2.credit_exhausted_shown||0) > 0
+            ? (((paywallV2.credit_exhausted_checkout||0) / paywallV2.credit_exhausted_shown) * 100).toFixed(1)
+            : '0';
+        document.getElementById('bhCPaywallV2Kpis').innerHTML = `
+            ${createKpiCardV2('Credit Exhausted', fmt(paywallV2.credit_exhausted_shown||0), { hero:true, hint:`${creditConvRate}% -> checkout` })}
+            ${createKpiCardV2('Teaser views', fmt(paywallV2.teaser_views||0), { hint:`${teaserConvRate}% -> CTA click` })}
+            ${createKpiCardV2('Hints', fmt(paywallV2.hint_shown||0), { hint:'paywall_hint_shown' })}
+            ${createKpiCardV2('Export paywall', fmt(paywallV2.export_paywall_shown||0))}
+            ${createKpiCardV2('Passive clicks', fmt(paywallV2.passive_clicks||0), { hint:'passive_paywall_click' })}
+            ${createKpiCardV2('Portfolio detected', fmt(paywallV2.teaser_portfolio_detected||0), { hint:'teaser viu portfolio do user' })}
+            ${createKpiCardV2('Ticker searches', fmt(paywallV2.teaser_ticker_searches||0))}
+            ${createKpiCardV2('Usuarios bloqueados', fmt(paywallV2.unique_users_blocked||0), { intent:'neutral' })}
+        `;
+        const pwFiltered = filterSnapshot(paywallV2Daily, f);
+        if (!showEmptyIfNeeded('bhCPaywallV2DailyChart', pwFiltered, 'Sem paywall v2 no periodo', 'Eventos novos a partir de 2026-04-23.')) {
+            const labels = pwFiltered.map(d=>dayLabel(d.day));
+            destroyChart('bhCPaywallV2DailyChart');
+            charts.bhCPaywallV2DailyChart = new Chart(document.getElementById('bhCPaywallV2DailyChart'), {
+                type:'bar', data:{labels,datasets:[
+                    {label:'Credit Exhausted',data:pwFiltered.map(d=>d.credit_exhausted||0),backgroundColor:'#ef4444'},
+                    {label:'Teaser',data:pwFiltered.map(d=>d.teaser_views||0),backgroundColor:'#f59e0b'},
+                    {label:'Hint',data:pwFiltered.map(d=>d.hints||0),backgroundColor:'#6366f1'},
+                    {label:'Export',data:pwFiltered.map(d=>d.export_paywalls||0),backgroundColor:'#8b5cf6'},
+                    {label:'Passive',data:pwFiltered.map(d=>d.passive_clicks||0),backgroundColor:'#06b6d4'}
+                ]},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
+        }
+        const pwFunnelLabels = ['Bloqueados (uniq)','Teaser views','CTA clicks','Cred. checkout','Clicked (uniq)'];
+        const pwFunnelValues = [
+            paywallV2Funnel.unique_blocked||0,
+            paywallV2Funnel.teaser_views||0,
+            paywallV2Funnel.teaser_cta_clicks||0,
+            paywallV2Funnel.credit_checkout_start||0,
+            paywallV2Funnel.unique_clicked||0
+        ];
+        if (!showEmptyIfNeeded('bhCPaywallV2FunnelChart', pwFunnelValues.filter(v=>v>0), 'Sem dados de funil paywall')) {
+            destroyChart('bhCPaywallV2FunnelChart');
+            charts.bhCPaywallV2FunnelChart = new Chart(document.getElementById('bhCPaywallV2FunnelChart'), {
+                type:'bar', data:{labels:pwFunnelLabels,datasets:[{label:'Eventos / Usuarios',data:pwFunnelValues,backgroundColor:['#ef4444','#f59e0b','#3ecf8e','#6366f1','#8b5cf6'],borderRadius:6}]},
+                options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+ctx.parsed.x}}},scales:{x:{beginAtZero:true,ticks:{stepSize:1,precision:0},grid:{color:'#f1f5f9'}}}}
+            });
+        }
+
+        // ===== ValuAI save/share =====
+        const valuai = bh.valuai_save_share_summary || {};
+        const completionRate = (valuai.analyses_started||0) > 0
+            ? (((valuai.analyses_completed||0) / valuai.analyses_started) * 100).toFixed(1)
+            : '0';
+        const saveRate = (valuai.analyses_completed||0) > 0
+            ? (((valuai.saves||0) / valuai.analyses_completed) * 100).toFixed(1)
+            : '0';
+        document.getElementById('bhCValuaiKpis').innerHTML = `
+            ${createKpiCardV2('Analises iniciadas', fmt(valuai.analyses_started||0))}
+            ${createKpiCardV2('Concluidas', fmt(valuai.analyses_completed||0), { intent:'positive', hint:`${completionRate}% taxa de conclusao` })}
+            ${createKpiCardV2('Saves', fmt(valuai.saves||0), { hint:`${saveRate}% das concluidas` })}
+            ${createKpiCardV2('Shares', fmt(valuai.shares||0), { hint:`${valuai.shared_loads||0} carregamentos de share` })}
+            ${createKpiCardV2('Usuarios que salvaram', fmt(valuai.unique_savers||0))}
+            ${createKpiCardV2('Usuarios que compartilharam', fmt(valuai.unique_sharers||0))}
+        `;
     }
 
     function renderBhDetalhes() {
