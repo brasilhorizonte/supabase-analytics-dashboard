@@ -49,7 +49,25 @@ supabase/
     20260420_email_log_welcome_idempotency.sql
     20260422_filter_iacoes_bots.sql         # Filtra crawlers/bots de iacoes_page_views
     20260425_iacoes_macro_beta_paywall_v2.sql # Macro Beta + Paywall v2 + CVM v2 + lifetime feature usage
+    20260427_bh_usage_events_utm.sql        # NEW RPC get_analytics_data_bh_utm() — UTM attribution + 50OFF campaign
 ```
+
+## UTM Attribution (2026-04-27)
+
+Captura e visualizacao de campanhas via parametros `utm_*` em `usage_events` (tabela do projeto BH).
+
+- **Nova RPC** `get_analytics_data_bh_utm()` (additive — nao toca em `get_analytics_data` ou `get_analytics_data_bh_extras`). Retorna 7 secoes:
+  - `usage_utm_summary` — top 30 source/medium/campaign nos ultimos 90d
+  - `usage_utm_daily` — serie diaria por utm_source
+  - `usage_utm_by_content` — top 50 criativos (utm_content) com sessions/logins/payments
+  - `usage_utm_funnel_by_source` — conversao por fonte (sessao -> login -> paywall -> pagamento), session-level join
+  - `usage_utm_50off_summary` — snapshot da campanha 50OFF (window 27/04 a 03/05 BRT)
+  - `usage_utm_50off_daily` — serie diaria da campanha
+  - `usage_utm_50off_top_content` — top 30 criativos da campanha
+- **Edge function**: `analytics-dashboard/index.ts` adicionou um 7º `fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_utm")` no `Promise.all` e merge no `bhMerged` via spread.
+- **Frontend** (`index.html`): tab `bhAquisicao` ganhou 2 secoes — "Campanhas UTM" (KPIs + bar chart top sources + stacked daily + funnel-by-source table + top criativos table) e "Campanha 50OFF" (KPIs hero com CVR/checkout rate + daily stacked por fonte + top criativos da campanha).
+- **Campaign window** harcoded na RPC: `promo_start = '2026-04-27 00:00:00-03'` / `promo_end = '2026-05-03 23:59:59-03'`. Pra campanhas futuras, criar nova RPC ou parametrizar.
+- **Convencao do `utm_content`**: `{feature}_{canal}_{formato}` — ex: `valuai_yt_video`, `score_ig_reel`, `radar_tw_thread`. Permite pivoting limpo.
 
 ## Edge Functions (Proxy)
 
