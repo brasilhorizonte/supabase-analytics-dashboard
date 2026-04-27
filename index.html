@@ -953,6 +953,30 @@
                 ${canvasHTML('bhAqLoginDailyChart','Logins Diarios')}
             </div>
             <div class="chart-container mb-2"><div class="chart-title">Funil de Conversao</div><div class="funnel" id="bhAqFunnel"></div></div>
+
+            <!-- ===== Campanhas UTM (acquisition tracking via utm_*) ===== -->
+            <div class="section-block">
+                ${createSectionHeader('Campanhas UTM', 'Atribuicao de trafego e conversao por canal a partir dos parametros utm_* em usage_events. Janela: ultimos 90 dias. Bloco da campanha 50OFF abaixo cobre 27/04 a 03/05.')}
+                <div class="kpi-grid-compact" id="bhAqUtmTopKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhAqUtmSourceChart','Top fontes (utm_source/medium)')}
+                    ${canvasHTML('bhAqUtmDailyChart','Volume por fonte (diario)')}
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-container"><div class="chart-title">Conversao por Fonte (sessao -> login -> paywall -> pagamento)</div><div id="bhAqUtmFunnelTable"></div></div>
+                    <div class="chart-container"><div class="chart-title">Top Criativos (utm_content)</div><div id="bhAqUtmContentTable"></div></div>
+                </div>
+            </div>
+
+            <!-- ===== Campanha 50OFF (abr/2026) ===== -->
+            <div class="section-block">
+                ${createSectionHeader('Campanha 50OFF (27/04 a 03/05)', 'Promo 50% OFF nos primeiros 12 meses. utm_campaign=50off_apr2026. Veredito: views, sessoes, signups, paywall, checkout, pagamentos.')}
+                <div class="kpi-grid" id="bhAq50offKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhAq50offDailyChart','50OFF — eventos diarios por fonte')}
+                    <div class="chart-container"><div class="chart-title">50OFF — Top criativos (utm_content)</div><div id="bhAq50offContentTable"></div></div>
+                </div>
+            </div>
         `);
 
         const sPrep = prepareTimeSeries(signupsDaily, f, ['signups']);
@@ -1010,6 +1034,115 @@
                     {label:'Usuarios Unicos',data:ldPrep.data.map(d=>d.unique_users||0),type:'line',borderColor:'#3ecf8e',backgroundColor:'transparent',borderWidth:2,pointRadius:2,order:1}
                 ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
             });
+        }
+
+        // ===== Campanhas UTM =====
+        const utmSummary = bh.usage_utm_summary || [];
+        const utmDaily = bh.usage_utm_daily || [];
+        const utmFunnel = bh.usage_utm_funnel_by_source || [];
+        const utmContent = bh.usage_utm_by_content || [];
+        const utm50 = bh.usage_utm_50off_summary || {};
+        const utm50Daily = bh.usage_utm_50off_daily || [];
+        const utm50Content = bh.usage_utm_50off_top_content || [];
+
+        // Top KPIs (last 90d, attributed traffic only)
+        const totalAttribEvents = utmSummary.reduce((s,r)=>s+(r.events||0),0);
+        const totalAttribSessions = utmSummary.reduce((s,r)=>s+(r.sessions||0),0);
+        const totalAttribPayments = utmSummary.reduce((s,r)=>s+(r.payments||0),0);
+        const distinctCampaigns = new Set(utmSummary.map(r=>r.utm_campaign).filter(c=>c && c!=='(none)')).size;
+        const distinctSources = new Set(utmSummary.map(r=>r.utm_source).filter(s=>s && s!=='(none)')).size;
+        document.getElementById('bhAqUtmTopKpis').innerHTML = `
+            ${createKpiCardV2('Eventos atribuidos (90d)', fmt(totalAttribEvents), { hint:'usage_events com utm_* preenchido' })}
+            ${createKpiCardV2('Sessoes atribuidas', fmt(totalAttribSessions))}
+            ${createKpiCardV2('Pagamentos atribuidos', fmt(totalAttribPayments), { intent:'positive' })}
+            ${createKpiCardV2('Campanhas ativas', fmt(distinctCampaigns), { hint:'utm_campaign distintos' })}
+            ${createKpiCardV2('Fontes distintas', fmt(distinctSources), { hint:'utm_source distintos' })}
+        `;
+
+        // Bar: top sources
+        if (!showEmptyIfNeeded('bhAqUtmSourceChart', utmSummary, 'Sem trafego com utm_* nos ultimos 90 dias', 'Aguardando primeiros cliques de campanhas com UTM.')) {
+            const top = utmSummary.slice(0, 12);
+            barChart('bhAqUtmSourceChart',
+                top.map(r=>`${r.utm_source}/${r.utm_medium||'-'}`),
+                [{label:'Eventos',data:top.map(r=>r.events||0),backgroundColor:'#3b82f6'}],
+                {horizontal:true});
+        }
+
+        // Stacked daily by source
+        if (!showEmptyIfNeeded('bhAqUtmDailyChart', utmDaily, 'Sem serie diaria de UTM no periodo')) {
+            const utmDailyFiltered = filterSnapshot(utmDaily, f);
+            const utmMcTS = prepareMultiCategoryTS(utmDailyFiltered, f, 'utm_source', 'events');
+            const utmTopSrcs = utmMcTS.categories.slice(0, 8);
+            const utmPalette = ['#3b82f6','#ef4444','#3ecf8e','#f59e0b','#8b5cf6','#06b6d4','#ec4899','#6366f1'];
+            const utmDatasets = utmTopSrcs.map((src,i)=>({label:src,data:utmMcTS.getValues(src),backgroundColor:utmPalette[i%utmPalette.length]}));
+            destroyChart('bhAqUtmDailyChart');
+            charts.bhAqUtmDailyChart = new Chart(document.getElementById('bhAqUtmDailyChart'), {
+                type:'bar', data:{labels:utmMcTS.labels,datasets:utmDatasets},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
+        }
+
+        // Funnel-by-source table — answers "Instagram converte mais que YouTube?"
+        const funnelEl = document.getElementById('bhAqUtmFunnelTable');
+        if (funnelEl) {
+            if (utmFunnel.length === 0) {
+                funnelEl.innerHTML = '<p style="color:#64748b;font-size:0.85rem;padding:12px">Sem fontes com >=3 sessoes atribuidas.</p>';
+            } else {
+                funnelEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:0.82rem;"><thead><tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;color:#64748b;">Fonte</th><th style="text-align:right;padding:6px;color:#64748b;">Sessoes</th><th style="text-align:right;padding:6px;color:#64748b;">Login%</th><th style="text-align:right;padding:6px;color:#64748b;">Paywall%</th><th style="text-align:right;padding:6px;color:#64748b;">Pago%</th></tr></thead><tbody>${utmFunnel.map(r=>{
+                    const sess = r.sessions || 0;
+                    const loginPct = sess>0 ? ((r.sessions_with_login/sess)*100).toFixed(1)+'%' : '-';
+                    const paywallPct = sess>0 ? ((r.sessions_with_paywall/sess)*100).toFixed(1)+'%' : '-';
+                    const payPct = sess>0 ? ((r.sessions_with_payment/sess)*100).toFixed(1)+'%' : '-';
+                    return `<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:6px;font-weight:500;">${r.utm_source}</td><td style="text-align:right;padding:6px;">${fmt(sess)}</td><td style="text-align:right;padding:6px;">${loginPct}</td><td style="text-align:right;padding:6px;">${paywallPct}</td><td style="text-align:right;padding:6px;color:#3ecf8e;font-weight:600;">${payPct}</td></tr>`;
+                }).join('')}</tbody></table>`;
+            }
+        }
+
+        // Top creatives table (last 90d)
+        const contentEl = document.getElementById('bhAqUtmContentTable');
+        if (contentEl) {
+            if (utmContent.length === 0) {
+                contentEl.innerHTML = '<p style="color:#64748b;font-size:0.85rem;padding:12px">Aguardando dados de utm_content. Convencao: {feature}_{canal}_{formato}.</p>';
+            } else {
+                const top20 = utmContent.slice(0, 20);
+                contentEl.innerHTML = `<div style="max-height:340px;overflow-y:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem;"><thead style="position:sticky;top:0;background:white;"><tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;color:#64748b;">Criativo</th><th style="text-align:left;padding:6px;color:#64748b;">Fonte</th><th style="text-align:right;padding:6px;color:#64748b;">Sessoes</th><th style="text-align:right;padding:6px;color:#64748b;">Logins</th><th style="text-align:right;padding:6px;color:#64748b;">Pagamentos</th></tr></thead><tbody>${top20.map(r=>`<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:6px;font-family:monospace;font-size:0.78rem;" title="${r.utm_content}">${r.utm_content}</td><td style="padding:6px;color:#64748b;">${r.utm_source}/${r.utm_medium}</td><td style="text-align:right;padding:6px;">${fmt(r.sessions||0)}</td><td style="text-align:right;padding:6px;">${fmt(r.logins||0)}</td><td style="text-align:right;padding:6px;color:#3ecf8e;font-weight:600;">${fmt(r.payments||0)}</td></tr>`).join('')}</tbody></table></div>`;
+            }
+        }
+
+        // ===== Campanha 50OFF =====
+        const cvr50 = (utm50.sessions||0) > 0 ? (((utm50.payments||0)/utm50.sessions)*100).toFixed(2) : '0';
+        const checkoutRate50 = (utm50.paywall_views||0) > 0 ? (((utm50.checkout_starts||0)/utm50.paywall_views)*100).toFixed(1) : '0';
+        document.getElementById('bhAq50offKpis').innerHTML = `
+            ${createKpiCardV2('Eventos 50OFF', fmt(utm50.events||0), { hero:true, hint:'utm_campaign=50off_apr2026 entre 27/04 e 03/05' })}
+            ${createKpiCardV2('Sessoes', fmt(utm50.sessions||0))}
+            ${createKpiCardV2('Usuarios unicos', fmt(utm50.unique_users||0))}
+            ${createKpiCardV2('Logins', fmt(utm50.logins||0))}
+            ${createKpiCardV2('Signups', fmt(utm50.signups||0), { hint:'novos cadastros via campanha' })}
+            ${createKpiCardV2('Paywall views', fmt(utm50.paywall_views||0))}
+            ${createKpiCardV2('Checkout starts', fmt(utm50.checkout_starts||0), { hint:`${checkoutRate50}% do paywall -> checkout` })}
+            ${createKpiCardV2('Pagamentos', fmt(utm50.payments||0), { intent:'positive', hint:`CVR ${cvr50}%` })}
+        `;
+
+        // 50OFF daily by source
+        if (!showEmptyIfNeeded('bhAq50offDailyChart', utm50Daily, 'Aguardando trafego da campanha 50OFF', 'Inicia em 27/04/2026.')) {
+            const mc50 = prepareMultiCategoryTS(utm50Daily, f, 'utm_source', 'events');
+            const palette50 = ['#3b82f6','#ef4444','#3ecf8e','#f59e0b','#8b5cf6','#06b6d4','#ec4899','#6366f1'];
+            const datasets50 = mc50.categories.slice(0,8).map((src,i)=>({label:src,data:mc50.getValues(src),backgroundColor:palette50[i%palette50.length]}));
+            destroyChart('bhAq50offDailyChart');
+            charts.bhAq50offDailyChart = new Chart(document.getElementById('bhAq50offDailyChart'), {
+                type:'bar', data:{labels:mc50.labels,datasets:datasets50},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
+        }
+
+        // 50OFF top creatives
+        const c50El = document.getElementById('bhAq50offContentTable');
+        if (c50El) {
+            if (utm50Content.length === 0) {
+                c50El.innerHTML = '<p style="color:#64748b;font-size:0.85rem;padding:12px">Aguardando primeiros cliques na campanha 50OFF.</p>';
+            } else {
+                c50El.innerHTML = `<div style="max-height:340px;overflow-y:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem;"><thead style="position:sticky;top:0;background:white;"><tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;color:#64748b;">Criativo</th><th style="text-align:left;padding:6px;color:#64748b;">Canal</th><th style="text-align:right;padding:6px;color:#64748b;">Sessoes</th><th style="text-align:right;padding:6px;color:#64748b;">Logins</th><th style="text-align:right;padding:6px;color:#64748b;">Pagos</th></tr></thead><tbody>${utm50Content.map(r=>`<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:6px;font-family:monospace;font-size:0.78rem;">${r.utm_content}</td><td style="padding:6px;color:#64748b;">${r.utm_source}/${r.utm_medium}</td><td style="text-align:right;padding:6px;">${fmt(r.sessions||0)}</td><td style="text-align:right;padding:6px;">${fmt(r.logins||0)}</td><td style="text-align:right;padding:6px;color:#3ecf8e;font-weight:600;">${fmt(r.payments||0)}</td></tr>`).join('')}</tbody></table></div>`;
+            }
         }
     }
 
