@@ -1,0 +1,35 @@
+-- BH (dawvgbopyemcayavcatd): Atualiza secao ticker_trend_daily da get_analytics_data()
+-- para retornar top 30 tickers + linha agregada 'Outros' por dia.
+--
+-- Aplicado via Supabase MCP (CREATE OR REPLACE FUNCTION inteira) em 2026-04-29.
+-- O corpo completo da funcao foi reescrito mantendo as outras 50+ secoes intactas.
+-- Veja `pg_get_functiondef('public.get_analytics_data'::regproc)` para o body atual.
+--
+-- Trecho relevante (substituido dentro da get_analytics_data):
+--
+--   'ticker_trend_daily', (
+--     SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+--     FROM (
+--       WITH top_tickers AS (
+--         SELECT ticker FROM public.usage_events
+--         WHERE ticker IS NOT NULL AND ticker != ''
+--         GROUP BY ticker ORDER BY count(*) DESC LIMIT 30
+--       )
+--       SELECT day, ticker, cnt FROM (
+--         SELECT date_trunc('day', ue.event_ts AT TIME ZONE 'America/Sao_Paulo')::date as day,
+--                ue.ticker, count(*) as cnt
+--         FROM public.usage_events ue
+--         JOIN top_tickers tt ON tt.ticker = ue.ticker
+--         GROUP BY day, ue.ticker
+--         UNION ALL
+--         SELECT date_trunc('day', ue.event_ts AT TIME ZONE 'America/Sao_Paulo')::date as day,
+--                'Outros' as ticker, count(*) as cnt
+--         FROM public.usage_events ue
+--         WHERE ue.ticker IS NOT NULL AND ue.ticker != ''
+--           AND ue.ticker NOT IN (SELECT ticker FROM top_tickers)
+--         GROUP BY day
+--       ) sub ORDER BY day ASC
+--     ) t
+--   ),
+--
+-- Frontend acompanha a mudanca em index.html (helper withTopNAndOthers).

@@ -575,6 +575,27 @@
             getValues: (cat) => granDays.map((gd, i) => dayBuckets[i].reduce((s, day) => s + (map[cat+'|'+day]||0), 0))
         };
     }
+    // Mantem top N categorias por volume e agrega o restante numa serie 'Outros'.
+    function withTopNAndOthers(mc, topN, othersLabel='Outros') {
+        const totals = mc.categories.map(c => ({ c, total: mc.getValues(c).reduce((a,b)=>a+(b||0),0) }))
+            .sort((a,b)=>b.total-a.total);
+        const top = totals.slice(0, topN).map(x=>x.c);
+        const rest = totals.slice(topN).map(x=>x.c);
+        if (rest.length === 0) {
+            return { labels: mc.labels, dayList: mc.dayList, categories: top, getValues: mc.getValues, hasOthers: false };
+        }
+        const othersValues = mc.labels.map((_, i) => rest.reduce((s,c)=>s+(mc.getValues(c)[i]||0), 0));
+        return {
+            labels: mc.labels,
+            dayList: mc.dayList,
+            categories: [...top, othersLabel],
+            getValues: (cat) => cat === othersLabel ? othersValues : mc.getValues(cat),
+            hasOthers: true
+        };
+    }
+    function colorForCategory(cat, idx, othersLabel='Outros') {
+        return cat === othersLabel ? '#94a3b8' : COLORS[idx % COLORS.length];
+    }
     function aggregateDayList(sortedDays, gran) {
         if (gran === 'daily') return sortedDays;
         const seen = new Set();
@@ -1313,12 +1334,12 @@
         const events = (bh.usage_events_summary||[]).slice(0,8);
         doughnutChart('bhEngEventsChart', events.map(e=>e.event_name||'Unknown'), events.map(e=>e.cnt||0), COLORS);
 
-        // Feature daily with granularity (stacked bar)
-        const mcFD = prepareMultiCategoryTS(featureDaily, f, 'feature', 'cnt');
-        const topFdFeats = mcFD.categories.slice(0,8);
+        // Feature daily with granularity (stacked bar) — top 10 + Outros
+        const mcFDRaw = prepareMultiCategoryTS(featureDaily, f, 'feature', 'cnt');
+        const mcFD = withTopNAndOthers(mcFDRaw, 10);
         destroyChart('bhEngFeatureDailyChart');
         charts.bhEngFeatureDailyChart = new Chart(document.getElementById('bhEngFeatureDailyChart'), {
-            type:'bar', data:{labels:mcFD.labels,datasets:topFdFeats.map((feat,i)=>({label:feat,data:mcFD.getValues(feat),backgroundColor:COLORS[i%COLORS.length]}))},
+            type:'bar', data:{labels:mcFD.labels,datasets:mcFD.categories.map((feat,i)=>({label:feat,data:mcFD.getValues(feat),backgroundColor:colorForCategory(feat,i)}))},
             options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
         });
 
@@ -1332,36 +1353,43 @@
             });
         }
 
-        // Ticker by feature (stacked bar) - no time dimension
+        // Ticker by feature (stacked bar) - no time dimension — top 30 tickers + Outros
         if (tickerByFeature.length > 0) {
             const tbfFeatures = [...new Set(tickerByFeature.map(d=>d.feature))];
-            const tbfTickers = [...new Set(tickerByFeature.map(d=>d.ticker))].slice(0,15);
             const tbfMap = {}; tickerByFeature.forEach(d=>{tbfMap[d.ticker+'|'+d.feature]=(d.cnt||0);});
+            const tickerTotals = {};
+            tickerByFeature.forEach(d=>{ tickerTotals[d.ticker] = (tickerTotals[d.ticker]||0) + (d.cnt||0); });
+            const sortedTickers = Object.keys(tickerTotals).sort((a,b)=>tickerTotals[b]-tickerTotals[a]);
+            const topTickers = sortedTickers.slice(0,30);
+            const restTickers = sortedTickers.slice(30);
+            const othersByFeature = {};
+            tbfFeatures.forEach(feat => { othersByFeature[feat] = restTickers.reduce((s,t)=>s+(tbfMap[t+'|'+feat]||0), 0); });
+            const tbfTickers = restTickers.length > 0 ? [...topTickers, 'Outros'] : topTickers;
             destroyChart('bhEngTickerByFeatureChart');
             charts.bhEngTickerByFeatureChart = new Chart(document.getElementById('bhEngTickerByFeatureChart'), {
-                type:'bar', data:{labels:tbfTickers,datasets:tbfFeatures.map((feat,i)=>({label:feat,data:tbfTickers.map(t=>tbfMap[t+'|'+feat]||0),backgroundColor:COLORS[i%COLORS.length]}))},
+                type:'bar', data:{labels:tbfTickers,datasets:tbfFeatures.map((feat,i)=>({label:feat,data:tbfTickers.map(t=>t==='Outros'?(othersByFeature[feat]||0):(tbfMap[t+'|'+feat]||0)),backgroundColor:COLORS[i%COLORS.length]}))},
                 options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
             });
         }
 
-        // Ticker trend daily with granularity (stacked bar)
+        // Ticker trend daily with granularity (stacked bar) — top 30 + Outros
         if (tickerTrend.length > 0) {
-            const mcTT = prepareMultiCategoryTS(tickerTrend, f, 'ticker', 'cnt');
-            const ttTickers = mcTT.categories.slice(0,10);
+            const mcTTRaw = prepareMultiCategoryTS(tickerTrend, f, 'ticker', 'cnt');
+            const mcTT = withTopNAndOthers(mcTTRaw, 30);
             destroyChart('bhEngTickerTrendChart');
             charts.bhEngTickerTrendChart = new Chart(document.getElementById('bhEngTickerTrendChart'), {
-                type:'bar', data:{labels:mcTT.labels,datasets:ttTickers.map((t,i)=>({label:t,data:mcTT.getValues(t),backgroundColor:COLORS[i%COLORS.length]}))},
+                type:'bar', data:{labels:mcTT.labels,datasets:mcTT.categories.map((t,i)=>({label:t,data:mcTT.getValues(t),backgroundColor:colorForCategory(t,i)}))},
                 options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
             });
         }
 
-        // Feature adoption curves with granularity (stacked bar)
+        // Feature adoption curves with granularity (stacked bar) — top 10 + Outros
         if (featureTrend.length > 0) {
-            const mcFT = prepareMultiCategoryTS(featureTrend, f, 'feature', 'unique_users');
-            const ftFeatures = mcFT.categories.slice(0,8);
+            const mcFTRaw = prepareMultiCategoryTS(featureTrend, f, 'feature', 'unique_users');
+            const mcFT = withTopNAndOthers(mcFTRaw, 10);
             destroyChart('bhEngFeatureTrendChart');
             charts.bhEngFeatureTrendChart = new Chart(document.getElementById('bhEngFeatureTrendChart'), {
-                type:'bar', data:{labels:mcFT.labels,datasets:ftFeatures.map((feat,i)=>({label:feat,data:mcFT.getValues(feat),backgroundColor:COLORS[i%COLORS.length]}))},
+                type:'bar', data:{labels:mcFT.labels,datasets:mcFT.categories.map((feat,i)=>({label:feat,data:mcFT.getValues(feat),backgroundColor:colorForCategory(feat,i)}))},
                 options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
             });
         }
@@ -2488,30 +2516,37 @@
             });
         }
 
-        // Ticker by feature
+        // Ticker by feature — top 30 tickers + Outros
         if (tickerByFeature.length > 0) {
             const tbfFeatures = [...new Set(tickerByFeature.map(d=>d.feature))];
-            const tbfTickers = [...new Set(tickerByFeature.map(d=>d.ticker))].slice(0,15);
             const tbfMap = {}; tickerByFeature.forEach(d=>{tbfMap[d.ticker+'|'+d.feature]=(d.cnt||0);});
+            const tickerTotals = {};
+            tickerByFeature.forEach(d=>{ tickerTotals[d.ticker] = (tickerTotals[d.ticker]||0) + (d.cnt||0); });
+            const sortedTickers = Object.keys(tickerTotals).sort((a,b)=>tickerTotals[b]-tickerTotals[a]);
+            const topTickers = sortedTickers.slice(0,30);
+            const restTickers = sortedTickers.slice(30);
+            const othersByFeature = {};
+            tbfFeatures.forEach(feat => { othersByFeature[feat] = restTickers.reduce((s,t)=>s+(tbfMap[t+'|'+feat]||0), 0); });
+            const tbfTickers = restTickers.length > 0 ? [...topTickers, 'Outros'] : topTickers;
             destroyChart('htaEngTickerByFeatureChart');
             charts.htaEngTickerByFeatureChart = new Chart(document.getElementById('htaEngTickerByFeatureChart'), {
-                type:'bar',data:{labels:tbfTickers,datasets:tbfFeatures.map((feat,i)=>({label:feat,data:tbfTickers.map(t=>tbfMap[t+'|'+feat]||0),backgroundColor:COLORS[i%COLORS.length]}))},
+                type:'bar',data:{labels:tbfTickers,datasets:tbfFeatures.map((feat,i)=>({label:feat,data:tbfTickers.map(t=>t==='Outros'?(othersByFeature[feat]||0):(tbfMap[t+'|'+feat]||0)),backgroundColor:COLORS[i%COLORS.length]}))},
                 options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
             });
         }
 
-        // Ticker trend with granularity
+        // Ticker trend with granularity — top 30 + Outros
         if (tickerTrend.length > 0) {
-            const mcTT = prepareMultiCategoryTS(tickerTrend, f, 'ticker', 'cnt');
-            const ttTickers = mcTT.categories.slice(0,6);
-            lineChart('htaEngTickerTrendChart', mcTT.labels, ttTickers.map((t,i)=>({label:t,data:mcTT.getValues(t),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
+            const mcTTRaw = prepareMultiCategoryTS(tickerTrend, f, 'ticker', 'cnt');
+            const mcTT = withTopNAndOthers(mcTTRaw, 30);
+            lineChart('htaEngTickerTrendChart', mcTT.labels, mcTT.categories.map((t,i)=>({label:t,data:mcTT.getValues(t),borderColor:colorForCategory(t,i),fill:false,pointRadius:2})));
         }
 
-        // Feature trend with granularity
+        // Feature trend with granularity — top 10 + Outros
         if (featureTrend.length > 0) {
-            const mcFT = prepareMultiCategoryTS(featureTrend, f, 'feature', 'unique_users');
-            const ftFeatures = mcFT.categories.slice(0,8);
-            lineChart('htaEngFeatureTrendChart', mcFT.labels, ftFeatures.map((feat,i)=>({label:feat,data:mcFT.getValues(feat),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
+            const mcFTRaw = prepareMultiCategoryTS(featureTrend, f, 'feature', 'unique_users');
+            const mcFT = withTopNAndOthers(mcFTRaw, 10);
+            lineChart('htaEngFeatureTrendChart', mcFT.labels, mcFT.categories.map((feat,i)=>({label:feat,data:mcFT.getValues(feat),borderColor:colorForCategory(feat,i),fill:false,pointRadius:2})));
         }
 
         // Feature breadth (pre-aggregated snapshot)
