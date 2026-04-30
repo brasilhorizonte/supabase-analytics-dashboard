@@ -2972,21 +2972,36 @@
         const convFunnel = bh.iacoes_conversion_funnel || {};
         const convDaily = bh.iacoes_conversion_daily || [];
         const convTickersDaily = bh.iacoes_converting_tickers_daily || [];
-        const convComparison = bh.iacoes_vs_other_conversion || [];
         const ov = bh.iacoes_overview || {};
         const daily = bh.iacoes_daily || [];
         const pagesDaily = bh.iacoes_pages_daily || [];
         const referrers = bh.iacoes_referrers || [];
         const referrerDaily = bh.iacoes_referrer_daily || [];
-        const devices = bh.iacoes_devices || [];
-        const utmData = bh.iacoes_utm || [];
-        const browsers = bh.iacoes_browsers || [];
-        const osSummary = bh.iacoes_os || [];
+        // Daily breakdowns (RPC get_analytics_data_iacoes_daily) -- substitui snapshots all-time pra respeitarem o filtro temporal global
+        const devicesDaily = bh.iacoes_devices_daily || [];
+        const browsersDaily = bh.iacoes_browsers_daily || [];
+        const osDaily = bh.iacoes_os_daily || [];
+        const utmDaily = bh.iacoes_utm_daily || [];
+        const ctaBreakdownDaily = bh.iacoes_cta_breakdown_daily || [];
+        const ctaByPageDaily = bh.iacoes_cta_by_page_daily || [];
+        const sourceDetectionDaily = bh.iacoes_source_detection_daily || [];
+        const vsOtherConversionDaily = bh.iacoes_vs_other_conversion_daily || [];
 
-        // Merge iacoes_daily (views, cta_clicks) + iacoes_conversion_daily (sessions, logins, paywall, payments) by day
+        // Helper local: agrega rows filtradas somando sumFields por chave composta.
+        const aggregateBy = (rows, keyFields, sumFields) => {
+            const out = {};
+            rows.forEach(r => {
+                const key = keyFields.map(k => r[k] ?? '').join('|');
+                if (!out[key]) { out[key] = {}; keyFields.forEach(k => out[key][k] = r[k]); sumFields.forEach(s => out[key][s] = 0); }
+                sumFields.forEach(s => out[key][s] += Number(r[s])||0);
+            });
+            return Object.values(out);
+        };
+
+        // Merge iacoes_daily (views, landing_sessions, cta_clicks) + iacoes_conversion_daily (BH sessions, logins, paywall, payments) by day
         const funnelByDay = {};
-        daily.forEach(d => { funnelByDay[d.day] = { views: d.views||0, cta_clicks: d.cta_clicks||0, sessions:0, unique_users:0, logins:0, paywall:0, payments:0 }; });
-        convDaily.forEach(d => { if (!funnelByDay[d.day]) funnelByDay[d.day] = { views:0, cta_clicks:0 }; Object.assign(funnelByDay[d.day], { sessions: d.sessions||0, unique_users: d.unique_users||0, logins: d.logins||0, paywall: d.paywall||0, payments: d.payments||0 }); });
+        daily.forEach(d => { funnelByDay[d.day] = { views: d.views||0, landing_sessions: d.sessions||0, cta_clicks: d.cta_clicks||0, sessions:0, unique_users:0, logins:0, paywall:0, payments:0 }; });
+        convDaily.forEach(d => { if (!funnelByDay[d.day]) funnelByDay[d.day] = { views:0, landing_sessions:0, cta_clicks:0 }; Object.assign(funnelByDay[d.day], { sessions: d.sessions||0, unique_users: d.unique_users||0, logins: d.logins||0, paywall: d.paywall||0, payments: d.payments||0 }); });
         const funnelDailyMerged = Object.entries(funnelByDay).map(([day,v])=>({day,...v})).sort((a,b)=>a.day.localeCompare(b.day));
 
         // Filter by global date range and recalculate all funnel/overview values
@@ -3007,7 +3022,26 @@
         const totalSessions = filteredIacoesDaily.reduce((s,d)=>s+(d.sessions||0),0) || (ov.total_sessions||0);
         const totalCtaClicks = filteredIacoesDaily.reduce((s,d)=>s+(d.cta_clicks||0),0);
 
+        // Aggregations from daily breakdowns (filtered by global date range)
+        const devices = aggregateBy(filterSnapshot(devicesDaily, f), ['device_type'], ['views','sessions']).sort((a,b)=>(b.views||0)-(a.views||0));
+        const browsers = aggregateBy(filterSnapshot(browsersDaily, f), ['browser'], ['views']).sort((a,b)=>(b.views||0)-(a.views||0));
+        const osSummary = aggregateBy(filterSnapshot(osDaily, f), ['os'], ['views']).sort((a,b)=>(b.views||0)-(a.views||0));
+        const utmData = aggregateBy(filterSnapshot(utmDaily, f), ['utm_source','utm_medium','utm_campaign'], ['views','sessions']).sort((a,b)=>(b.views||0)-(a.views||0)).slice(0,20);
+        const ctaBreakdown = aggregateBy(filterSnapshot(ctaBreakdownDaily, f), ['cta_id'], ['clicks','unique_sessions']).sort((a,b)=>(b.clicks||0)-(a.clicks||0));
+        const ctaByPage = aggregateBy(filterSnapshot(ctaByPageDaily, f), ['cta_id','page_path'], ['clicks']).sort((a,b)=>(b.clicks||0)-(a.clicks||0)).slice(0,50);
+        const detection = aggregateBy(filterSnapshot(sourceDetectionDaily, f), ['source_hint','click_id_source','referrer_status'], ['total']).sort((a,b)=>(b.total||0)-(a.total||0));
+        const convComparisonAgg = aggregateBy(filterSnapshot(vsOtherConversionDaily, f), ['source'], ['sessions','logins','paywall']).sort((a,b)=>(b.sessions||0)-(a.sessions||0));
+        const convComparison = convComparisonAgg.map(c => ({
+            source: c.source, sessions: c.sessions, logins: c.logins, paywall: c.paywall,
+            login_rate:  c.sessions>0 ? Math.round((c.logins  / c.sessions)*1000)/10 : 0,
+            paywall_rate:c.sessions>0 ? Math.round((c.paywall / c.sessions)*1000)/10 : 0
+        }));
+
         buildHTML('iacoes', `
+            <h3 class="section-title">Visao Diaria</h3>
+            <p class="section-desc">Principais KPIs da landing em serie temporal &mdash; respeita periodo e granularidade globais.</p>
+            <div class="charts-grid" id="iacoesDailyMiniGrid" style="grid-template-columns:repeat(3,1fr);gap:12px"></div>
+            <h3 class="section-title">Conversao iAcoes &rarr; BH</h3>
             <div class="kpi-grid" id="iacoesConvKpis"></div>
             <div class="chart-container mb-2"><div class="chart-title">Funil de Conversao</div><div class="funnel" id="iacoesConvFunnel"></div></div>
             <div class="chart-container mb-2"><div class="chart-title">Funil ao Longo do Tempo</div><canvas id="iacoesFunnelTimeChart"></canvas></div>
@@ -3050,7 +3084,29 @@
         const funnelSteps = [{l:'iAcoes Views',v:iacoesViews},{l:'CTA Clicks',v:ctaClicks},{l:'Sessoes BH',v:bhSessions},{l:'Logins',v:bhLogins},{l:'Paywall',v:bhPaywall},{l:'Pagamentos',v:bhPayments}];
         document.getElementById('iacoesConvFunnel').innerHTML = funnelSteps.map((step,i)=>{const prev=i>0?funnelSteps[i-1].v:0;const rate=prev>0?((step.v/prev)*100).toFixed(1)+'%':'';return`<div class="funnel-step"><span class="funnel-step-label">${step.l}${rate?' <span style="color:#3ecf8e;font-size:11px">('+rate+')</span>':''}</span><span class="funnel-step-value">${fmt(step.v)}</span></div>`;}).join('');
 
-        const funnelTSPrep = prepareTimeSeries(funnelDailyMerged, f, ['views','cta_clicks','sessions','logins','paywall','payments']);
+        const funnelTSPrep = prepareTimeSeries(funnelDailyMerged, f, ['views','landing_sessions','cta_clicks','sessions','logins','paywall','payments']);
+
+        // ===== Visao Diaria - 6 mini line charts =====
+        const miniSeries = [
+            {key:'views',            label:'Views',           total:iacoesViews,    color:'#6366f1'},
+            {key:'landing_sessions', label:'Sessoes (Landing)', total:totalSessions, color:'#3ecf8e'},
+            {key:'cta_clicks',       label:'CTA Clicks',      total:ctaClicks,      color:'#f59e0b'},
+            {key:'sessions',         label:'Sessoes -> BH',   total:bhSessions,     color:'#3b82f6'},
+            {key:'logins',           label:'Logins (BH)',     total:bhLogins,       color:'#ec4899'},
+            {key:'payments',         label:'Pagamentos (BH)', total:bhPayments,     color:'#22c55e'}
+        ];
+        document.getElementById('iacoesDailyMiniGrid').innerHTML = miniSeries.map(s =>
+            `<div class="chart-container" style="padding:12px"><div class="chart-title" style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><span>${s.label}</span><span style="font-size:18px;font-weight:700;color:${s.color}">${fmt(s.total)}</span></div><canvas id="iacoesDailyMini_${s.key}" height="80"></canvas></div>`
+        ).join('');
+        miniSeries.forEach(s => {
+            const cid = 'iacoesDailyMini_'+s.key;
+            destroyChart(cid);
+            charts[cid] = new Chart(document.getElementById(cid), {
+                type:'line',
+                data:{labels:funnelTSPrep.labels, datasets:[{label:s.label, data:funnelTSPrep.data.map(d=>d[s.key]||0), borderColor:s.color, backgroundColor:s.color+'22', borderWidth:2, pointRadius:1, fill:true, tension:0.4}]},
+                options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmt(ctx.parsed.y)}}}, scales:{y:{beginAtZero:true, grid:{color:'#f1f5f9'}, ticks:{font:{size:9}}}, x:{ticks:{font:{size:9}, maxRotation:0, autoSkip:true, maxTicksLimit:6}, grid:{display:false}}}}
+            });
+        });
 
         // Funnel over time (multi-line, log scale)
         destroyChart('iacoesFunnelTimeChart');
@@ -3092,8 +3148,8 @@
             {label:'Pagamentos',data:convDailyPrep.data.map(d=>d.payments||0),backgroundColor:'#3b82f6'}
         ]);
 
-        // Comparison chart - snapshot data, filter not applicable
-        const srcColors = {'iAcoes':'#f97316','Google':'#4285f4','Google (ads)':'#4285f4','Direto':'#94a3b8','Stripe':'#635bff','App BH':'#3ecf8e','Twitter/X':'#1d9bf0','Twitter/X (ads)':'#1d9bf0','Twitter/X (app)':'#1d9bf0','Facebook':'#1877f2','Facebook (ads)':'#1877f2','Facebook (app)':'#1877f2','Instagram':'#e4405f','Instagram (app)':'#e4405f','LinkedIn':'#0a66c2','LinkedIn (ads)':'#0a66c2','LinkedIn (app)':'#0a66c2','WhatsApp':'#25d366','WhatsApp (app)':'#25d366','YouTube':'#ff0000','Telegram':'#26a5e4','Telegram (app)':'#26a5e4','TikTok (ads)':'#010101','Bing (ads)':'#00809d','Reddit':'#ff4500','Lovable (Dev)':'#d946ef','Localhost (Dev)':'#a1a1aa'};
+        // Comparison chart (convComparison agregado de iacoes_vs_other_conversion_daily filtrado)
+        const srcColors ={'iAcoes':'#f97316','Google':'#4285f4','Google (ads)':'#4285f4','Direto':'#94a3b8','Stripe':'#635bff','App BH':'#3ecf8e','Twitter/X':'#1d9bf0','Twitter/X (ads)':'#1d9bf0','Twitter/X (app)':'#1d9bf0','Facebook':'#1877f2','Facebook (ads)':'#1877f2','Facebook (app)':'#1877f2','Instagram':'#e4405f','Instagram (app)':'#e4405f','LinkedIn':'#0a66c2','LinkedIn (ads)':'#0a66c2','LinkedIn (app)':'#0a66c2','WhatsApp':'#25d366','WhatsApp (app)':'#25d366','YouTube':'#ff0000','Telegram':'#26a5e4','Telegram (app)':'#26a5e4','TikTok (ads)':'#010101','Bing (ads)':'#00809d','Reddit':'#ff4500','Lovable (Dev)':'#d946ef','Localhost (Dev)':'#a1a1aa'};
         destroyChart('iacoesVsOtherChart');
         charts.iacoesVsOtherChart = new Chart(document.getElementById('iacoesVsOtherChart'),{
             type:'bar',data:{labels:convComparison.map(c=>`${c.source} (${fmt(c.sessions||0)})`),datasets:[
@@ -3144,8 +3200,7 @@
             barChart('iacoesReferrerChart', referrers.map(r=>r.source), [{label:'Views',data:referrers.map(r=>r.views||0),backgroundColor:COLORS}], {horizontal:true});
         }
 
-        // Source detection diagnostic table
-        const detection = bh.iacoes_source_detection || [];
+        // Source detection diagnostic table (detection ja agregado de sourceDetectionDaily filtrado)
         const detTable = document.getElementById('iacoesSourceDetectionTable');
         if (detection.length > 0 && detection.some(d => d.source_hint !== 'nenhum' || d.click_id_source !== 'nenhum')) {
             detTable.innerHTML = '<thead><tr><th>Source Hint (UA)</th><th>Click ID</th><th>Referrer</th><th>Total</th></tr></thead><tbody>' +
@@ -3169,9 +3224,7 @@
         document.getElementById('iacoesTopPagesTable').innerHTML = `<thead><tr><th>Pagina</th><th>Views</th><th>Sessoes</th><th>CTA Clicks</th><th>Taxa CTA</th></tr></thead><tbody>${topPages.map(p=>{const pCtaClicks=Number(p.cta_clicks)||0;const pSessions=Number(p.sessions)||0;const pCtaRate=pSessions>0?((pCtaClicks/pSessions)*100).toFixed(1):'0';return`<tr><td>${p.page_path==='/'?'Home (/)':p.page_path}</td><td>${fmt(p.views||0)}</td><td>${fmt(pSessions)}</td><td>${fmt(pCtaClicks)}</td><td>${pCtaRate}%</td></tr>`;}).join('')}</tbody>`;
         makeSortable(document.getElementById('iacoesTopPagesTable'));
 
-        // CTA Breakdown
-        const ctaBreakdown = bh.iacoes_cta_breakdown || [];
-        const ctaByPage = bh.iacoes_cta_by_page || [];
+        // CTA Breakdown (ctaBreakdown e ctaByPage ja agregados de _daily filtrado no topo)
         const ctaDaily = bh.iacoes_cta_daily || [];
         const filteredCtaDaily = filterSnapshot(ctaDaily, f);
 

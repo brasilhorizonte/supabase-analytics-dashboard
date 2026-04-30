@@ -68,8 +68,8 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Fetch analytics data from both projects + notification analytics + BH extras + UTM
-    const [bh, hta, bhGeo, htaGeo, bhNotif, bhExtras, bhUtm] = await Promise.all([
+    // Fetch analytics data from both projects + notification analytics + BH extras + UTM + iAcoes daily breakdowns
+    const [bh, hta, bhGeo, htaGeo, bhNotif, bhExtras, bhUtm, bhIacoesDaily] = await Promise.all([
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data"),
       fetchRpc(HTA_URL, HTA_KEY, "get_analytics_data"),
       fetchRpc(BH_URL, BH_ANON, "get_geo_profiles"),
@@ -77,10 +77,11 @@ Deno.serve(async (req: Request) => {
       fetchRpc(BH_URL, BH_ANON, "get_notification_analytics"),
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_extras"),
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_utm"),
+      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_iacoes_daily"),
     ]);
 
-    // Merge BH data: base + notification analytics + extras + utm (latest wins on conflict)
-    const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}), ...(bhUtm || {}) };
+    // Merge BH data: base + notification analytics + extras + utm + iacoes daily (latest wins on conflict)
+    const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}), ...(bhUtm || {}), ...(bhIacoesDaily || {}) };
 
     return new Response(JSON.stringify({ admin: email, bh: bhMerged, hta, geo: { bh: bhGeo || [], hta: htaGeo || [] }, ts: new Date().toISOString() }), {
       headers: {

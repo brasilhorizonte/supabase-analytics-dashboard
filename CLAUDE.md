@@ -50,7 +50,22 @@ supabase/
     20260422_filter_iacoes_bots.sql         # Filtra crawlers/bots de iacoes_page_views
     20260425_iacoes_macro_beta_paywall_v2.sql # Macro Beta + Paywall v2 + CVM v2 + lifetime feature usage
     20260427_bh_usage_events_utm.sql        # NEW RPC get_analytics_data_bh_utm() — UTM attribution + 50OFF campaign
+    20260430_iacoes_daily_breakdowns.sql    # NEW RPC get_analytics_data_iacoes_daily() — 8 daily breakdowns p/ filtro temporal
 ```
+
+## Landing iAcoes — Daily Breakdowns (2026-04-30)
+
+Visao Diaria + filtro temporal total na aba Landing iAcoes.
+
+- **Nova RPC** `get_analytics_data_iacoes_daily()` (additive — nao toca em `get_analytics_data`). Retorna 8 secoes `_daily` que substituem snapshots all-time no frontend:
+  - `iacoes_devices_daily`, `iacoes_browsers_daily`, `iacoes_os_daily`
+  - `iacoes_utm_daily`
+  - `iacoes_cta_breakdown_daily`, `iacoes_cta_by_page_daily`
+  - `iacoes_source_detection_daily`
+  - `iacoes_vs_other_conversion_daily` (valores absolutos `sessions/logins/paywall` — frontend recomputa taxas apos agregar)
+- **Edge function**: `analytics-dashboard/index.ts` adicionou um 8º `fetchRpc(BH_URL, BH_ANON, "get_analytics_data_iacoes_daily")` no `Promise.all` e merge no `bhMerged` via spread.
+- **Frontend** (`index.html`, `renderIacoesTab` em `:2970`): nova secao "Visao Diaria" no topo (6 mini-charts: Views, Sessoes Landing, CTA Clicks, Sessoes->BH, Logins, Pagamentos) + helper local `aggregateBy(rows, keyFields, sumFields)` que agrega as 8 series filtradas via `filterSnapshot`. Resultado: TODA visualizacao da aba respeita `globalFilters.from`/`to`.
+- Snapshots originais (`iacoes_devices`, `iacoes_browsers`, `iacoes_os`, `iacoes_utm`, `iacoes_cta_breakdown`, `iacoes_cta_by_page`, `iacoes_source_detection`, `iacoes_vs_other_conversion`) permanecem na RPC `get_analytics_data` por compatibilidade — apenas nao sao mais consumidos pelo frontend.
 
 ## UTM Attribution (2026-04-27)
 
