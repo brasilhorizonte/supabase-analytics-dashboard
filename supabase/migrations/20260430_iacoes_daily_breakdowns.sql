@@ -131,6 +131,44 @@ BEGIN
       ) t
     ),
 
+    -- Hourly breakdown da landing (por dia + hora) -- frontend agrega por hora-do-dia
+    'iacoes_hourly_daily', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        SELECT (created_at AT TIME ZONE 'America/Sao_Paulo')::date as day,
+               extract(hour from created_at AT TIME ZONE 'America/Sao_Paulo')::int as hour,
+               extract(dow from created_at AT TIME ZONE 'America/Sao_Paulo')::int as dow,
+               count(*) FILTER (WHERE event_type = 'pageview' OR event_type IS NULL) as views,
+               count(DISTINCT session_id) as sessions,
+               count(*) FILTER (WHERE event_type = 'cta_click') as cta_clicks
+        FROM public.iacoes_page_views_human
+        GROUP BY day, hour, dow
+        ORDER BY day ASC, hour ASC
+      ) t
+    ),
+
+    -- Hourly conversion breakdown (BH sessions atribuidas a iAcoes por dia + hora)
+    'iacoes_conversion_hourly_daily', (
+      SELECT coalesce(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+      FROM (
+        WITH iacoes_sessions AS (
+          SELECT DISTINCT session_id FROM public.usage_events
+          WHERE event_name = 'session_start' AND referrer ILIKE '%iacoes%'
+        )
+        SELECT date_trunc('day', ue.event_ts AT TIME ZONE 'America/Sao_Paulo')::date as day,
+               extract(hour from ue.event_ts AT TIME ZONE 'America/Sao_Paulo')::int as hour,
+               extract(dow from ue.event_ts AT TIME ZONE 'America/Sao_Paulo')::int as dow,
+               count(*) FILTER (WHERE ue.event_name = 'session_start' AND ue.referrer ILIKE '%iacoes%') as sessions,
+               count(*) FILTER (WHERE ue.event_name = 'auth_login') as logins,
+               count(*) FILTER (WHERE ue.event_name = 'paywall_block') as paywall,
+               count(*) FILTER (WHERE ue.event_name = 'payment_succeeded') as payments
+        FROM public.usage_events ue
+        WHERE ue.session_id IN (SELECT session_id FROM iacoes_sessions)
+        GROUP BY day, hour, dow
+        ORDER BY day ASC, hour ASC
+      ) t
+    ),
+
     -- iAcoes vs Outras Fontes por dia (valores absolutos -- frontend calcula taxas)
     -- Mesmo case statement de iacoes_vs_other_conversion para preservar mapping
     'iacoes_vs_other_conversion_daily', (

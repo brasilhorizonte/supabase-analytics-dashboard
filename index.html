@@ -2986,6 +2986,8 @@
         const ctaByPageDaily = bh.iacoes_cta_by_page_daily || [];
         const sourceDetectionDaily = bh.iacoes_source_detection_daily || [];
         const vsOtherConversionDaily = bh.iacoes_vs_other_conversion_daily || [];
+        const hourlyDaily = bh.iacoes_hourly_daily || [];
+        const conversionHourlyDaily = bh.iacoes_conversion_hourly_daily || [];
 
         // Helper local: agrega rows filtradas somando sumFields por chave composta.
         const aggregateBy = (rows, keyFields, sumFields) => {
@@ -3038,9 +3040,10 @@
         }));
 
         buildHTML('iacoes', `
-            <h3 class="section-title">Visao Diaria</h3>
-            <p class="section-desc">Principais KPIs da landing em serie temporal &mdash; respeita periodo e granularidade globais.</p>
+            <h3 class="section-title">Visao Diaria &mdash; padrao por hora do dia</h3>
+            <p class="section-desc">Distribuicao por hora (0-23h) somada sobre o periodo selecionado. Hora local Sao Paulo (BRT).</p>
             <div class="charts-grid" id="iacoesDailyMiniGrid" style="grid-template-columns:repeat(3,1fr);gap:12px"></div>
+            <div class="chart-container mb-2"><div class="chart-title">Heatmap dia da semana &times; hora (Views da landing)</div><div id="iacoesHourHeatmap"></div></div>
             <h3 class="section-title">Conversao iAcoes &rarr; BH</h3>
             <div class="kpi-grid" id="iacoesConvKpis"></div>
             <div class="chart-container mb-2"><div class="chart-title">Funil de Conversao</div><div class="funnel" id="iacoesConvFunnel"></div></div>
@@ -3086,27 +3089,48 @@
 
         const funnelTSPrep = prepareTimeSeries(funnelDailyMerged, f, ['views','landing_sessions','cta_clicks','sessions','logins','paywall','payments']);
 
-        // ===== Visao Diaria - 6 mini line charts =====
+        // ===== Visao Diaria - distribuicao por hora-do-dia =====
+        const filteredHourly = filterSnapshot(hourlyDaily, f);
+        const filteredConvHourly = filterSnapshot(conversionHourlyDaily, f);
+        // Agregadas por hora (0..23) somando todos os dias do filtro
+        const hourBuckets = (rows, fields) => {
+            const out = Array.from({length:24}, (_,h) => { const o={hr:h}; fields.forEach(fld => o[fld]=0); return o; });
+            rows.forEach(r => { const h=Number(r.hr)||0; fields.forEach(fld => out[h][fld] += Number(r[fld])||0); });
+            return out;
+        };
+        const hourLanding = hourBuckets(filteredHourly, ['views','sessions','cta_clicks']);
+        const hourConv    = hourBuckets(filteredConvHourly, ['sessions','logins','paywall','payments']);
+        const hourLabels  = Array.from({length:24}, (_,h) => String(h).padStart(2,'0')+'h');
+
         const miniSeries = [
-            {key:'views',            label:'Views',           total:iacoesViews,    color:'#6366f1'},
-            {key:'landing_sessions', label:'Sessoes (Landing)', total:totalSessions, color:'#3ecf8e'},
-            {key:'cta_clicks',       label:'CTA Clicks',      total:ctaClicks,      color:'#f59e0b'},
-            {key:'sessions',         label:'Sessoes -> BH',   total:bhSessions,     color:'#3b82f6'},
-            {key:'logins',           label:'Logins (BH)',     total:bhLogins,       color:'#ec4899'},
-            {key:'payments',         label:'Pagamentos (BH)', total:bhPayments,     color:'#22c55e'}
+            {label:'Views',            data:hourLanding.map(d=>d.views),       total:iacoesViews,    color:'#6366f1'},
+            {label:'Sessoes (Landing)',data:hourLanding.map(d=>d.sessions),    total:totalSessions,  color:'#3ecf8e'},
+            {label:'CTA Clicks',       data:hourLanding.map(d=>d.cta_clicks),  total:ctaClicks,      color:'#f59e0b'},
+            {label:'Sessoes -> BH',    data:hourConv.map(d=>d.sessions),       total:bhSessions,     color:'#3b82f6'},
+            {label:'Logins (BH)',      data:hourConv.map(d=>d.logins),         total:bhLogins,       color:'#ec4899'},
+            {label:'Pagamentos (BH)',  data:hourConv.map(d=>d.payments),       total:bhPayments,     color:'#22c55e'}
         ];
-        document.getElementById('iacoesDailyMiniGrid').innerHTML = miniSeries.map(s =>
-            `<div class="chart-container" style="padding:12px"><div class="chart-title" style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><span>${s.label}</span><span style="font-size:18px;font-weight:700;color:${s.color}">${fmt(s.total)}</span></div><canvas id="iacoesDailyMini_${s.key}" height="80"></canvas></div>`
+        document.getElementById('iacoesDailyMiniGrid').innerHTML = miniSeries.map((s,i) =>
+            `<div class="chart-container" style="padding:12px"><div class="chart-title" style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><span>${s.label}</span><span style="font-size:18px;font-weight:700;color:${s.color}">${fmt(s.total)}</span></div><canvas id="iacoesHourMini_${i}" height="80"></canvas></div>`
         ).join('');
-        miniSeries.forEach(s => {
-            const cid = 'iacoesDailyMini_'+s.key;
+        miniSeries.forEach((s,i) => {
+            const cid = 'iacoesHourMini_'+i;
             destroyChart(cid);
             charts[cid] = new Chart(document.getElementById(cid), {
-                type:'line',
-                data:{labels:funnelTSPrep.labels, datasets:[{label:s.label, data:funnelTSPrep.data.map(d=>d[s.key]||0), borderColor:s.color, backgroundColor:s.color+'22', borderWidth:2, pointRadius:1, fill:true, tension:0.4}]},
-                options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmt(ctx.parsed.y)}}}, scales:{y:{beginAtZero:true, grid:{color:'#f1f5f9'}, ticks:{font:{size:9}}}, x:{ticks:{font:{size:9}, maxRotation:0, autoSkip:true, maxTicksLimit:6}, grid:{display:false}}}}
+                type:'bar',
+                data:{labels:hourLabels, datasets:[{label:s.label, data:s.data, backgroundColor:s.color, borderRadius:3, borderSkipped:false}]},
+                options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{title:ctx=>ctx[0].label, label:ctx=>s.label+': '+fmt(ctx.parsed.y)}}}, scales:{y:{beginAtZero:true, grid:{color:'#f1f5f9'}, ticks:{font:{size:9}}}, x:{ticks:{font:{size:8}, maxRotation:0, autoSkip:true, maxTicksLimit:8}, grid:{display:false}}}}
             });
         });
+
+        // Heatmap dow x hour para Views da landing
+        const heatRows = {};
+        filteredHourly.forEach(r => {
+            const k = (r.wday ?? 0) + '|' + (r.hr ?? 0);
+            heatRows[k] = (heatRows[k] || 0) + (Number(r.views)||0);
+        });
+        const heatmapData = Object.entries(heatRows).map(([k,v]) => { const [wday,hr]=k.split('|'); return {dow:Number(wday), hour:Number(hr), events:v}; });
+        renderHeatmap('iacoesHourHeatmap', heatmapData);
 
         // Funnel over time (multi-line, log scale)
         destroyChart('iacoesFunnelTimeChart');
