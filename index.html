@@ -950,6 +950,10 @@
         const nvr = bh.new_vs_returning_daily || [];
         const funnel = bh.conversion_funnel || {};
         const loginDaily = bh.login_daily || [];
+        // OAuth login metrics (Google adoption, habilitado em 2026-04-30)
+        const oauthLogin = bh.oauth_login_daily || [];
+        const oauthFirstLogin = bh.oauth_first_login_daily || [];
+        const oauthProfile = bh.oauth_profile_type_daily || [];
 
         buildHTML('bhAquisicao', `
             <div class="charts-grid">
@@ -974,6 +978,21 @@
                 ${canvasHTML('bhAqLoginDailyChart','Logins Diarios')}
             </div>
             <div class="chart-container mb-2"><div class="chart-title">Funil de Conversao</div><div class="funnel" id="bhAqFunnel"></div></div>
+
+            <!-- ===== Metodos de Login (Google OAuth adoption) ===== -->
+            <div class="section-block">
+                ${createSectionHeader('Metodos de Login (Google OAuth)', 'Adocao de Google OAuth vs email/senha. Habilitado em 2026-04-30. Eventos auth_login (started/success/error) e profile_type_onboarding_complete em usage_events. Respeita filtro temporal global.')}
+                <div class="kpi-grid" id="bhAqOauthKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhAqOauthDailyChart','Logins por metodo (diario, success)')}
+                    ${canvasHTML('bhAqOauthShareChart','% Google share (diario)')}
+                </div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhAqOauthFunnelChart','Google OAuth funnel')}
+                    ${canvasHTML('bhAqOauthProfileChart','Profile type por metodo')}
+                </div>
+                <div class="chart-container mb-2"><div class="chart-title">Novos signups por metodo (proxy: 1o auth_login success por user)</div><canvas id="bhAqOauthSignupsChart"></canvas></div>
+            </div>
 
             <!-- ===== Campanhas UTM (acquisition tracking via utm_*) ===== -->
             <div class="section-block">
@@ -1056,6 +1075,105 @@
                 ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'}}}}
             });
         }
+
+        // ===== Metodos de Login (Google OAuth) =====
+        const fOauthLogin   = filterSnapshot(oauthLogin, f);
+        const fOauthFirst   = filterSnapshot(oauthFirstLogin, f);
+        const fOauthProfile = filterSnapshot(oauthProfile, f);
+
+        const oauthMethodKey = m => (m === 'google' || m === 'email') ? m : 'other';
+        const oauthTotals = { google:{started:0,success:0,error:0}, email:{started:0,success:0,error:0}, other:{started:0,success:0,error:0} };
+        fOauthLogin.forEach(r => { const m = oauthMethodKey(r.method); oauthTotals[m][r.action] = (oauthTotals[m][r.action]||0) + (r.cnt||0); });
+        const gSucc = oauthTotals.google.success, eSucc = oauthTotals.email.success;
+        const totalSuccLogin = gSucc + eSucc;
+        const googleShare = totalSuccLogin > 0 ? ((gSucc/totalSuccLogin)*100).toFixed(1) : '0';
+        const gStart = oauthTotals.google.started;
+        const gSuccessRate = gStart > 0 ? ((gSucc/gStart)*100).toFixed(1) : '0';
+        const gErr = oauthTotals.google.error;
+
+        document.getElementById('bhAqOauthKpis').innerHTML = `
+            ${createKpiCard('% Google share', googleShare+'%')}
+            ${createKpiCard('Logins Google', fmt(gSucc))}
+            ${createKpiCard('Logins Email', fmt(eSucc))}
+            ${createKpiCard('Google success rate', gSuccessRate+'%')}
+            ${createKpiCard('Google clicks (started)', fmt(gStart))}
+            ${createKpiCard('Google errors', fmt(gErr))}
+        `;
+
+        // Daily logins por metodo (success only, stacked)
+        const oauthSuccessByDay = {};
+        fOauthLogin.filter(r=>r.action==='success').forEach(r => {
+            if (!oauthSuccessByDay[r.day]) oauthSuccessByDay[r.day] = {day:r.day, google:0, email:0, other:0};
+            oauthSuccessByDay[r.day][oauthMethodKey(r.method)] += (r.cnt||0);
+        });
+        const oauthSuccessDaily = Object.values(oauthSuccessByDay).sort((a,b)=>a.day.localeCompare(b.day));
+        const oauthDailyPrep = prepareTimeSeries(oauthSuccessDaily, f, ['google','email','other']);
+        destroyChart('bhAqOauthDailyChart');
+        charts.bhAqOauthDailyChart = new Chart(document.getElementById('bhAqOauthDailyChart'), {
+            type:'bar',
+            data:{labels:oauthDailyPrep.labels, datasets:[
+                {label:'Google',data:oauthDailyPrep.data.map(d=>d.google||0),backgroundColor:'#4285f4'},
+                {label:'Email',data:oauthDailyPrep.data.map(d=>d.email||0),backgroundColor:'#94a3b8'}
+            ]},
+            options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+        });
+
+        // % Google share diario
+        const shareDailyValues = oauthDailyPrep.data.map(d => { const tot=(d.google||0)+(d.email||0); return tot>0 ? Math.round((d.google||0)/tot*1000)/10 : 0; });
+        destroyChart('bhAqOauthShareChart');
+        charts.bhAqOauthShareChart = new Chart(document.getElementById('bhAqOauthShareChart'), {
+            type:'line',
+            data:{labels:oauthDailyPrep.labels, datasets:[
+                {label:'% Google',data:shareDailyValues,borderColor:'#4285f4',backgroundColor:'rgba(66,133,244,0.15)',fill:true,borderWidth:2,pointRadius:2,tension:0.4}
+            ]},
+            options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'% Google: '+ctx.parsed.y.toFixed(1)+'%'}}},scales:{y:{beginAtZero:true,max:100,grid:{color:'#f1f5f9'},ticks:{callback:v=>v+'%'}}}}
+        });
+
+        // Google funnel (started -> success / error)
+        barChart('bhAqOauthFunnelChart', ['Started','Success','Error'], [
+            {label:'Google',data:[gStart,gSucc,gErr],backgroundColor:['#4285f4','#22c55e','#ef4444']}
+        ]);
+
+        // Profile type por metodo
+        const profileAgg = {};
+        fOauthProfile.forEach(r => {
+            const m = oauthMethodKey(r.method);
+            if (m === 'other') return;
+            if (!profileAgg[r.profile_type]) profileAgg[r.profile_type] = {google:0, email:0};
+            profileAgg[r.profile_type][m] = (profileAgg[r.profile_type][m]||0) + (r.cnt||0);
+        });
+        const profileLabels = Object.keys(profileAgg).sort((a,b)=> ((profileAgg[b].google+profileAgg[b].email) - (profileAgg[a].google+profileAgg[a].email)));
+        if (profileLabels.length > 0) {
+            destroyChart('bhAqOauthProfileChart');
+            charts.bhAqOauthProfileChart = new Chart(document.getElementById('bhAqOauthProfileChart'), {
+                type:'bar',
+                data:{labels:profileLabels, datasets:[
+                    {label:'Google',data:profileLabels.map(l=>profileAgg[l].google||0),backgroundColor:'#4285f4'},
+                    {label:'Email',data:profileLabels.map(l=>profileAgg[l].email||0),backgroundColor:'#94a3b8'}
+                ]},
+                options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}},y:{stacked:true}}}
+            });
+        } else {
+            document.getElementById('bhAqOauthProfileChart').closest('.chart-container').innerHTML = '<div class="chart-title">Profile type por metodo</div><p style="color:var(--m);font-size:13px;padding:12px">Sem eventos profile_type_onboarding_complete no periodo. Esse evento dispara apenas na 1a vez por user.</p>';
+        }
+
+        // Novos signups (1o login success por user) por metodo por dia
+        const firstByDay = {};
+        fOauthFirst.forEach(r => {
+            if (!firstByDay[r.day]) firstByDay[r.day] = {day:r.day, google:0, email:0, other:0};
+            firstByDay[r.day][oauthMethodKey(r.method)] = (firstByDay[r.day][oauthMethodKey(r.method)]||0) + (r.cnt||0);
+        });
+        const firstDaily = Object.values(firstByDay).sort((a,b)=>a.day.localeCompare(b.day));
+        const firstPrep = prepareTimeSeries(firstDaily, f, ['google','email','other']);
+        destroyChart('bhAqOauthSignupsChart');
+        charts.bhAqOauthSignupsChart = new Chart(document.getElementById('bhAqOauthSignupsChart'), {
+            type:'bar',
+            data:{labels:firstPrep.labels, datasets:[
+                {label:'Google (1o login)',data:firstPrep.data.map(d=>d.google||0),backgroundColor:'#4285f4'},
+                {label:'Email (1o login)',data:firstPrep.data.map(d=>d.email||0),backgroundColor:'#94a3b8'}
+            ]},
+            options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+        });
 
         // ===== Campanhas UTM =====
         const utmSummary = bh.usage_utm_summary || [];

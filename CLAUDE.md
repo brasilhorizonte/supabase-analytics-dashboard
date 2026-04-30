@@ -51,7 +51,23 @@ supabase/
     20260425_iacoes_macro_beta_paywall_v2.sql # Macro Beta + Paywall v2 + CVM v2 + lifetime feature usage
     20260427_bh_usage_events_utm.sql        # NEW RPC get_analytics_data_bh_utm() — UTM attribution + 50OFF campaign
     20260430_iacoes_daily_breakdowns.sql    # NEW RPC get_analytics_data_iacoes_daily() — 8 daily breakdowns p/ filtro temporal
+    20260501_bh_oauth_metrics.sql           # NEW RPC get_analytics_data_bh_oauth() — Google OAuth adoption (auth_login + profile_type)
 ```
+
+## Google OAuth Adoption (2026-05-01)
+
+Tracking de adocao do login via Google OAuth (habilitado em 2026-04-30, commits 27f19c7 + 690c9ae no projeto BH).
+
+- **Eventos novos em `usage_events`** (gravados pelo client BH via `trackUsageEvent()`):
+  - `event_name='auth_login'` com `action IN ('started','success','error')` e `properties->>'method' IN ('google','email')`
+  - `event_name='profile_type_onboarding_complete'` com `action='success'`, `properties->>'method'` e `properties->>'profile_type'` (so dispara na 1a vez por user — proxy de novo signup OAuth)
+  - Google OAuth NAO dispara `auth_signup_complete` (Supabase trata signup-via-OAuth como login normal). Pra contar "novos signups Google" use `oauth_first_login_daily` (1o `auth_login success` por user).
+- **Nova RPC** `get_analytics_data_bh_oauth()` (additive — nao toca em `get_analytics_data` ou outras). Retorna 3 secoes daily:
+  - `oauth_login_daily` — (day, method, action, cnt) — pivote no frontend pra: % Google share, success rate, funnel started→success/error, daily stacked
+  - `oauth_first_login_daily` — (day, method, cnt) — proxy de novos signups por metodo
+  - `oauth_profile_type_daily` — (day, method, profile_type, cnt) — segmentacao Google vs email por tipo de perfil
+- **Edge function**: `analytics-dashboard/index.ts` adicionou um 9o `fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_oauth")` no `Promise.all` e merge no `bhMerged`.
+- **Frontend** (`index.html`, `renderBhAquisicao`): novo bloco "Metodos de Login (Google OAuth)" entre o funil de conversao e a secao UTM. Inclui 6 KPIs (% share, totais por metodo, success rate, errors), stacked daily Google vs Email, % Google share diario (linha), Google funnel (started/success/error), profile_type por metodo, novos signups diarios por metodo.
 
 ## Landing iAcoes — Daily Breakdowns (2026-04-30)
 
