@@ -428,7 +428,7 @@
     }
 
     const PROXY_COLORS = { 'gemini': '#3ecf8e', 'anthropic': '#f59e0b', 'gemini-market': '#6366f1' };
-    const isAiToken = d => !['brapi','partnr-news'].includes(d.proxy_name) && (d.model_name ? d.model_name !== 'unknown' : true);
+    const isAiToken = d => !['brapi','partnr-news'].includes(d.proxy_name || d.source) && (d.model_name ? d.model_name !== 'unknown' : true);
 
     // Helpers
     function fmt(n) { if (n >= 1e9) return (n/1e9).toFixed(1)+"B"; if (n >= 1e6) return (n/1e6).toFixed(1)+"M"; if (n >= 1e3) return (n/1e3).toFixed(1)+"K"; return n.toString(); }
@@ -542,12 +542,13 @@
     function filterDays(days, f) { return days.filter(day => { if(f.from && day < f.from) return false; if(f.to && day > f.to) return false; return true; }); }
     function dayLabel(d) { const p=d.split('-'); return p[2]+'/'+p[1]; }
 
-    /** Filter snapshot data (arrays with a date field) by globalFilters date range */
+    /** Filter snapshot data (arrays with a date field) by globalFilters date range.
+     *  Rows with missing dateField are excluded (defensive: any RPC sem `day` populado vira regressao silenciosa, nao inflacao). */
     function filterSnapshot(data, f, dateField='day') {
         if (!data || data.length === 0) return data;
         return data.filter(d => {
             const val = d[dateField];
-            if (!val) return true;
+            if (!val) return false;
             if (f.from && val < f.from) return false;
             if (f.to && val > f.to) return false;
             return true;
@@ -1779,7 +1780,7 @@
         const lifetimeSummary = bh.lifetime_feature_usage_summary || [];
         const lifetimeTopUsers = bh.lifetime_feature_top_users || [];
         if (!showEmptyIfNeeded('bhEngLifetimeFeatureChart', lifetimeSummary, 'Sem uso lifetime registrado')) {
-            const FEATURE_LABELS = {valuai:'ValuAI',qualitativo:'Qualitativo',validador:'Validador',macro:'Macro Beta'};
+            const FEATURE_LABELS = {valuai:'ValuAI',qualitativo:'Qualitativo',validador:'Validador',macro_beta:'Macro Beta',optimizer:'Optimizer',portfolio_ianalise:'Portfolio iAnalise',portfolio_backtest:'Portfolio Backtest',portfolio_macro_verdict:'Portfolio Macro Verdict'};
             barChart('bhEngLifetimeFeatureChart',
                 lifetimeSummary.map(d=>FEATURE_LABELS[d.feature]||d.feature),
                 [
@@ -2412,10 +2413,18 @@
     // ===== HTA TABS =====
     function renderHtaVisao() {
         const hta = dashboardData.hta; const f = globalFilters;
-        const hta24 = hta.last_24h || {};
+        const hta24Raw = hta.last_24h || {};
+        const srvLast24 = hta.server_token_last_24h || {};
+        // Tokens em proxy_daily_usage pararam ~07/abr/26; server_token_last_24h e a fonte real.
+        // Mantem hta24Raw para sessions/tasks/logins (terminal_events) que continuam corretos.
+        const hta24 = { ...hta24Raw,
+            requests: Number(srvLast24.requests) || Number(hta24Raw.requests) || 0,
+            input_tokens: Number(srvLast24.prompt_tokens) || Number(hta24Raw.input_tokens || hta24Raw.prompt_tokens) || 0,
+            output_tokens: Number(srvLast24.completion_tokens) || Number(hta24Raw.output_tokens || hta24Raw.completion_tokens) || 0,
+        };
         const terminalDaily = hta.terminal_daily || [];
         const loginDaily = hta.login_daily || [];
-        const todaySummary = (hta.token_usage_summary||[]).filter(isAiToken);
+        const todaySummary = (hta.server_token_summary||[]).filter(isAiToken);
         const hta24Cost = computeTodayCost(hta24, todaySummary);
 
         buildHTML('htaVisao', `
@@ -2707,13 +2716,32 @@
 
     function renderHtaCustos() {
         const hta = dashboardData.hta; const f = globalFilters;
-        // Normalize field names: API returns proxy_name/prompt_tokens/completion_tokens
-        // but frontend expects model_name/input_tokens/output_tokens
-        const normalizeToken = d => ({...d, model_name: d.model_name || d.proxy_name, input_tokens: d.input_tokens ?? d.prompt_tokens, output_tokens: d.output_tokens ?? d.completion_tokens});
+        // Normalize field names: aceita schema antigo (proxy_daily_usage: proxy_name + prompt/completion)
+        // e novo (server_token_*: source + prompt/completion). Frontend usa model_name/input/output.
+        const normalizeToken = d => ({...d,
+            model_name: d.model_name || d.proxy_name || d.source,
+            proxy_name: d.proxy_name || d.source,
+            input_tokens: d.input_tokens ?? d.prompt_tokens,
+            output_tokens: d.output_tokens ?? d.completion_tokens,
+        });
         const normalizeUserToken = d => ({...d, model_name: d.model_name || d.proxy_name, total_input_tokens: d.total_input_tokens ?? d.total_prompt_tokens, total_output_tokens: d.total_output_tokens ?? d.total_completion_tokens});
-        const tokenDaily = (hta.token_usage_daily||[]).map(normalizeToken).filter(isAiToken);
-        const tokenSummary = (hta.token_usage_summary||[]).map(normalizeToken).filter(isAiToken);
+        // Fonte migrada 2026-05-03: server_token_daily/summary substitui token_usage_daily/summary
+        // (proxy_daily_usage parou de receber writes em ~07/abr/26; gemini-proxy v442 grava em server_token_usage via track_server_tokens).
+        // Filtra is_backfill (historico reprocessado, nao consumo real) — backfill aparece em "Tokens Backend".
+        // token_usage_by_user mantido como historico ate ~07/abr (server_token_usage nao tem user_id).
+        const tokenDaily = (hta.server_token_daily||[]).filter(d => !d.is_backfill).map(normalizeToken).filter(isAiToken);
+        const tokenSummary = (hta.server_token_summary||[]).filter(d => !d.is_backfill).map(normalizeToken).filter(isAiToken);
         const tokenByUser = (hta.token_usage_by_user||[]).map(normalizeUserToken).filter(isAiToken);
+
+        // Banner defensivo: se houve agent activity recente mas zero tokens, tracking quebrou.
+        // Janela 7d (resiliente a fim de semana). Detecta regressao na pipeline server-side.
+        const _windowStart = new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+        const _agentTasks7d = (hta.terminal_daily||[]).filter(d => d.day >= _windowStart).reduce((s,d) => s + (Number(d.tasks)||0), 0);
+        const _tokens7d = (hta.server_token_daily||[]).filter(d => !d.is_backfill && d.day >= _windowStart).reduce((s,d) => s + (Number(d.total_tokens)||0), 0);
+        const trackingBrokenBanner = (_agentTasks7d > 0 && _tokens7d === 0)
+            ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:12px 16px;margin-bottom:16px;color:#991b1b;font-size:13px;"><strong>⚠️ Tracking de IA aparenta estar parado.</strong> Detectados ${fmt(_agentTasks7d)} eventos do agente nos ultimos 7 dias, mas zero tokens em <code>server_token_usage</code>. Verifique se as Edge Functions de proxy continuam chamando <code>track_server_tokens</code>.</div>`
+            : '';
+
         const questionsByUser = hta.questions_by_user || [];
         const questionsMap = {}; questionsByUser.forEach(q=>{questionsMap[q.email]=Number(q.total_questions)||0;});
         const tokenStats = hta.token_stats || {};
@@ -2739,6 +2767,7 @@
         const costPerUser = uniqueUsers > 0 ? totalCost / uniqueUsers : 0;
 
         buildHTML('htaCustos', `
+            ${trackingBrokenBanner}
             <div class="kpi-grid" id="htaCustosTokenKpis"></div>
             <div class="charts-grid">
                 ${canvasHTML('htaCTokensDailyChart','Tokens por Dia')}
@@ -3495,12 +3524,29 @@
 
     async function fetchAnalytics() {
         try {
-            const response = await fetch(API_ENDPOINT, { method: 'GET', headers: { 'Authorization': `Bearer ${currentToken}` } });
+            const params = new URLSearchParams();
+            if (globalFilters.from) params.set('from', `${globalFilters.from}T00:00:00.000Z`);
+            if (globalFilters.to)   params.set('to',   `${globalFilters.to}T23:59:59.999Z`);
+            const url = params.toString() ? `${API_ENDPOINT}?${params}` : API_ENDPOINT;
+            const response = await fetch(url, { method: 'GET', headers: { 'Authorization': `Bearer ${currentToken}` } });
             if (response.status === 401) throw new Error('Sessao expirada. Faca login novamente.');
             if (response.status === 403) throw new Error('Acesso negado. Apenas administradores podem acessar o dashboard.');
             if (!response.ok) throw new Error(`Erro ${response.status} ao buscar dados`);
             return await response.json();
         } catch (error) { console.error('API Error:', error); throw error; }
+    }
+
+    let refetchInFlight = null;
+    async function refetchAndRerender() {
+        if (refetchInFlight) return refetchInFlight;
+        refetchInFlight = (async () => {
+            try {
+                const data = await fetchAnalytics();
+                if (data) { dashboardData = data; window.dashData = data; reRenderTab(currentTab); }
+            } catch (e) { console.error('Refetch error:', e); }
+            finally { refetchInFlight = null; }
+        })();
+        return refetchInFlight;
     }
 
     function applyPreset(days) {
@@ -3509,7 +3555,7 @@
         globalFilters.from = from;
         globalFilters.to = to;
         globalFilters.preset = days.toString();
-        reRenderTab(currentTab);
+        refetchAndRerender();
     }
 
     async function loadDashboard() {
@@ -3594,8 +3640,8 @@
         });
     });
 
-    document.getElementById('globalFrom').addEventListener('change', ()=>{ globalFilters.from = document.getElementById('globalFrom').value; globalFilters.preset = 'custom'; reRenderTab(currentTab); });
-    document.getElementById('globalTo').addEventListener('change', ()=>{ globalFilters.to = document.getElementById('globalTo').value; globalFilters.preset = 'custom'; reRenderTab(currentTab); });
+    document.getElementById('globalFrom').addEventListener('change', ()=>{ globalFilters.from = document.getElementById('globalFrom').value; globalFilters.preset = 'custom'; refetchAndRerender(); });
+    document.getElementById('globalTo').addEventListener('change', ()=>{ globalFilters.to = document.getElementById('globalTo').value; globalFilters.preset = 'custom'; refetchAndRerender(); });
 
     document.getElementById('globalGranToggle').addEventListener('click', (e)=>{
         const btn = e.target.closest('.gran-btn');

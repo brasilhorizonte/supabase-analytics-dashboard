@@ -32,14 +32,23 @@ async function verifyAdmin(token: string): Promise<{ ok: boolean; email?: string
   return { ok: roles.length > 0, email: user.email };
 }
 
-async function fetchRpc(url: string, key: string, fn: string) {
+async function fetchRpc(url: string, key: string, fn: string, body: Record<string, unknown> = {}) {
   const res = await fetch(`${url}/rest/v1/rpc/${fn}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: key, Authorization: `Bearer ${key}` },
-    body: "{}",
+    body: JSON.stringify(body),
   });
   if (!res.ok) return null;
   return await res.json();
+}
+
+function parseTimeWindow(req: Request): { from: string; to: string } {
+  const url = new URL(req.url);
+  const fromParam = url.searchParams.get("from");
+  const toParam = url.searchParams.get("to");
+  const to = toParam ? new Date(toParam) : new Date();
+  const from = fromParam ? new Date(fromParam) : new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+  return { from: from.toISOString(), to: to.toISOString() };
 }
 
 Deno.serve(async (req: Request) => {
@@ -68,14 +77,16 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Fetch analytics data from both projects + notification analytics + BH extras + UTM + iAcoes daily + OAuth metrics
+    const { from, to } = parseTimeWindow(req);
+
+    // Fetch analytics data from both projects + notification analytics + BH extras (v2 with admin filter + period) + UTM + iAcoes daily + OAuth metrics
     const [bh, hta, bhGeo, htaGeo, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhOauth] = await Promise.all([
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data"),
       fetchRpc(HTA_URL, HTA_KEY, "get_analytics_data"),
       fetchRpc(BH_URL, BH_ANON, "get_geo_profiles"),
       fetchRpc(HTA_URL, HTA_KEY, "get_geo_profiles"),
       fetchRpc(BH_URL, BH_ANON, "get_notification_analytics"),
-      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_extras"),
+      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_extras_v2", { p_from: from, p_to: to }),
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_utm"),
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_iacoes_daily"),
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_oauth"),
@@ -84,7 +95,7 @@ Deno.serve(async (req: Request) => {
     // Merge BH data: base + notification analytics + extras + utm + iacoes daily + oauth (latest wins on conflict)
     const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}), ...(bhUtm || {}), ...(bhIacoesDaily || {}), ...(bhOauth || {}) };
 
-    return new Response(JSON.stringify({ admin: email, bh: bhMerged, hta, geo: { bh: bhGeo || [], hta: htaGeo || [] }, ts: new Date().toISOString() }), {
+    return new Response(JSON.stringify({ admin: email, bh: bhMerged, hta, geo: { bh: bhGeo || [], hta: htaGeo || [] }, window: { from, to }, ts: new Date().toISOString() }), {
       headers: {
         ...CORS,
         "Content-Type": "application/json",

@@ -52,7 +52,25 @@ supabase/
     20260427_bh_usage_events_utm.sql        # NEW RPC get_analytics_data_bh_utm() — UTM attribution + 50OFF campaign
     20260430_iacoes_daily_breakdowns.sql    # NEW RPC get_analytics_data_iacoes_daily() — 8 daily breakdowns p/ filtro temporal
     20260501_bh_oauth_metrics.sql           # NEW RPC get_analytics_data_bh_oauth() — Google OAuth adoption (auth_login + profile_type)
+    20260503_bh_engagement_v2_admin_filter.sql # View usage_events_clean + RPC get_analytics_data_bh_extras_v2(p_from, p_to) — admin filter, period window, lifetime fix
 ```
+
+## BH Engagement v2 — Admin Filter + Period Window (2026-05-03)
+
+Reformulação das metricas de engajamento BH para corrigir 3 problemas: (1) `lifetime_feature_top_users` lia da tabela `lifetime_feature_usage` que era populada inconsistentemente pelo app (apenas 5 de 13 users de Macro Beta apareciam); (2) os 3 admins inflavam todas as KPIs (gabriel.dantas sozinho responde por ~85% dos eventos `macro_*`); (3) RPC original era all-time, ignorava `globalFilters.from/to`.
+
+- **Nova view** `usage_events_clean` no projeto BH: clone de `usage_events` com LEFT JOIN em `auth.users` excluindo os 3 admins (lucasmello, lucastnm, gabriel.dantas). Usada por todas as queries da v2.
+- **Nova RPC** `get_analytics_data_bh_extras_v2(p_from timestamptz, p_to timestamptz)` — substitui `get_analytics_data_bh_extras()` na Edge Function. Defaults: ultimos 30 dias. Differenças vs v1:
+  - Lê de `usage_events_clean` (sem admins) em vez de `usage_events`.
+  - Aplica `event_ts BETWEEN p_from AND p_to` em todos os blocos com dimensão temporal (KPIs, funnels, daily series). KPIs antes all-time agora respeitam o período.
+  - `lifetime_feature_usage_summary` e `lifetime_feature_top_users` derivam de `usage_events_clean.feature` (column autoritativa) em vez da tabela `lifetime_feature_usage` quebrada.
+  - `macro_beta_overview.unique_users` e `macro_beta_daily.unique_users`: lista explícita de event_names em vez de `LIKE 'macro_%'` (não captura mais eventos futuros não-Macro Beta).
+  - **Dedup**: `cvm_filter_portfolio_apply` removido de `portfolio_activity_daily` (mantém só em `cvm_activity_daily`); `macro_beta_upgrade_click` removido de `paywall_v2_funnel.unique_clicked`.
+  - Inclui campo `meta` no response: `{from, to, admins_excluded, source}`.
+- **Edge function**: `analytics-dashboard/index.ts` agora aceita `?from=ISO&to=ISO`, default ultimos 30 dias, e passa `{p_from, p_to}` no body do `fetchRpc("get_analytics_data_bh_extras_v2")`. Helper `parseTimeWindow(req)` faz o parse. Response inclui `window: {from, to}`.
+- **Frontend** (`index.html`): `fetchAnalytics()` envia `?from&to` baseado em `globalFilters`. Novo helper `refetchAndRerender()` (com guard `refetchInFlight`) é chamado em `applyPreset()` e nos listeners de `globalFrom`/`globalTo` — antes só re-renderizava client-side, agora refetcha do backend. `FEATURE_LABELS` atualizado para `{macro_beta, optimizer, portfolio_ianalise, portfolio_backtest, portfolio_macro_verdict, ...}` — keys agora batem com `feature` column.
+- **v1 preservada**: `get_analytics_data_bh_extras()` continua existindo no DB para backward-compat. Edge Function não chama mais.
+- **Não migrado nesta fase** (RPCs ainda all-time / sem admin filter): `get_analytics_data` (feature_usage, conversion_funnel, retention_cohorts, ticker_*, user_inactivity, etc.), `get_notification_analytics`, `get_analytics_data_bh_utm`, `get_analytics_data_bh_oauth`, `get_analytics_data_iacoes_daily`. Próxima fase.
 
 ## Google OAuth Adoption (2026-05-01)
 
@@ -199,9 +217,12 @@ Edge Function faz merge de 3 RPCs no BH: `get_analytics_data` (base), `get_notif
 - `login_daily`: logins e usuarios unicos por dia
 - `top_tickers_searched`: tickers mais buscados no terminal
 - `table_sizes`: tamanhos e rows das tabelas publicas
-- `token_usage_daily`: tokens por dia/modelo IA (exclui brapi/partnr-news, agrupa por model_name)
-- `token_usage_summary`: totais por modelo IA
-- `token_usage_by_user`: consumo por usuario/modelo IA
+- `token_usage_daily`: **LEGADO** (proxy_daily_usage parou em 07/abr/26). Frontend agora usa `server_token_daily`.
+- `token_usage_summary`: **LEGADO** — frontend agora usa `server_token_summary`.
+- `token_usage_by_user`: **LEGADO/HISTORICO** ate 07/abr/26 — server_token_usage nao tem user_id.
+- `server_token_daily`: tokens por dia/source/model (de `server_token_usage`, com `is_backfill` flag)
+- `server_token_summary`: agregados por source/model
+- `server_token_last_24h`: tokens consumidos hoje (substitui `last_24h.{requests,prompt,completion}_tokens`)
 - `token_stats`: metricas agregadas de queries IA (total, com token_count, media)
 - `token_by_mode`: breakdown por response_mode (deep/fast/pro)
 - `top_queries_by_token`: top 20 queries mais caras em tokens
@@ -250,8 +271,13 @@ URL: `https://llqhmywodxzstjlrulcw.supabase.co/storage/v1/object/public/dashboar
 - **Supabase Storage pode nao renderizar HTML**: Dependendo da configuracao, o Storage pode forcar download ao inves de renderizar. GitHub Pages e mais confiavel para hospedar o frontend.
 - **Cross-project data**: A Edge Function usa anon key do BH e service role key do HTA. Se as keys mudarem, atualizar no codigo.
 - **RPC functions**: Criadas com `SECURITY DEFINER` e precisam de `GRANT EXECUTE` para anon/authenticated/service_role.
-- **Token tracking server-side**: O `gemini-proxy` (v256+) faz tracking completo server-side: `check_proxy_rate_limit` (request counting + rate limit 500/dia) e `increment_proxy_tokens` (tokens com model_name correto). As metricas de tokens excluem proxies nao-IA (brapi, partnr-news) tanto na RPC (`WHERE proxy_name NOT IN (...)`) quanto no frontend (`isAiToken` filter). A RPC usa `COALESCE(NULLIF(nova_coluna, 0), coluna_antiga)` para fallback transparente.
-- **Error metrics**: A tabela `proxy_error_log` so recebe dados quando os proxies IA (gemini, anthropic, gemini-market) encontram erros upstream. A secao "Erros de API" no dashboard mostra "Nenhum erro registrado" ate que erros reais ocorram.
+- **Token tracking server-side (estado real em 2026-05-03)**: A pipeline migrou de `proxy_daily_usage`+`increment_proxy_tokens` para a tabela `server_token_usage`+RPC `track_server_tokens(p_source, p_model_name, p_prompt_tokens, p_completion_tokens, p_thoughts_tokens, p_total_tokens)`. A nova tabela **nao tem `user_id`** — agregada por `(usage_date, source, model_name, is_backfill)`. Estado por proxy:
+  - `gemini-proxy` v442: chama `track_server_tokens` ✅; **nao chama `check_proxy_rate_limit`** ❌ (rate limit ausente — gap de defesa em profundidade); nao chama `log_proxy_error` ❌
+  - `anthropic-proxy` v408: chama `check_proxy_rate_limit` (50/dia, fail-closed) ✅; **nao persiste tokens** ❌ (tokens de Claude perdidos); nao chama `log_proxy_error` ❌
+  - `gemini-market-proxy` v369: chama ambos `check_proxy_rate_limit` (100/dia, fail-open) ✅ e `track_server_tokens` ✅; nao chama `log_proxy_error` ❌
+  - Frontend `isAiToken` filtra `(proxy_name||source) NOT IN ('brapi','partnr-news')` e `model_name != 'unknown'`.
+- **`token_usage_*` keys (legacy)**: continuam expostos pela RPC mas lendo de `proxy_daily_usage` que esta abandonado desde 07/abr/26. Frontend nao consome mais (exceto `token_usage_by_user` para historico per-user).
+- **Error metrics**: tabela `proxy_error_log` permanece com **0 rows** porque nenhum dos 3 proxies chama `log_proxy_error()`. A secao "Erros de API" mostra "Nenhum erro registrado" — nao por falta de erros, mas por falta de write-path. RPC `log_proxy_error()` existe e funciona; falta o caller.
 
 ## Comandos Uteis
 
