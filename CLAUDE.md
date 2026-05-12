@@ -55,6 +55,35 @@ supabase/
     20260503_bh_engagement_v2_admin_filter.sql # View usage_events_clean + RPC get_analytics_data_bh_extras_v2(p_from, p_to) — admin filter, period window, lifetime fix
 ```
 
+## Airton Analytics (2026-05-12)
+
+Nova sub-aba "Airton" no grupo iAcoes (entre Engajamento e Retencao) com tracking completo do chat conversacional Airton (lancado no app iAcoes em `/Users/gdamelo/dashbrasilhorizonte`) — incluindo canal Telegram via `@IAnalistaBH_bot`.
+
+- **Fontes de dados** (todas no projeto BH):
+  - `usage_events` (event_name `companion_*`): eventos web emitidos por `useCompanion.ts` e `CompanionChat.tsx` — `companion_opened`, `companion_session_closed`, `companion_first_user_message`, `companion_message_sent` (success/error), `companion_tool_call` (success/empty/error com `tool_name` em properties), `companion_tool_called`, `companion_telegram_cta_clicked`/`_dismissed`
+  - `usage_events` (event_name `gemini_token_usage`, `action=companion`): tokens logados pela Edge Function `gemini-ai` no projeto BH (`logGeminiTokenUsage` em `gemini-ai/index.ts:3560`) — properties contem `model_used`, `input_tokens`, `cached_tokens`, `output_tokens`, `thoughts_tokens`, `total_tokens`, `tool_calls_used`, `finish_reason`. **Diferente do HTA**, que usa `server_token_usage`.
+  - `companion_messages` (com `source` text `web`/`telegram`/`system`): unica fonte das mensagens via Telegram, ja que o `companion-telegram-receiver` nao emite `usage_events`
+  - `companion_threads` (com `last_user_source` `web`/`telegram`): stats de threads
+- **Nova RPC** `get_analytics_data_airton_v2(p_from timestamptz, p_to timestamptz)` (migration `20260512_airton_analytics.sql`). Defaults: ultimos 30 dias. Aplica filtro de admin via `usage_events_clean` (para usage_events) e JOIN `auth.users` (para companion_messages/threads). Retorna 14 secoes:
+  - `airton_overview`: KPIs agregados (total/success/error msgs, error_rate, unique_users, sessions opened/closed, first_messages, tool_calls, requests_with_tokens, input/cached/output/thoughts/total tokens, telegram_users/messages/share_pct)
+  - `airton_daily`: serie diaria — messages_success/error, tool_calls, first_messages, sessions_opened, unique_users
+  - `airton_funnel`: usuarios unicos por etapa (opened -> first_message -> tool_called -> message_sent -> session_closed + abandoned_at_greeting)
+  - `airton_token_daily`: tokens por dia x model_used
+  - `airton_token_summary`: tokens por model_used + avg_total_per_request
+  - `airton_token_last_24h`: snapshot 24h
+  - `airton_context_top`: top 30 combinacoes section/tab/ticker
+  - `airton_tool_top`: top 20 tools por nome (de `properties.tool_name` em `companion_tool_call`) com success/empty/errors/unique_users
+  - `airton_tool_calls_daily`: tool calls por dia (success/empty/errors)
+  - `airton_threads_overview`: threads_created, threads_active, avg_messages_per_thread, threads_last_source_web/telegram
+  - `airton_telegram_overview`: tg_unique_users, tg_user/model_messages, tg_threads_active, users_tg_only / web_only / web_and_tg
+  - `airton_telegram_daily`: mensagens TG por dia
+  - `airton_telegram_cta_funnel`: cta_clicked/dismissed + unique_clickers
+  - `airton_errors_recent`: erros por dia + top error_code
+  - `meta`: `{from, to, admins_excluded: 3, source}`
+- **Edge function**: `analytics-dashboard/index.ts` agora chama 10 RPCs em paralelo (10º = `get_analytics_data_airton_v2`); merge em `bhMerged`.
+- **Frontend** (`index.html`): nova funcao `renderBhAirton()` com Hero KPIs (8 cards incluindo custo USD estimado client-side), atividade diaria, funil, bloco de tokens (4 KPIs + daily stacked por modelo + requests por modelo + tabela com custo por modelo), top tools, top contextos, threads, bloco "Airton via Telegram" (7 KPIs + daily + CTA chart) e erros recentes. Mini-secao "Companion (IAnalista)" antiga em `renderBhEngajamento` removida — dados consolidados na nova aba.
+- **NAO migrado nesta fase**: `get_analytics_data.companion_messages_daily` (v1, all-time, inclui admins) continua existindo na RPC base mas nao e mais consumido pelo frontend.
+
 ## BH Engagement v2 — Admin Filter + Period Window (2026-05-03)
 
 Reformulação das metricas de engajamento BH para corrigir 3 problemas: (1) `lifetime_feature_top_users` lia da tabela `lifetime_feature_usage` que era populada inconsistentemente pelo app (apenas 5 de 13 users de Macro Beta apareciam); (2) os 3 admins inflavam todas as KPIs (gabriel.dantas sozinho responde por ~85% dos eventos `macro_*`); (3) RPC original era all-time, ignorava `globalFilters.from/to`.

@@ -262,6 +262,7 @@
                         <div class="sidebar-sub-item active" data-tab="bhVisao">Visao Geral</div>
                         <div class="sidebar-sub-item" data-tab="bhAquisicao">Aquisicao</div>
                         <div class="sidebar-sub-item" data-tab="bhEngajamento">Engajamento</div>
+                        <div class="sidebar-sub-item" data-tab="bhAirton">Airton</div>
                         <div class="sidebar-sub-item" data-tab="bhRetencao">Retencao</div>
                         <div class="sidebar-sub-item" data-tab="bhCustos">Receita & Assinaturas</div>
                         <div class="sidebar-sub-item" data-tab="bhDetalhes">Detalhes</div>
@@ -319,6 +320,7 @@
                 <div class="tab-content show" id="bhVisao"></div>
                 <div class="tab-content" id="bhAquisicao"></div>
                 <div class="tab-content" id="bhEngajamento"></div>
+                <div class="tab-content" id="bhAirton"></div>
                 <div class="tab-content" id="bhRetencao"></div>
                 <div class="tab-content" id="bhCustos"></div>
                 <div class="tab-content" id="bhDetalhes"></div>
@@ -370,7 +372,7 @@
 
     const TAB_TITLES = {
         bhVisao: 'iAcoes - Visao Geral', bhAquisicao: 'iAcoes - Aquisicao', bhEngajamento: 'iAcoes - Engajamento',
-        bhRetencao: 'iAcoes - Retencao', bhCustos: 'iAcoes - Receita & Assinaturas', bhDetalhes: 'iAcoes - Detalhes',
+        bhAirton: 'iAcoes - Airton', bhRetencao: 'iAcoes - Retencao', bhCustos: 'iAcoes - Receita & Assinaturas', bhDetalhes: 'iAcoes - Detalhes',
         htaVisao: 'HTA - Visao Geral', htaAquisicao: 'HTA - Aquisicao', htaEngajamento: 'HTA - Engajamento',
         htaRetencao: 'HTA - Retencao', htaCustos: 'HTA - Custos', htaDetalhes: 'HTA - Detalhes',
         iacoes: 'iAcoes - Landing'
@@ -1390,13 +1392,6 @@
             </div>
 
             <div class="section-block">
-                ${createSectionHeader('Companion (IAnalista)', 'Mensagens enviadas ao chat companion.')}
-                <div class="charts-grid">
-                    ${canvasHTML('bhEngCompanionDailyChart','Mensagens Companion (diario)')}
-                </div>
-            </div>
-
-            <div class="section-block">
                 ${createSectionHeader('Lifetime feature usage', 'Consumo lifetime de features gated (valuai, qualitativo, validador, macro). Base para limites do plano free.')}
                 <div class="charts-grid">
                     ${canvasHTML('bhEngLifetimeFeatureChart','Usos por Feature (total)')}
@@ -1766,16 +1761,6 @@
             });
         }
 
-        // ===== Companion messages =====
-        const companionDaily = bh.companion_messages_daily || [];
-        const companionFiltered = filterSnapshot(companionDaily, f);
-        if (!showEmptyIfNeeded('bhEngCompanionDailyChart', companionFiltered, 'Sem mensagens Companion no periodo', 'Evento companion_message_sent.')) {
-            lineChart('bhEngCompanionDailyChart', companionFiltered.map(d=>dayLabel(d.day)), [
-                {label:'Mensagens',data:companionFiltered.map(d=>d.messages||0),borderColor:'#8b5cf6',backgroundColor:'rgba(139,92,246,0.1)',fill:true,pointBackgroundColor:'#8b5cf6'},
-                {label:'Usuarios unicos',data:companionFiltered.map(d=>d.unique_users||0),borderColor:'#3ecf8e',fill:false}
-            ]);
-        }
-
         // ===== Lifetime feature usage =====
         const lifetimeSummary = bh.lifetime_feature_usage_summary || [];
         const lifetimeTopUsers = bh.lifetime_feature_top_users || [];
@@ -1832,6 +1817,274 @@
         if (!showEmptyIfNeeded('bhEngTabUsageChart', tabUsage, 'Sem tab views registradas')) {
             const top = tabUsage.slice(0,15);
             barChart('bhEngTabUsageChart', top.map(t=>`${t.feature}/${t.tab}`), [{label:'Views',data:top.map(t=>t.views||0),backgroundColor:'#6366f1'}], {horizontal:true});
+        }
+    }
+
+    function renderBhAirton() {
+        const bh = dashboardData.bh; const f = globalFilters;
+        const ov = bh.airton_overview || {};
+        const daily = filterSnapshot(bh.airton_daily || [], f);
+        const funnel = bh.airton_funnel || {};
+        const tokenDaily = filterSnapshot(bh.airton_token_daily || [], f);
+        const tokenSummary = bh.airton_token_summary || [];
+        const tokenLast24h = bh.airton_token_last_24h || {};
+        const ctxTop = bh.airton_context_top || [];
+        const toolTop = bh.airton_tool_top || [];
+        const toolDaily = filterSnapshot(bh.airton_tool_calls_daily || [], f);
+        const threads = bh.airton_threads_overview || {};
+        const tgOv = bh.airton_telegram_overview || {};
+        const tgDaily = filterSnapshot(bh.airton_telegram_daily || [], f);
+        const tgCta = bh.airton_telegram_cta_funnel || {};
+        const errorsRecent = bh.airton_errors_recent || [];
+
+        // Custo total estimado (USD) usando TOKEN_PRICING client-side
+        let estCost = 0;
+        tokenSummary.forEach(s => {
+            estCost += calcTokenCost(s.model_used, s.input_tokens||0, s.output_tokens||0, s.thoughts_tokens||0);
+        });
+
+        buildHTML('bhAirton', `
+            <div class="kpi-grid" id="bhAirtonHeroKpis"></div>
+
+            <div class="section-block">
+                ${createSectionHeader('Atividade diaria', 'Mensagens enviadas, sessoes abertas, tool calls e usuarios unicos por dia. Fonte: usage_events (companion_*) sem admins.')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhAirtonDailyChart','Mensagens & sessoes (diario)')}
+                    ${canvasHTML('bhAirtonToolCallsDailyChart','Tool calls (diario)')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Funil de engajamento', 'Usuarios unicos por etapa. opened -> first_message -> tool_called -> message_sent -> session_closed. abandoned_at_greeting = sessoes fechadas sem nenhum input.')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhAirtonFunnelChart','Funil (usuarios unicos no periodo)')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Tokens & custo (Gemini)', 'Tokens consumidos pelo gemini-ai EF no path companion. Custo estimado client-side via TOKEN_PRICING. Fonte: usage_events.gemini_token_usage com action=companion.')}
+                <div class="kpi-grid-compact" id="bhAirtonTokenKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhAirtonTokenDailyChart','Tokens diarios (stacked por modelo)')}
+                    ${canvasHTML('bhAirtonRequestsDailyChart','Requests diarias por modelo')}
+                </div>
+                <div class="table-container mb-2"><div class="table-title">Por modelo (no periodo)</div><table id="bhAirtonTokenTable"></table></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Tools mais usadas', 'Eventos companion_tool_call agregados por tool_name. success/empty/errors mostram resultado da execucao da tool dentro da sessao.')}
+                <div class="table-container mb-2"><table id="bhAirtonToolTable"></table></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Contextos mais ativos', 'Combinacao section/tab/ticker onde o Airton foi mais usado (de companion_message_sent.properties).')}
+                <div class="table-container mb-2"><table id="bhAirtonContextTable"></table></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Threads', 'Threads de conversa criadas e ativas no periodo. last_user_source indica de qual canal a thread recebeu a ultima mensagem do usuario.')}
+                <div class="kpi-grid-compact" id="bhAirtonThreadKpis"></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Airton via Telegram', 'Mensagens trocadas via @IAnalistaBH_bot. Fonte: companion_messages.source=telegram (Telegram nao emite usage_events). Webhook V3 lancado em 2026-05-11 — pode haver poucos dados nos primeiros dias.')}
+                <div class="kpi-grid" id="bhAirtonTgKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhAirtonTgDailyChart','Mensagens Telegram (diario)')}
+                    ${canvasHTML('bhAirtonTgCtaChart','CTA Telegram (clicked vs dismissed)')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Erros recentes', 'Eventos companion_message_sent action=error agregados por dia.')}
+                <div class="table-container mb-2"><table id="bhAirtonErrorsTable"></table></div>
+            </div>
+        `);
+
+        // ── Hero KPIs ──
+        const totalMsgs = ov.total_messages || 0;
+        const errRate = ov.error_rate || 0;
+        const tgShare = ov.telegram_share_pct || 0;
+        document.getElementById('bhAirtonHeroKpis').innerHTML = [
+            createKpiCardV2('Mensagens', fmt(totalMsgs), { hero:true, hint:`${fmt(ov.messages_success||0)} success / ${fmt(ov.messages_error||0)} error` }),
+            createKpiCardV2('Usuarios unicos', fmt(ov.unique_users||0), { hero:true, hint:'companion_message_sent distinct user_id' }),
+            createKpiCardV2('Tool calls', fmt(ov.tool_calls||0), { hint:'companion_tool_call + companion_tool_called' }),
+            createKpiCardV2('Tokens totais', fmt(ov.total_tokens||0), { hint:`${ov.requests_with_tokens||0} requests com token telemetry` }),
+            createKpiCardV2('Custo estimado', `$${estCost.toFixed(2)}`, { hint:'Client-side via TOKEN_PRICING (Gemini)' }),
+            createKpiCardV2('% via Telegram', `${tgShare.toFixed(1)}%`, { hint:`${fmt(ov.telegram_messages||0)} msgs TG vs ${fmt(ov.messages_success||0)} web` }),
+            createKpiCardV2('Error rate', `${errRate.toFixed(2)}%`, { intent: errRate > 5 ? 'negative' : 'neutral', hint:'Erros / total mensagens' }),
+            createKpiCardV2('Sessoes abertas', fmt(ov.sessions_opened||0), { hint:`${fmt(ov.sessions_closed||0)} fechadas` }),
+        ].join('');
+
+        // ── Daily activity ──
+        if (!showEmptyIfNeeded('bhAirtonDailyChart', daily, 'Sem atividade no periodo', 'Eventos companion_*.')) {
+            lineChart('bhAirtonDailyChart', daily.map(d=>dayLabel(d.day)), [
+                {label:'Mensagens (success)',data:daily.map(d=>d.messages_success||0),borderColor:'#8b5cf6',backgroundColor:'rgba(139,92,246,0.1)',fill:true,pointBackgroundColor:'#8b5cf6'},
+                {label:'Erros',data:daily.map(d=>d.messages_error||0),borderColor:'#ef4444',fill:false},
+                {label:'Sessoes abertas',data:daily.map(d=>d.sessions_opened||0),borderColor:'#3b82f6',fill:false},
+                {label:'Usuarios unicos',data:daily.map(d=>d.unique_users||0),borderColor:'#3ecf8e',fill:false},
+            ]);
+        }
+        if (!showEmptyIfNeeded('bhAirtonToolCallsDailyChart', toolDaily, 'Sem tool calls no periodo')) {
+            barChart('bhAirtonToolCallsDailyChart', toolDaily.map(d=>dayLabel(d.day)), [
+                {label:'Success',data:toolDaily.map(d=>d.success||0),backgroundColor:'#3ecf8e'},
+                {label:'Empty',data:toolDaily.map(d=>d.empty||0),backgroundColor:'#f59e0b'},
+                {label:'Errors',data:toolDaily.map(d=>d.errors||0),backgroundColor:'#ef4444'},
+            ], {scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}});
+        }
+
+        // ── Funnel ──
+        const funnelStages = [
+            {label:'Opened', value:funnel.opened||0},
+            {label:'First message', value:funnel.first_message||0},
+            {label:'Tool called', value:funnel.tool_called||0},
+            {label:'Message sent', value:funnel.message_sent||0},
+            {label:'Session closed', value:funnel.session_closed||0},
+        ];
+        if (!showEmptyIfNeeded('bhAirtonFunnelChart', funnelStages.filter(s=>s.value>0), 'Sem dados de funil')) {
+            barChart('bhAirtonFunnelChart', funnelStages.map(s=>s.label), [
+                {label:'Usuarios unicos',data:funnelStages.map(s=>s.value),backgroundColor:'#6366f1'}
+            ]);
+        }
+
+        // ── Token KPIs ──
+        document.getElementById('bhAirtonTokenKpis').innerHTML = [
+            createKpiCardV2('Input', fmt(ov.input_tokens||0), { hint:'promptTokenCount' }),
+            createKpiCardV2('Cached', fmt(ov.cached_tokens||0), { hint:'cachedContentTokenCount', intent:'positive' }),
+            createKpiCardV2('Output', fmt(ov.output_tokens||0), { hint:'candidatesTokenCount' }),
+            createKpiCardV2('Thoughts', fmt(ov.thoughts_tokens||0), { hint:'thoughtsTokenCount (Gemini 2.5)' }),
+            createKpiCardV2('Ultimas 24h', fmt(tokenLast24h.total_tokens||0), { hint:`${tokenLast24h.requests||0} requests` }),
+        ].join('');
+
+        // ── Token daily stacked por modelo ──
+        const tokenModels = [...new Set(tokenDaily.map(d=>d.model_used))];
+        const tokenDays = [...new Set(tokenDaily.map(d=>d.day))].sort();
+        if (!showEmptyIfNeeded('bhAirtonTokenDailyChart', tokenDaily, 'Sem tokens consumidos no periodo')) {
+            const datasets = tokenModels.map(m => ({
+                label: m,
+                data: tokenDays.map(day => {
+                    const row = tokenDaily.find(d => d.day === day && d.model_used === m);
+                    return row ? (row.total_tokens||0) : 0;
+                }),
+                backgroundColor: MODEL_COLORS[m] || '#94a3b8',
+            }));
+            barChart('bhAirtonTokenDailyChart', tokenDays.map(dayLabel), datasets, {scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}});
+        }
+        if (!showEmptyIfNeeded('bhAirtonRequestsDailyChart', tokenDaily, 'Sem requests no periodo')) {
+            const datasets = tokenModels.map(m => ({
+                label: m,
+                data: tokenDays.map(day => {
+                    const row = tokenDaily.find(d => d.day === day && d.model_used === m);
+                    return row ? (row.requests||0) : 0;
+                }),
+                backgroundColor: MODEL_COLORS[m] || '#94a3b8',
+            }));
+            barChart('bhAirtonRequestsDailyChart', tokenDays.map(dayLabel), datasets, {scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}});
+        }
+
+        // ── Token table by model ──
+        const tokenTable = document.getElementById('bhAirtonTokenTable');
+        if (tokenSummary.length === 0) {
+            tokenTable.innerHTML = '<tr><td>Sem dados de tokens</td></tr>';
+        } else {
+            tokenTable.innerHTML = `
+                <thead><tr><th>Modelo</th><th>Requests</th><th>Input</th><th>Cached</th><th>Output</th><th>Thoughts</th><th>Total</th><th>Avg/req</th><th>Custo USD</th></tr></thead>
+                <tbody>${tokenSummary.map(s => {
+                    const cost = calcTokenCost(s.model_used, s.input_tokens||0, s.output_tokens||0, s.thoughts_tokens||0);
+                    return `<tr>
+                        <td>${(TOKEN_PRICING[s.model_used]||{}).label || s.model_used}</td>
+                        <td>${fmt(s.requests||0)}</td>
+                        <td>${fmt(s.input_tokens||0)}</td>
+                        <td>${fmt(s.cached_tokens||0)}</td>
+                        <td>${fmt(s.output_tokens||0)}</td>
+                        <td>${fmt(s.thoughts_tokens||0)}</td>
+                        <td><strong>${fmt(s.total_tokens||0)}</strong></td>
+                        <td>${fmt(s.avg_total_per_request||0)}</td>
+                        <td>$${cost.toFixed(4)}</td>
+                    </tr>`;
+                }).join('')}</tbody>`;
+        }
+
+        // ── Tool top table ──
+        const toolTable = document.getElementById('bhAirtonToolTable');
+        if (toolTop.length === 0) {
+            toolTable.innerHTML = '<tr><td>Sem tool calls registrados</td></tr>';
+        } else {
+            toolTable.innerHTML = `
+                <thead><tr><th>Tool</th><th>Total</th><th>Success</th><th>Empty</th><th>Errors</th><th>Usuarios</th></tr></thead>
+                <tbody>${toolTop.map(t => `<tr>
+                    <td><code>${t.tool_name||'(unknown)'}</code></td>
+                    <td><strong>${fmt(t.calls||0)}</strong></td>
+                    <td>${fmt(t.success||0)}</td>
+                    <td>${fmt(t.empty||0)}</td>
+                    <td>${fmt(t.errors||0)}</td>
+                    <td>${fmt(t.unique_users||0)}</td>
+                </tr>`).join('')}</tbody>`;
+        }
+
+        // ── Context top table ──
+        const ctxTable = document.getElementById('bhAirtonContextTable');
+        if (ctxTop.length === 0) {
+            ctxTable.innerHTML = '<tr><td>Sem contextos registrados</td></tr>';
+        } else {
+            ctxTable.innerHTML = `
+                <thead><tr><th>Section</th><th>Tab</th><th>Ticker</th><th>Mensagens</th><th>Usuarios</th></tr></thead>
+                <tbody>${ctxTop.map(c => `<tr>
+                    <td>${c.section||'-'}</td>
+                    <td>${c.tab||'-'}</td>
+                    <td>${c.ticker||'-'}</td>
+                    <td><strong>${fmt(c.messages||0)}</strong></td>
+                    <td>${fmt(c.unique_users||0)}</td>
+                </tr>`).join('')}</tbody>`;
+        }
+
+        // ── Threads KPIs ──
+        document.getElementById('bhAirtonThreadKpis').innerHTML = [
+            createKpiCardV2('Threads criadas', fmt(threads.threads_created||0), { hint:'companion_threads.created_at no periodo' }),
+            createKpiCardV2('Threads ativas', fmt(threads.threads_active||0), { hint:'Com pelo menos 1 mensagem no periodo' }),
+            createKpiCardV2('Avg msgs/thread', (threads.avg_messages_per_thread||0).toString(), { hint:'Mensagens (qualquer source) por thread ativa' }),
+            createKpiCardV2('Last source: web', fmt(threads.threads_last_source_web||0), { hint:'Threads cuja ultima mensagem do usuario veio da web' }),
+            createKpiCardV2('Last source: telegram', fmt(threads.threads_last_source_telegram||0), { hint:'Threads cuja ultima mensagem do usuario veio do TG' }),
+        ].join('');
+
+        // ── Telegram KPIs ──
+        document.getElementById('bhAirtonTgKpis').innerHTML = [
+            createKpiCardV2('Usuarios TG', fmt(tgOv.tg_unique_users||0), { hero:true, hint:'Distinct user_id em companion_messages source=telegram' }),
+            createKpiCardV2('Mensagens user', fmt(tgOv.tg_user_messages||0), { hint:'role=user via Telegram' }),
+            createKpiCardV2('Respostas modelo', fmt(tgOv.tg_model_messages||0), { hint:'role=model/assistant via Telegram' }),
+            createKpiCardV2('Threads ativas TG', fmt(tgOv.tg_threads_active||0), { hint:'Threads distintas com mensagens TG' }),
+            createKpiCardV2('TG-only users', fmt(tgOv.users_tg_only||0), { hint:'Nunca usaram via web' }),
+            createKpiCardV2('Web+TG users', fmt(tgOv.users_web_and_tg||0), { hint:'Usam ambos canais', intent:'positive' }),
+            createKpiCardV2('CTA clicks', fmt(tgCta.cta_clicked||0), { hint:`${fmt(tgCta.cta_dismissed||0)} dismisses, ${fmt(tgCta.unique_clickers||0)} unique clickers` }),
+        ].join('');
+
+        // ── Telegram daily ──
+        if (!showEmptyIfNeeded('bhAirtonTgDailyChart', tgDaily, 'Sem mensagens Telegram no periodo', 'Webhook V3 lancado 2026-05-11.')) {
+            barChart('bhAirtonTgDailyChart', tgDaily.map(d=>dayLabel(d.day)), [
+                {label:'Mensagens user',data:tgDaily.map(d=>d.user_messages||0),backgroundColor:'#06b6d4'},
+                {label:'Respostas modelo',data:tgDaily.map(d=>d.model_messages||0),backgroundColor:'#3ecf8e'},
+            ], {scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}});
+        }
+        const tgCtaData = [{label:'Clicked',value:tgCta.cta_clicked||0},{label:'Dismissed',value:tgCta.cta_dismissed||0}];
+        if (!showEmptyIfNeeded('bhAirtonTgCtaChart', tgCtaData.filter(d=>d.value>0), 'Sem CTAs registrados')) {
+            barChart('bhAirtonTgCtaChart', tgCtaData.map(d=>d.label), [
+                {label:'Eventos',data:tgCtaData.map(d=>d.value),backgroundColor:['#3ecf8e','#94a3b8']}
+            ]);
+        }
+
+        // ── Errors recent table ──
+        const errTable = document.getElementById('bhAirtonErrorsTable');
+        if (errorsRecent.length === 0) {
+            errTable.innerHTML = '<tr><td>Nenhum erro registrado no periodo</td></tr>';
+        } else {
+            errTable.innerHTML = `
+                <thead><tr><th>Dia</th><th>Erros</th><th>Usuarios afetados</th><th>Top error_code</th></tr></thead>
+                <tbody>${errorsRecent.map(e => `<tr>
+                    <td>${e.day}</td>
+                    <td><strong>${fmt(e.count||0)}</strong></td>
+                    <td>${fmt(e.unique_users||0)}</td>
+                    <td><code>${e.top_error_code||'(none)'}</code></td>
+                </tr>`).join('')}</tbody>`;
         }
     }
 
@@ -3481,6 +3734,7 @@
         try {
             const renderMap = {
                 bhVisao: renderBhVisao, bhAquisicao: renderBhAquisicao, bhEngajamento: renderBhEngajamento,
+                bhAirton: renderBhAirton,
                 bhRetencao: renderBhRetencao, bhCustos: renderBhCustos, bhDetalhes: renderBhDetalhes,
                 htaVisao: renderHtaVisao, htaAquisicao: renderHtaAquisicao, htaEngajamento: renderHtaEngajamento,
                 htaRetencao: renderHtaRetencao, htaCustos: renderHtaCustos, htaDetalhes: renderHtaDetalhes,
