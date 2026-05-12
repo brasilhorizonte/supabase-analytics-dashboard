@@ -79,17 +79,19 @@ Deno.serve(async (req: Request) => {
 
     const { from, to } = parseTimeWindow(req);
 
-    // Fetch analytics data from both projects + notification analytics + BH extras (v2 with admin filter + period) + UTM + iAcoes daily + OAuth metrics
+    // BH RPCs v2 aceitam janela temporal {p_from, p_to} -- reduz tempo da base
+    // de ~3s (all-time) para ~1.2s em 7d / ~2.4s em 30d. v1 das RPCs sao mantidas
+    // no banco para rollback (drop nao foi feito).
     const [bh, hta, bhGeo, htaGeo, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhOauth] = await Promise.all([
-      fetchRpc(BH_URL, BH_ANON, "get_analytics_data"),
+      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_v2", { p_from: from, p_to: to }),
       fetchRpc(HTA_URL, HTA_KEY, "get_analytics_data"),
       fetchRpc(BH_URL, BH_ANON, "get_geo_profiles"),
       fetchRpc(HTA_URL, HTA_KEY, "get_geo_profiles"),
       fetchRpc(BH_URL, BH_ANON, "get_notification_analytics"),
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_extras_v2", { p_from: from, p_to: to }),
-      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_utm"),
-      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_iacoes_daily"),
-      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_oauth"),
+      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_utm_v2", { p_from: from, p_to: to }),
+      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_iacoes_daily_v2", { p_from: from, p_to: to }),
+      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_oauth_v2", { p_from: from, p_to: to }),
     ]);
 
     // Merge BH data: base + notification analytics + extras + utm + iacoes daily + oauth (latest wins on conflict)
@@ -99,7 +101,7 @@ Deno.serve(async (req: Request) => {
       headers: {
         ...CORS,
         "Content-Type": "application/json",
-        "Cache-Control": "private, max-age=60",
+        "Cache-Control": "private, max-age=300",
       },
     });
   } catch (err) {

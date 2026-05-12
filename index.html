@@ -3548,6 +3548,12 @@
         })();
         return refetchInFlight;
     }
+    // Debounced version: coalesces rapid date-picker changes into one refetch.
+    let refetchDebounceTimer = null;
+    function refetchAndRerenderDebounced() {
+        if (refetchDebounceTimer) clearTimeout(refetchDebounceTimer);
+        refetchDebounceTimer = setTimeout(() => { refetchDebounceTimer = null; refetchAndRerender(); }, 400);
+    }
 
     function applyPreset(days) {
         const to = new Date().toISOString().slice(0,10);
@@ -3640,8 +3646,8 @@
         });
     });
 
-    document.getElementById('globalFrom').addEventListener('change', ()=>{ globalFilters.from = document.getElementById('globalFrom').value; globalFilters.preset = 'custom'; refetchAndRerender(); });
-    document.getElementById('globalTo').addEventListener('change', ()=>{ globalFilters.to = document.getElementById('globalTo').value; globalFilters.preset = 'custom'; refetchAndRerender(); });
+    document.getElementById('globalFrom').addEventListener('change', ()=>{ globalFilters.from = document.getElementById('globalFrom').value; globalFilters.preset = 'custom'; refetchAndRerenderDebounced(); });
+    document.getElementById('globalTo').addEventListener('change', ()=>{ globalFilters.to = document.getElementById('globalTo').value; globalFilters.preset = 'custom'; refetchAndRerenderDebounced(); });
 
     document.getElementById('globalGranToggle').addEventListener('click', (e)=>{
         const btn = e.target.closest('.gran-btn');
