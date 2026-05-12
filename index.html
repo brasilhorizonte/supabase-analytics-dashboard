@@ -3830,7 +3830,7 @@
             document.getElementById('dashboard').classList.add('show');
             applyPreset(30);
             // Render all tabs once for initial data
-            const allTabs = ['bhVisao','bhAquisicao','bhEngajamento','bhRetencao','bhCustos','bhDetalhes','htaVisao','htaAquisicao','htaEngajamento','htaRetencao','htaCustos','htaDetalhes','iacoes'];
+            const allTabs = ['bhVisao','bhAquisicao','bhEngajamento','bhAirton','bhRetencao','bhCustos','bhDetalhes','htaVisao','htaAquisicao','htaEngajamento','htaRetencao','htaCustos','htaDetalhes','iacoes'];
             allTabs.forEach(tab=>{ try { reRenderTab(tab); } catch(e) { console.error(`Render error [${tab}]:`, e); } });
 
             if (refreshInterval) clearInterval(refreshInterval);
