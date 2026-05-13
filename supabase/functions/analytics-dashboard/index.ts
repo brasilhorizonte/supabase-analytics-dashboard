@@ -82,7 +82,7 @@ Deno.serve(async (req: Request) => {
     // BH RPCs v2 aceitam janela temporal {p_from, p_to} -- reduz tempo da base
     // de ~3s (all-time) para ~1.2s em 7d / ~2.4s em 30d. v1 das RPCs sao mantidas
     // no banco para rollback (drop nao foi feito).
-    const [bh, hta, bhGeo, htaGeo, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhOauth, bhAirton] = await Promise.all([
+    const [bh, hta, bhGeo, htaGeo, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhOauth, bhAirton, bhAirtonTg] = await Promise.all([
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_v2", { p_from: from, p_to: to }),
       fetchRpc(HTA_URL, HTA_KEY, "get_analytics_data"),
       fetchRpc(BH_URL, BH_ANON, "get_geo_profiles"),
@@ -93,10 +93,14 @@ Deno.serve(async (req: Request) => {
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_iacoes_daily_v2", { p_from: from, p_to: to }),
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_oauth_v2", { p_from: from, p_to: to }),
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_airton_v2", { p_from: from, p_to: to }),
+      // 2026-05-13: RPC complementar — funnel de linking + friction signals
+      // (rate limit hits, tool limit exhausted). Eventos instrumentados em
+      // companion-telegram-receiver, gemini-ai e IntegrationsNotificationsApp.
+      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_airton_telegram_v1", { p_from: from, p_to: to }),
     ]);
 
-    // Merge BH data: base + notification analytics + extras + utm + iacoes daily + oauth + airton (latest wins on conflict)
-    const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}), ...(bhUtm || {}), ...(bhIacoesDaily || {}), ...(bhOauth || {}), ...(bhAirton || {}) };
+    // Merge BH data: base + notification analytics + extras + utm + iacoes daily + oauth + airton + airton_telegram (latest wins on conflict)
+    const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}), ...(bhUtm || {}), ...(bhIacoesDaily || {}), ...(bhOauth || {}), ...(bhAirton || {}), ...(bhAirtonTg || {}) };
 
     return new Response(JSON.stringify({ admin: email, bh: bhMerged, hta, geo: { bh: bhGeo || [], hta: htaGeo || [] }, window: { from, to }, ts: new Date().toISOString() }), {
       headers: {

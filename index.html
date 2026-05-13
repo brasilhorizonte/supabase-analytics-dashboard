@@ -1836,6 +1836,15 @@
         const tgDaily = filterSnapshot(bh.airton_telegram_daily || [], f);
         const tgCta = bh.airton_telegram_cta_funnel || {};
         const errorsRecent = bh.airton_errors_recent || [];
+        // 2026-05-13: novas seções (RPC get_analytics_data_airton_telegram_v1).
+        // Eventos instrumentados em IntegrationsNotificationsApp, receiver e gemini-ai.
+        const linkingFunnel = bh.airton_telegram_linking_funnel || {};
+        const startOutcomes = (bh.airton_telegram_start_outcomes || {}).outcomes || [];
+        const tgCommands = (bh.airton_telegram_commands || {}).commands || [];
+        const friction = bh.airton_telegram_friction || {};
+        const sectionSources = (bh.airton_telegram_section_sources || {}).sources || [];
+        const tgFunnelDaily = filterSnapshot(bh.airton_telegram_funnel_daily || [], f);
+        const msgOutcomes = bh.airton_telegram_message_outcomes || {};
 
         // Custo total estimado (USD) usando TOKEN_PRICING client-side
         let estCost = 0;
@@ -1893,6 +1902,33 @@
                     ${canvasHTML('bhAirtonTgDailyChart','Mensagens Telegram (diario)')}
                     ${canvasHTML('bhAirtonTgCtaChart','CTA Telegram (clicked vs dismissed)')}
                 </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Telegram: funil de vinculação (web)', 'Usuários únicos em cada etapa do flow web de conectar Telegram. section_viewed → connect_clicked → token_generated → token_copied / bot_link_clicked → linked. unlinked = churn. Fonte: usage_events emitidos por IntegrationsNotificationsApp.')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhAirtonTgLinkFunnelChart','Funil web do linking (usuários únicos)')}
+                    ${canvasHTML('bhAirtonTgFunnelDailyChart','Funil diário (eventos)')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Telegram: outcomes do /start <token>', 'Resultado do comando /start no bot (após user clicar no @IAnalistaBH_bot). success = vinculação OK. invalid_format / token_not_found / expired / chat_conflict indicam onde quebra. Fonte: companion-telegram-receiver.')}
+                <div class="kpi-grid" id="bhAirtonTgFrictionKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhAirtonTgStartOutcomesChart','Outcomes do /start no bot')}
+                </div>
+                <div class="table-container mb-2"><table id="bhAirtonTgStartOutcomesTable"></table></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Telegram: comandos usados', 'Frequência dos comandos /xxx no bot. /briefing = uso da feature on-demand (cap 10 free). /sair = churn signal. /limpar = nova conversa. Fonte: telegram_command_used em receiver.')}
+                <div class="table-container mb-2"><table id="bhAirtonTgCommandsTable"></table></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Telegram: sources de aquisição', 'De onde os usuários chegam na seção de notificações. direct = navegação normal. post_checkout = Stripe pós-pagamento. campaign = utm_source presente (blast de email). Fonte: telegram_section_viewed.')}
+                <div class="table-container mb-2"><table id="bhAirtonTgSourcesTable"></table></div>
             </div>
 
             <div class="section-block">
@@ -2085,6 +2121,105 @@
                     <td>${fmt(e.unique_users||0)}</td>
                     <td><code>${e.top_error_code||'(none)'}</code></td>
                 </tr>`).join('')}</tbody>`;
+        }
+
+        // ── Telegram Linking Funnel (web) ──
+        // 6 etapas críticas do flow web. Cada barra é usuários únicos no estágio.
+        // Drop-off entre barras adjacentes indica fricção.
+        const linkStages = [
+            {label:'Section viewed',  value:linkingFunnel.section_viewed||0},
+            {label:'Connect clicked', value:linkingFunnel.connect_clicked||0},
+            {label:'Token generated', value:linkingFunnel.token_generated||0},
+            {label:'Token copied',    value:linkingFunnel.token_copied||0},
+            {label:'Bot link clicked', value:linkingFunnel.bot_link_clicked||0},
+            {label:'Linked (any path)', value:linkingFunnel.linked_any||0},
+            {label:'Unlinked (churn)', value:linkingFunnel.unlinked||0},
+        ];
+        if (!showEmptyIfNeeded('bhAirtonTgLinkFunnelChart', linkStages.filter(s=>s.value>0), 'Sem dados de funil web ainda — eventos novos instrumentados em 2026-05-13.')) {
+            barChart('bhAirtonTgLinkFunnelChart', linkStages.map(s=>s.label), [
+                {label:'Usuarios unicos',data:linkStages.map(s=>s.value),backgroundColor:linkStages.map((_,i)=>i===6?'#ef4444':'#0088cc')}
+            ]);
+        }
+
+        // ── Telegram Funnel Daily ──
+        if (!showEmptyIfNeeded('bhAirtonTgFunnelDailyChart', tgFunnelDaily, 'Sem eventos diarios de funil ainda.')) {
+            lineChart('bhAirtonTgFunnelDailyChart', tgFunnelDaily.map(d=>dayLabel(d.day)), [
+                {label:'Section viewed',  data:tgFunnelDaily.map(d=>d.section_viewed||0),  borderColor:'#94a3b8',fill:false},
+                {label:'Connect clicked', data:tgFunnelDaily.map(d=>d.connect_clicked||0), borderColor:'#3b82f6',fill:false},
+                {label:'Token generated', data:tgFunnelDaily.map(d=>d.token_generated||0), borderColor:'#f59e0b',fill:false},
+                {label:'Linked (any)',    data:tgFunnelDaily.map(d=>d.linked_any||0),      borderColor:'#0088cc',fill:false},
+                {label:'Unlinked',        data:tgFunnelDaily.map(d=>d.unlinked||0),        borderColor:'#ef4444',fill:false},
+            ]);
+        }
+
+        // ── Friction KPIs (rate limit + tool exhaustion) ──
+        // Sinais de upgrade comportamental — usuários que esbarraram em caps são
+        // candidatos a campaign automatizada de upsell.
+        document.getElementById('bhAirtonTgFrictionKpis').innerHTML = [
+            createKpiCardV2('Rate limit hits (receiver)', fmt(friction.rate_limited_receiver_hits||0), { hint:'Cap 100/h no receiver (universal)' }),
+            createKpiCardV2('Rate limit hits (gemini-ai)', fmt(friction.rate_limited_gemini_hits||0), { hint:'10/h free | 100/h premium', intent:(friction.rate_limited_gemini_hits||0)>0?'negative':'neutral' }),
+            createKpiCardV2('Rate-limited users (únicos)', fmt(friction.rate_limited_unique_users||0), { hint:`${fmt(friction.rate_limited_free_users||0)} free · ${fmt(friction.rate_limited_telegram_source||0)} via Telegram` }),
+            createKpiCardV2('Tool limit exhausted (hits)', fmt(friction.tool_limit_exhausted_hits||0), { hint:'Cap 30 tools lifetime free · dispara em cada turn após cap' }),
+            createKpiCardV2('Tool-exhausted users (únicos)', fmt(friction.tool_limit_exhausted_users||0), { hint:`${fmt(friction.tool_limit_telegram_users||0)} via Telegram · ${fmt(friction.tool_limit_web_users||0)} via web`, intent:(friction.tool_limit_exhausted_users||0)>0?'positive':'neutral' }),
+        ].join('');
+
+        // ── /start outcomes chart + table ──
+        if (!showEmptyIfNeeded('bhAirtonTgStartOutcomesChart', startOutcomes.filter(o=>(o.count||0)>0), 'Sem comandos /start <token> ainda.')) {
+            const outcomeColors = {
+                'success': '#3ecf8e',
+                'invalid_format': '#f59e0b',
+                'token_not_found': '#ef4444',
+                'expired': '#fb923c',
+                'chat_conflict': '#a855f7',
+                '(unknown)': '#94a3b8',
+            };
+            barChart('bhAirtonTgStartOutcomesChart', startOutcomes.map(o=>o.outcome||'(unknown)'), [
+                {label:'Ocorrências',data:startOutcomes.map(o=>o.count||0),backgroundColor:startOutcomes.map(o=>outcomeColors[o.outcome]||'#94a3b8')}
+            ]);
+        }
+        const outcomesTable = document.getElementById('bhAirtonTgStartOutcomesTable');
+        if (startOutcomes.length === 0) {
+            outcomesTable.innerHTML = '<tr><td>Sem dados de /start ainda (eventos instrumentados em 2026-05-13).</td></tr>';
+        } else {
+            outcomesTable.innerHTML = `
+                <thead><tr><th>Outcome</th><th>Ocorrências</th><th>Usuarios únicos</th></tr></thead>
+                <tbody>${startOutcomes.map(o => `<tr>
+                    <td><code>${o.outcome||'(unknown)'}</code></td>
+                    <td><strong>${fmt(o.count||0)}</strong></td>
+                    <td>${fmt(o.unique_users||0)}</td>
+                </tr>`).join('')}</tbody>`;
+            makeSortable(outcomesTable);
+        }
+
+        // ── Commands table ──
+        const cmdTable = document.getElementById('bhAirtonTgCommandsTable');
+        if (tgCommands.length === 0) {
+            cmdTable.innerHTML = '<tr><td>Sem comandos /xxx registrados ainda.</td></tr>';
+        } else {
+            cmdTable.innerHTML = `
+                <thead><tr><th>Comando</th><th>Ocorrências</th><th>Usuarios únicos</th></tr></thead>
+                <tbody>${tgCommands.map(c => `<tr>
+                    <td><code>${c.cmd||'(unknown)'}</code></td>
+                    <td><strong>${fmt(c.count||0)}</strong></td>
+                    <td>${fmt(c.unique_users||0)}</td>
+                </tr>`).join('')}</tbody>`;
+            makeSortable(cmdTable);
+        }
+
+        // ── Section sources table ──
+        const srcTable = document.getElementById('bhAirtonTgSourcesTable');
+        if (sectionSources.length === 0) {
+            srcTable.innerHTML = '<tr><td>Sem section views registradas ainda.</td></tr>';
+        } else {
+            srcTable.innerHTML = `
+                <thead><tr><th>Source</th><th>utm_source</th><th>Visualizações</th><th>Usuarios únicos</th></tr></thead>
+                <tbody>${sectionSources.map(s => `<tr>
+                    <td><code>${s.source||'(unknown)'}</code></td>
+                    <td>${s.utm_source ? `<code>${s.utm_source}</code>` : '<span style="color:var(--m)">—</span>'}</td>
+                    <td><strong>${fmt(s.count||0)}</strong></td>
+                    <td>${fmt(s.unique_users||0)}</td>
+                </tr>`).join('')}</tbody>`;
+            makeSortable(srcTable);
         }
     }
 
