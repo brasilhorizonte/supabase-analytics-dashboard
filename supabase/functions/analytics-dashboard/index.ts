@@ -42,13 +42,17 @@ async function fetchRpc(url: string, key: string, fn: string, body: Record<strin
   return await res.json();
 }
 
-function parseTimeWindow(req: Request): { from: string; to: string } {
+function parseTimeWindow(req: Request): { from: string; to: string; includeAdmins: boolean } {
   const url = new URL(req.url);
   const fromParam = url.searchParams.get("from");
   const toParam = url.searchParams.get("to");
   const to = toParam ? new Date(toParam) : new Date();
   const from = fromParam ? new Date(fromParam) : new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
-  return { from: from.toISOString(), to: to.toISOString() };
+  // 2026-05-14: include_admins (default false) flag exclusiva da aba AIrton.
+  // Permite alternar entre visao oficial (sem admins) e debug interno enquanto o
+  // produto esta em early adoption e a equipe domina o volume.
+  const includeAdmins = url.searchParams.get("include_admins") === "true";
+  return { from: from.toISOString(), to: to.toISOString(), includeAdmins };
 }
 
 Deno.serve(async (req: Request) => {
@@ -77,7 +81,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const { from, to } = parseTimeWindow(req);
+    const { from, to, includeAdmins } = parseTimeWindow(req);
 
     // BH RPCs v2 aceitam janela temporal {p_from, p_to} -- reduz tempo da base
     // de ~3s (all-time) para ~1.2s em 7d / ~2.4s em 30d. v1 das RPCs sao mantidas
@@ -92,7 +96,7 @@ Deno.serve(async (req: Request) => {
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_utm_v2", { p_from: from, p_to: to }),
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_iacoes_daily_v2", { p_from: from, p_to: to }),
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_oauth_v2", { p_from: from, p_to: to }),
-      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_airton_v2", { p_from: from, p_to: to }),
+      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_airton_v2", { p_from: from, p_to: to, p_include_admins: includeAdmins }),
       // 2026-05-13: RPC complementar — funnel de linking + friction signals
       // (rate limit hits, tool limit exhausted). Eventos instrumentados em
       // companion-telegram-receiver, gemini-ai e IntegrationsNotificationsApp.
@@ -102,7 +106,7 @@ Deno.serve(async (req: Request) => {
     // Merge BH data: base + notification analytics + extras + utm + iacoes daily + oauth + airton + airton_telegram (latest wins on conflict)
     const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}), ...(bhUtm || {}), ...(bhIacoesDaily || {}), ...(bhOauth || {}), ...(bhAirton || {}), ...(bhAirtonTg || {}) };
 
-    return new Response(JSON.stringify({ admin: email, bh: bhMerged, hta, geo: { bh: bhGeo || [], hta: htaGeo || [] }, window: { from, to }, ts: new Date().toISOString() }), {
+    return new Response(JSON.stringify({ admin: email, bh: bhMerged, hta, geo: { bh: bhGeo || [], hta: htaGeo || [] }, window: { from, to }, airton_include_admins: includeAdmins, ts: new Date().toISOString() }), {
       headers: {
         ...CORS,
         "Content-Type": "application/json",

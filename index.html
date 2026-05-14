@@ -1853,6 +1853,15 @@
         });
 
         buildHTML('bhAirton', `
+            <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+                <button id="bhAirtonAdminToggle"
+                    title="Alterna entre visao oficial (sem admins) e debug interno"
+                    style="font-size:0.72rem;padding:5px 12px;border-radius:6px;border:1px solid #94a3b8;background:transparent;color:#64748b;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
+                    <span id="bhAirtonAdminToggleDot" style="width:7px;height:7px;border-radius:50%;background:#94a3b8;"></span>
+                    <span id="bhAirtonAdminToggleLabel">Sem admins (oficial)</span>
+                </button>
+            </div>
+
             <div class="kpi-grid" id="bhAirtonHeroKpis"></div>
 
             <div class="section-block">
@@ -1937,12 +1946,39 @@
             </div>
         `);
 
+        // ── Toggle "Incluir admins" (2026-05-14) ──
+        // Default: false (visao oficial). Quando true, RPC airton_v2 relaxa NOT EXISTS
+        // profiles.is_admin e mostra trafego interno (Gabriel/Lucas/Joao/Lgt/QA-diag).
+        // Server-side filtering => requer refetch ao toggle.
+        const includeAdmins = !!dashboardData.airton_include_admins;
+        window._airtonIncludeAdmins = includeAdmins;
+        const adminToggle = document.getElementById('bhAirtonAdminToggle');
+        const adminDot = document.getElementById('bhAirtonAdminToggleDot');
+        const adminLabel = document.getElementById('bhAirtonAdminToggleLabel');
+        if (adminToggle && adminDot && adminLabel) {
+            if (includeAdmins) {
+                adminToggle.style.borderColor = '#f59e0b';
+                adminToggle.style.color = '#f59e0b';
+                adminDot.style.background = '#f59e0b';
+                adminLabel.textContent = 'Incluindo admins (debug)';
+            } else {
+                adminToggle.style.borderColor = '#94a3b8';
+                adminToggle.style.color = '#64748b';
+                adminDot.style.background = '#94a3b8';
+                adminLabel.textContent = 'Sem admins (oficial)';
+            }
+            adminToggle.onclick = () => {
+                window._airtonIncludeAdmins = !window._airtonIncludeAdmins;
+                refetchAndRerender();
+            };
+        }
+
         // ── Hero KPIs ──
         const totalMsgs = ov.total_messages || 0;
         const errRate = ov.error_rate || 0;
         const tgShare = ov.telegram_share_pct || 0;
         document.getElementById('bhAirtonHeroKpis').innerHTML = [
-            createKpiCardV2('Mensagens', fmt(totalMsgs), { hero:true, hint:`${fmt(ov.messages_success||0)} success / ${fmt(ov.messages_error||0)} error` }),
+            createKpiCardV2('Mensagens', fmt(totalMsgs), { hero:true, hint:`${fmt(ov.messages_success||0)} success / ${fmt(ov.messages_error||0)} error${includeAdmins ? ' · inclui admins' : ''}` }),
             createKpiCardV2('Usuarios unicos', fmt(ov.unique_users||0), { hero:true, hint:'companion_message_sent distinct user_id' }),
             createKpiCardV2('Tool calls', fmt(ov.tool_calls||0), { hint:'companion_tool_call + companion_tool_called' }),
             createKpiCardV2('Tokens totais', fmt(ov.total_tokens||0), { hint:`${ov.requests_with_tokens||0} requests com token telemetry` }),
@@ -3916,6 +3952,7 @@
             const params = new URLSearchParams();
             if (globalFilters.from) params.set('from', `${globalFilters.from}T00:00:00.000Z`);
             if (globalFilters.to)   params.set('to',   `${globalFilters.to}T23:59:59.999Z`);
+            if (window._airtonIncludeAdmins) params.set('include_admins', 'true');
             const url = params.toString() ? `${API_ENDPOINT}?${params}` : API_ENDPOINT;
             const response = await fetch(url, { method: 'GET', headers: { 'Authorization': `Bearer ${currentToken}` } });
             if (response.status === 401) throw new Error('Sessao expirada. Faca login novamente.');
