@@ -86,7 +86,7 @@ Deno.serve(async (req: Request) => {
     // BH RPCs v2 aceitam janela temporal {p_from, p_to} -- reduz tempo da base
     // de ~3s (all-time) para ~1.2s em 7d / ~2.4s em 30d. v1 das RPCs sao mantidas
     // no banco para rollback (drop nao foi feito).
-    const [bh, hta, bhGeo, htaGeo, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhOauth, bhAirton, bhAirtonTg] = await Promise.all([
+    const [bh, hta, bhGeo, htaGeo, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhOauth, bhAirton, bhAirtonTg, bhPoolV2] = await Promise.all([
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_v2", { p_from: from, p_to: to }),
       fetchRpc(HTA_URL, HTA_KEY, "get_analytics_data"),
       fetchRpc(BH_URL, BH_ANON, "get_geo_profiles"),
@@ -101,10 +101,14 @@ Deno.serve(async (req: Request) => {
       // (rate limit hits, tool limit exhausted). Eventos instrumentados em
       // companion-telegram-receiver, gemini-ai e IntegrationsNotificationsApp.
       fetchRpc(BH_URL, BH_ANON, "get_analytics_data_airton_telegram_v1", { p_from: from, p_to: to }),
+      // 2026-05-18 Sprint TELEMETRY B1+B2+B3: pool V2 daily refill (substituiu
+      // lifetime_feature_usage no produto em 14/05). 5 blocos: overview,
+      // daily series, feature distribution, AIrton tool histogram, retention cohort.
+      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_pool_v2", { p_from: from, p_to: to }),
     ]);
 
-    // Merge BH data: base + notification analytics + extras + utm + iacoes daily + oauth + airton + airton_telegram (latest wins on conflict)
-    const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}), ...(bhUtm || {}), ...(bhIacoesDaily || {}), ...(bhOauth || {}), ...(bhAirton || {}), ...(bhAirtonTg || {}) };
+    // Merge BH data: base + notif + extras + utm + iacoes_daily + oauth + airton + airton_tg + pool_v2 (latest wins on conflict)
+    const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}), ...(bhUtm || {}), ...(bhIacoesDaily || {}), ...(bhOauth || {}), ...(bhAirton || {}), ...(bhAirtonTg || {}), ...(bhPoolV2 || {}) };
 
     return new Response(JSON.stringify({ admin: email, bh: bhMerged, hta, geo: { bh: bhGeo || [], hta: htaGeo || [] }, window: { from, to }, airton_include_admins: includeAdmins, ts: new Date().toISOString() }), {
       headers: {

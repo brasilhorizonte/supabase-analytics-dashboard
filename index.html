@@ -1845,6 +1845,13 @@
         const sectionSources = (bh.airton_telegram_section_sources || {}).sources || [];
         const tgFunnelDaily = filterSnapshot(bh.airton_telegram_funnel_daily || [], f);
         const msgOutcomes = bh.airton_telegram_message_outcomes || {};
+        // 2026-05-18 Sprint TELEMETRY B1+B2+B3: pool V2 daily refill (substitui lifetime
+        // após cutover 14/05). 5 blocos via RPC get_analytics_data_bh_pool_v2.
+        const poolOv = bh.pool_v2_overview || {};
+        const poolDaily = bh.pool_v2_daily || [];
+        const poolFeatures = bh.pool_v2_feature_distribution || [];
+        const poolRetention = bh.pool_v2_retention || [];
+        const toolHistogram = bh.airton_tool_daily_histogram || [];
 
         // Custo total estimado (USD) usando TOKEN_PRICING client-side
         let estCost = 0;
@@ -1938,6 +1945,26 @@
             <div class="section-block">
                 ${createSectionHeader('Telegram: sources de aquisição', 'De onde os usuários chegam na seção de notificações. direct = navegação normal. post_checkout = Stripe pós-pagamento. campaign = utm_source presente (blast de email). Fonte: telegram_section_viewed.')}
                 <div class="table-container mb-2"><table id="bhAirtonTgSourcesTable"></table></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Pool V2 — Paywall daily refill (cutover 14/05)', '1 análise/dia COMPARTILHADA entre 7 features one-shot (ValuAI / Qualitativo / Validador / Macro β / Otimizador / Backtest / IAnálise). AIrton tem 5 tools/dia separado (janela móvel 24h). Substituiu lifetime_feature_usage. Source: daily_feature_usage table + usage_events_clean.')}
+                <div class="kpi-grid" id="bhAirtonPoolV2Kpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhAirtonPoolV2DailyChart','Pool V2 consumes diários')}
+                </div>
+                <div class="table-container mb-2">
+                    <div class="table-title">Distribuição por feature (período)</div>
+                    <table id="bhAirtonPoolV2FeatureTable"></table>
+                </div>
+                <div class="table-container mb-2">
+                    <div class="table-title">AIrton — tool calls/dia (histograma V2+α — pool de 5/dia)</div>
+                    <table id="bhAirtonToolHistogramTable"></table>
+                </div>
+                <div class="table-container mb-2">
+                    <div class="table-title">Habit-loop retention (cohort = dia da 1ª análise)</div>
+                    <table id="bhAirtonPoolV2RetentionTable"></table>
+                </div>
             </div>
 
             <div class="section-block">
@@ -2142,6 +2169,68 @@
             barChart('bhAirtonTgCtaChart', tgCtaData.map(d=>d.label), [
                 {label:'Eventos',data:tgCtaData.map(d=>d.value),backgroundColor:['#3ecf8e','#94a3b8']}
             ]);
+        }
+
+        // ── Pool V2 — Paywall daily refill (Sprint TELEMETRY B1+B2+B3, 18/05) ──
+        // KPI grid (4 cards: hoje, período, adoção, top feature)
+        document.getElementById('bhAirtonPoolV2Kpis').innerHTML = [
+            createKpiCardV2('Consumes hoje', fmt(poolOv.consumes_today||0), { hero:true, hint:`${fmt(poolOv.unique_users_today||0)} usuários · top: ${poolOv.top_feature_today||'—'}` }),
+            createKpiCardV2('Consumes no período', fmt(poolOv.consumes_period||0), { hero:true, hint:`${fmt(poolOv.unique_users_period||0)} usuários únicos` }),
+            createKpiCardV2('Adoção free no período', `${(poolOv.adoption_pct_period||0)}%`, { hero:true, hint:'% non-admins que consumiram ≥1 análise' }),
+            createKpiCardV2('Top feature do período', poolOv.top_feature_period||'—', { hero:true, hint:'feature mais consumida no pool' }),
+        ].join('');
+
+        // Pool V2 daily — line chart
+        if (!showEmptyIfNeeded('bhAirtonPoolV2DailyChart', poolDaily, 'Sem consumos do pool V2 no período (substituiu lifetime em 14/05).')) {
+            lineChart('bhAirtonPoolV2DailyChart', poolDaily.map(d=>dayLabel(d.day_brt)), [
+                {label:'Consumes', data:poolDaily.map(d=>d.consumes||0), borderColor:'#0088cc', backgroundColor:'rgba(0,136,204,0.1)', tension:0.3},
+                {label:'Usuários únicos', data:poolDaily.map(d=>d.unique_users||0), borderColor:'#3ecf8e', backgroundColor:'rgba(62,207,142,0.1)', tension:0.3},
+            ]);
+        }
+
+        // Feature distribution table
+        const featTable = document.getElementById('bhAirtonPoolV2FeatureTable');
+        if (poolFeatures.length === 0) {
+            featTable.innerHTML = '<tr><td>Sem dados</td></tr>';
+        } else {
+            featTable.innerHTML = `
+                <thead><tr><th>Feature</th><th>Consumes</th><th>Usuários únicos</th><th>Share</th></tr></thead>
+                <tbody>${poolFeatures.map(r => `<tr>
+                    <td><strong>${r.feature}</strong></td>
+                    <td>${fmt(r.total_consumes||0)}</td>
+                    <td>${fmt(r.unique_users||0)}</td>
+                    <td>${(r.share_pct||0)}%</td>
+                </tr>`).join('')}</tbody>`;
+        }
+
+        // AIrton tool histogram (B2)
+        const histTable = document.getElementById('bhAirtonToolHistogramTable');
+        if (toolHistogram.length === 0) {
+            histTable.innerHTML = '<tr><td>Sem tool calls no período (free pool 5/dia ou premium ilimitado)</td></tr>';
+        } else {
+            histTable.innerHTML = `
+                <thead><tr><th>Bucket tools/dia</th><th>User-days</th><th>Usuários únicos</th></tr></thead>
+                <tbody>${toolHistogram.map(r => `<tr>
+                    <td><strong>${r.bucket}</strong>${r.bucket==='5+' ? ' <span style="color:#f59e0b;font-size:0.7rem">(cap atingido)</span>' : ''}</td>
+                    <td>${fmt(r.user_days||0)}</td>
+                    <td>${fmt(r.unique_users||0)}</td>
+                </tr>`).join('')}</tbody>`;
+        }
+
+        // Pool V2 retention table (B3 — habit-loop)
+        const retTable = document.getElementById('bhAirtonPoolV2RetentionTable');
+        if (poolRetention.length === 0) {
+            retTable.innerHTML = '<tr><td>Sem cohorts no período</td></tr>';
+        } else {
+            retTable.innerHTML = `
+                <thead><tr><th>Cohort (1ª análise em)</th><th>Tamanho</th><th>D+1</th><th>D+7</th><th>D+30</th></tr></thead>
+                <tbody>${poolRetention.map(r => `<tr>
+                    <td>${r.cohort_date}</td>
+                    <td>${fmt(r.cohort_size||0)}</td>
+                    <td>${fmt(r.retained_d1||0)} (<strong>${r.retention_d1_pct||0}%</strong>)</td>
+                    <td>${fmt(r.retained_d7||0)} (${r.retention_d7_pct||0}%)</td>
+                    <td>${fmt(r.retained_d30||0)} (${r.retention_d30_pct||0}%)</td>
+                </tr>`).join('')}</tbody>`;
         }
 
         // ── Errors recent table ──
