@@ -1,7 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const BH_URL = "https://dawvgbopyemcayavcatd.supabase.co";
-const BH_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhd3ZnYm9weWVtY2F5YXZjYXRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU3MzAwOTEsImV4cCI6MjA3MTMwNjA5MX0.TuQV1G_JsJQRjLr76f8xX2HUjCig5FQa8R-YpsPyJiw";
+// 2026-05-22: BH passou a exigir service_role apos hardening de seguranca de
+// 2026-05-12 (migration 20260512230000). As RPCs analytics no BH nao concedem
+// mais EXECUTE para anon — chamadas com anon retornam 42501 permission denied.
+// CVM_SERVICE_ROLE_KEY ja existe no HTA e e a service_role do BH (CVM = projeto BH).
+const BH_KEY = Deno.env.get("BH_SERVICE_ROLE_KEY") || Deno.env.get("CVM_SERVICE_ROLE_KEY") || "";
 
 const HTA_URL = Deno.env.get("SUPABASE_URL") || "https://llqhmywodxzstjlrulcw.supabase.co";
 const HTA_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -71,6 +75,13 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  if (!BH_KEY) {
+    return new Response(JSON.stringify({ error: "BH_SERVICE_ROLE_KEY (or CVM_SERVICE_ROLE_KEY) not configured" }), {
+      status: 500,
+      headers: { ...CORS, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     // Verify admin
     const { ok, email } = await verifyAdmin(token);
@@ -87,24 +98,24 @@ Deno.serve(async (req: Request) => {
     // de ~3s (all-time) para ~1.2s em 7d / ~2.4s em 30d. v1 das RPCs sao mantidas
     // no banco para rollback (drop nao foi feito).
     const [bh, hta, bhGeo, htaGeo, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhOauth, bhAirton, bhAirtonTg, bhPoolV2] = await Promise.all([
-      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_v2", { p_from: from, p_to: to }),
+      fetchRpc(BH_URL, BH_KEY, "get_analytics_data_v2", { p_from: from, p_to: to }),
       fetchRpc(HTA_URL, HTA_KEY, "get_analytics_data"),
-      fetchRpc(BH_URL, BH_ANON, "get_geo_profiles"),
+      fetchRpc(BH_URL, BH_KEY, "get_geo_profiles"),
       fetchRpc(HTA_URL, HTA_KEY, "get_geo_profiles"),
-      fetchRpc(BH_URL, BH_ANON, "get_notification_analytics"),
-      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_extras_v2", { p_from: from, p_to: to }),
-      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_utm_v2", { p_from: from, p_to: to }),
-      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_iacoes_daily_v2", { p_from: from, p_to: to }),
-      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_oauth_v2", { p_from: from, p_to: to }),
-      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_airton_v2", { p_from: from, p_to: to, p_include_admins: includeAdmins }),
+      fetchRpc(BH_URL, BH_KEY, "get_notification_analytics"),
+      fetchRpc(BH_URL, BH_KEY, "get_analytics_data_bh_extras_v2", { p_from: from, p_to: to }),
+      fetchRpc(BH_URL, BH_KEY, "get_analytics_data_bh_utm_v2", { p_from: from, p_to: to }),
+      fetchRpc(BH_URL, BH_KEY, "get_analytics_data_iacoes_daily_v2", { p_from: from, p_to: to }),
+      fetchRpc(BH_URL, BH_KEY, "get_analytics_data_bh_oauth_v2", { p_from: from, p_to: to }),
+      fetchRpc(BH_URL, BH_KEY, "get_analytics_data_airton_v2", { p_from: from, p_to: to, p_include_admins: includeAdmins }),
       // 2026-05-13: RPC complementar — funnel de linking + friction signals
       // (rate limit hits, tool limit exhausted). Eventos instrumentados em
       // companion-telegram-receiver, gemini-ai e IntegrationsNotificationsApp.
-      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_airton_telegram_v1", { p_from: from, p_to: to }),
+      fetchRpc(BH_URL, BH_KEY, "get_analytics_data_airton_telegram_v1", { p_from: from, p_to: to }),
       // 2026-05-18 Sprint TELEMETRY B1+B2+B3: pool V2 daily refill (substituiu
       // lifetime_feature_usage no produto em 14/05). 5 blocos: overview,
       // daily series, feature distribution, AIrton tool histogram, retention cohort.
-      fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_pool_v2", { p_from: from, p_to: to }),
+      fetchRpc(BH_URL, BH_KEY, "get_analytics_data_bh_pool_v2", { p_from: from, p_to: to }),
     ]);
 
     // Merge BH data: base + notif + extras + utm + iacoes_daily + oauth + airton + airton_tg + pool_v2 (latest wins on conflict)

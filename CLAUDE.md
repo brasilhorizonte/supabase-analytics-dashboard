@@ -27,6 +27,7 @@ A Edge Function roda no projeto **Horizon Terminal Access** e faz chamadas cross
 - Login via `/auth/v1/token?grant_type=password` do Supabase Auth (projeto HTA)
 - Verificacao de admin: consulta tabela `user_roles` com `role = 'admin'` usando service role key
 - Admins: lucasmello@brasilhorizonte.com.br, lucastnm@gmail.com, gabriel.dantas@brasilhorizonte.com.br
+- **Chamadas RPC ao BH usam service_role do BH** (2026-05-22): apos hardening de seguranca em 2026-05-12 (migration `20260512230000_remediate_security_views.sql`), as RPCs analytics no BH passaram a nao conceder `EXECUTE` para `anon`. A Edge Function le `BH_KEY = Deno.env.get("BH_SERVICE_ROLE_KEY") || Deno.env.get("CVM_SERVICE_ROLE_KEY")` (ambas configuradas como secrets no projeto HTA). Nenhuma mudanca de seguranca foi feita no projeto BH para destravar o dashboard.
 
 ## Estrutura de Arquivos
 
@@ -300,7 +301,7 @@ URL: `https://llqhmywodxzstjlrulcw.supabase.co/storage/v1/object/public/dashboar
 
 - **Supabase Edge Functions nao servem HTML**: GET requests com `Content-Type: text/html` sao reescritos para `text/plain`. Por isso o frontend e hospedado separadamente.
 - **Supabase Storage pode nao renderizar HTML**: Dependendo da configuracao, o Storage pode forcar download ao inves de renderizar. GitHub Pages e mais confiavel para hospedar o frontend.
-- **Cross-project data**: A Edge Function usa anon key do BH e service role key do HTA. Se as keys mudarem, atualizar no codigo.
+- **Cross-project data**: A Edge Function usa service role key de **ambos** os projetos (HTA via `SUPABASE_SERVICE_ROLE_KEY`, BH via `BH_SERVICE_ROLE_KEY` ou `CVM_SERVICE_ROLE_KEY`). Anon do BH **nao funciona mais** — as RPCs analytics nao concedem EXECUTE a anon desde 2026-05-12. Se as keys mudarem, atualizar nos secrets do projeto HTA, nao no codigo.
 - **RPC functions**: Criadas com `SECURITY DEFINER` e precisam de `GRANT EXECUTE` para anon/authenticated/service_role.
 - **Token tracking server-side (estado real em 2026-05-03)**: A pipeline migrou de `proxy_daily_usage`+`increment_proxy_tokens` para a tabela `server_token_usage`+RPC `track_server_tokens(p_source, p_model_name, p_prompt_tokens, p_completion_tokens, p_thoughts_tokens, p_total_tokens)`. A nova tabela **nao tem `user_id`** — agregada por `(usage_date, source, model_name, is_backfill)`. Estado por proxy:
   - `gemini-proxy` v442: chama `track_server_tokens` ✅; **nao chama `check_proxy_rate_limit`** ❌ (rate limit ausente — gap de defesa em profundidade); nao chama `log_proxy_error` ❌
