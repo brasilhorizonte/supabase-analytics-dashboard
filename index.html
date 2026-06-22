@@ -1340,6 +1340,45 @@
                 ${canvasHTML('bhEngEventsChart','Eventos Resumidos')}
             </div>
             <div class="chart-container mb-2"><div class="chart-title">Uso de Recursos (diario)</div><canvas id="bhEngFeatureDailyChart"></canvas></div>
+
+            <!-- 2026-05-27: sub-barra de controles do bloco de tickers.
+                 Multi-select aplica em ticker_trend_daily (server-side via RPC v3).
+                 Toggle "Incluir admins" refetcha (server-side).
+                 Toggle "Metrica" e client-side (re-renderiza feature_usage_trend). -->
+            <div id="bhEngTickerControls" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:8px 0 16px 0;padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:0.78rem;">
+                <span style="font-weight:600;color:#475569;">Tickers:</span>
+                <div style="position:relative;">
+                    <button id="bhEngTickerSelectBtn" type="button"
+                        title="Seleciona tickers especificos. Vazio = top N dinamico do periodo."
+                        style="font-size:0.78rem;padding:6px 12px;border-radius:6px;border:1px solid #94a3b8;background:#fff;color:#475569;cursor:pointer;display:inline-flex;align-items:center;gap:6px;min-width:160px;justify-content:space-between;">
+                        <span id="bhEngTickerSelectLabel">Top N dinamico</span>
+                        <span style="color:#94a3b8;">&#9662;</span>
+                    </button>
+                    <div id="bhEngTickerSelectPanel" style="display:none;position:absolute;top:100%;left:0;margin-top:4px;z-index:50;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,0.12);padding:10px;min-width:260px;max-height:340px;overflow:hidden;display:none;flex-direction:column;">
+                        <input id="bhEngTickerSelectSearch" type="text" placeholder="Buscar ticker..." style="font-size:0.8rem;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;outline:none;margin-bottom:8px;">
+                        <div id="bhEngTickerSelectList" style="overflow-y:auto;max-height:200px;padding-right:4px;"></div>
+                        <div style="display:flex;justify-content:space-between;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9;">
+                            <button type="button" id="bhEngTickerSelectClear" style="font-size:0.72rem;padding:4px 10px;border-radius:4px;border:1px solid #e2e8f0;background:#fff;color:#64748b;cursor:pointer;">Limpar</button>
+                            <button type="button" id="bhEngTickerSelectApply" style="font-size:0.72rem;padding:4px 12px;border-radius:4px;border:none;background:#6366f1;color:#fff;cursor:pointer;font-weight:600;">Aplicar</button>
+                        </div>
+                    </div>
+                </div>
+                <span style="width:1px;height:18px;background:#e2e8f0;margin:0 4px;"></span>
+                <span style="font-weight:600;color:#475569;">Metrica:</span>
+                <div id="bhEngMetricToggle" style="display:inline-flex;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;">
+                    <button type="button" data-metric="cnt" class="bh-eng-metric-opt" style="font-size:0.74rem;padding:5px 12px;border:none;background:#6366f1;color:#fff;cursor:pointer;font-weight:600;">Rodadas</button>
+                    <button type="button" data-metric="unique_users" class="bh-eng-metric-opt" style="font-size:0.74rem;padding:5px 12px;border:none;background:#fff;color:#475569;cursor:pointer;border-left:1px solid #cbd5e1;">Usuarios unicos</button>
+                </div>
+                <span style="width:1px;height:18px;background:#e2e8f0;margin:0 4px;"></span>
+                <button id="bhEngTickerAdminToggle"
+                    title="Inclui ou exclui admins (gabriel/lucas/...) das metricas de ticker"
+                    style="font-size:0.72rem;padding:5px 12px;border-radius:6px;border:1px solid #94a3b8;background:transparent;color:#64748b;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
+                    <span id="bhEngTickerAdminToggleDot" style="width:7px;height:7px;border-radius:50%;background:#94a3b8;"></span>
+                    <span id="bhEngTickerAdminToggleLabel">Sem admins (oficial)</span>
+                </button>
+                <span id="bhEngTickerMeta" style="margin-left:auto;color:#94a3b8;font-size:0.7rem;"></span>
+            </div>
+
             <div class="charts-grid">
                 ${canvasHTML('bhEngTickerRankingChart','Ranking de Tickers (uso total)')}
                 ${canvasHTML('bhEngTickerByFeatureChart','Tickers por Feature')}
@@ -1457,9 +1496,14 @@
             options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
         });
 
-        // Ticker ranking (horizontal bar)
+        // ── 2026-05-27: wire ticker controls ──
+        // Estado persistido em window._bhTickerFilters; populado pelo response da v3 (meta).
+        // Side effect: rebind dos listeners a cada render (e idempotente).
+        wireBhEngTickerControls(bh, tickerByFeature, tickerRanking);
+
+        // Ticker ranking (horizontal bar) — vem ja filtrado por periodo da v3 (limit 20).
         if (tickerRanking.length > 0) {
-            const sorted = tickerRanking.sort((a,b)=>(b.cnt||0)-(a.cnt||0)).slice(0,20);
+            const sorted = tickerRanking.slice().sort((a,b)=>(b.cnt||0)-(a.cnt||0));
             destroyChart('bhEngTickerRankingChart');
             charts.bhEngTickerRankingChart = new Chart(document.getElementById('bhEngTickerRankingChart'), {
                 type:'bar', data:{labels:sorted.map(d=>d.ticker),datasets:[{label:'Consultas',data:sorted.map(d=>d.cnt||0),backgroundColor:'#6366f1',borderRadius:6}]},
@@ -1467,7 +1511,8 @@
             });
         }
 
-        // Ticker by feature (stacked bar) - no time dimension — top 30 tickers + Outros
+        // Ticker by feature (stacked bar) — sem dimensao temporal; v3 ja entrega dentro do periodo.
+        // Mantemos top-N client-side porque a RPC retorna todos (ordenado por feature, depois cnt).
         if (tickerByFeature.length > 0) {
             const tbfFeatures = [...new Set(tickerByFeature.map(d=>d.feature))];
             const tbfMap = {}; tickerByFeature.forEach(d=>{tbfMap[d.ticker+'|'+d.feature]=(d.cnt||0);});
@@ -1486,10 +1531,10 @@
             });
         }
 
-        // Ticker trend daily with granularity (stacked bar) — top 30 + Outros
+        // Ticker trend daily — v3 ja entrega top N dentro do periodo (ou subset do multi-select).
+        // Nao aplicamos withTopNAndOthers no client porque ja vem limitado pela RPC.
         if (tickerTrend.length > 0) {
-            const mcTTRaw = prepareMultiCategoryTS(tickerTrend, f, 'ticker', 'cnt');
-            const mcTT = withTopNAndOthers(mcTTRaw, 30);
+            const mcTT = prepareMultiCategoryTS(tickerTrend, f, 'ticker', 'cnt');
             destroyChart('bhEngTickerTrendChart');
             charts.bhEngTickerTrendChart = new Chart(document.getElementById('bhEngTickerTrendChart'), {
                 type:'bar', data:{labels:mcTT.labels,datasets:mcTT.categories.map((t,i)=>({label:t,data:mcTT.getValues(t),backgroundColor:colorForCategory(t,i)}))},
@@ -1497,14 +1542,17 @@
             });
         }
 
-        // Feature adoption curves with granularity (stacked bar) — top 10 + Outros
+        // Feature adoption curves — v3: client escolhe metrica (cnt = rodadas, unique_users = usuarios).
+        // v3 deixou de exigir ticker IS NOT NULL na fonte, entao features como macro_beta / optimizer voltam a aparecer.
         if (featureTrend.length > 0) {
-            const mcFTRaw = prepareMultiCategoryTS(featureTrend, f, 'feature', 'unique_users');
+            const metric = (window._bhTickerFilters && window._bhTickerFilters.metric) || 'cnt';
+            const mcFTRaw = prepareMultiCategoryTS(featureTrend, f, 'feature', metric);
             const mcFT = withTopNAndOthers(mcFTRaw, 10);
+            const yLabel = metric === 'cnt' ? 'Rodadas' : 'Usuarios unicos';
             destroyChart('bhEngFeatureTrendChart');
             charts.bhEngFeatureTrendChart = new Chart(document.getElementById('bhEngFeatureTrendChart'), {
                 type:'bar', data:{labels:mcFT.labels,datasets:mcFT.categories.map((feat,i)=>({label:feat,data:mcFT.getValues(feat),backgroundColor:colorForCategory(feat,i)}))},
-                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},title:{display:true,text:yLabel,font:{size:11,weight:'normal'},color:'#94a3b8',align:'end',padding:{bottom:4}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
             });
         }
 
@@ -1513,8 +1561,8 @@
             doughnutChart('bhEngBreadthChart', featureBreadth.map(d=>d.bucket||d.feature_count+' features'), featureBreadth.map(d=>d.user_count||0), COLORS);
         }
 
-        // User ticker usage table
-        renderUserTickerTable('bhEngUserTickerTable', userTickerUsage);
+        // User ticker usage table (com drill-down via user_ticker_detail)
+        renderUserTickerTable('bhEngUserTickerTable', userTickerUsage, bh.user_ticker_detail || []);
 
         // Session metrics
         const smPrep = prepareTimeSeries(sessionMetrics, f, ['avg_events_per_session','avg_duration_min','median_duration_min']);
@@ -1845,6 +1893,17 @@
         const sectionSources = (bh.airton_telegram_section_sources || {}).sources || [];
         const tgFunnelDaily = filterSnapshot(bh.airton_telegram_funnel_daily || [], f);
         const msgOutcomes = bh.airton_telegram_message_outcomes || {};
+        // 2026-06-22: WhatsApp — canal ativo do Airton apos cutover TG->WA em 10/06.
+        // Mensagens (overview/daily) vem de get_analytics_data_airton_v2 (respeita admin
+        // toggle via cm). Funil/offers/features/outcomes vem de get_analytics_data_airton_whatsapp_v1.
+        const waOv = bh.airton_whatsapp_overview || {};
+        const waDaily = filterSnapshot(bh.airton_whatsapp_daily || [], f);
+        const waLinkFunnel = bh.airton_whatsapp_linking_funnel || {};
+        const waOffers = bh.airton_whatsapp_offers || {};
+        const waFunnelDaily = filterSnapshot(bh.airton_whatsapp_funnel_daily || [], f);
+        const waFeatures = bh.airton_whatsapp_features || {};
+        const waOutcomes = bh.airton_whatsapp_message_outcomes || {};
+        const waMigration = bh.airton_whatsapp_migration || {};
         // 2026-05-18 Sprint TELEMETRY B1+B2+B3: pool V2 daily refill (substitui lifetime
         // após cutover 14/05). 5 blocos via RPC get_analytics_data_bh_pool_v2.
         const poolOv = bh.pool_v2_overview || {};
@@ -1912,7 +1971,30 @@
             </div>
 
             <div class="section-block">
-                ${createSectionHeader('Airton via Telegram', 'Mensagens trocadas via @IAnalistaBH_bot. Fonte: companion_messages.source=telegram (Telegram nao emite usage_events). Webhook V3 lancado em 2026-05-11 — pode haver poucos dados nos primeiros dias.')}
+                ${createSectionHeader('Airton via WhatsApp', 'Canal ativo do Airton desde o cutover TG->WA em 10/06/2026. Mensagens via WhatsApp. Fonte: companion_messages.source=whatsapp (respeita o toggle de admins).')}
+                <div class="kpi-grid" id="bhAirtonWaKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhAirtonWaDailyChart','Mensagens WhatsApp (diario)')}
+                    ${canvasHTML('bhAirtonWaOffersChart','Offers WhatsApp (shown/clicked/dismissed)')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('WhatsApp: funil de vinculação', 'Usuários únicos em cada etapa do flow de conectar o WhatsApp. offer_shown → connect → token_generated → bot_link → link_received → linked. unlinked/optout = churn. Fonte: usage_events whatsapp_* (sem admins).')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhAirtonWaLinkFunnelChart','Funil de vinculação (usuários únicos)')}
+                    ${canvasHTML('bhAirtonWaFunnelDailyChart','Funil diário (eventos)')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('WhatsApp: features & outcomes', 'Uso de features on-demand (briefing, CVM PDF) e resultado das mensagens recebidas pelo receiver. avg_latency = tempo medio de resposta do Gemini. Fonte: usage_events whatsapp_* (sem admins).')}
+                <div class="table-container mb-2"><div class="table-title">Features on-demand</div><table id="bhAirtonWaFeaturesTable"></table></div>
+                <div class="table-container mb-2"><div class="table-title">Message outcomes & migração TG→WA</div><table id="bhAirtonWaOutcomesTable"></table></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Airton via Telegram', 'Canal legado (substituido pelo WhatsApp em 10/06). Mensagens trocadas via @IAnalistaBH_bot. Fonte: companion_messages.source=telegram (Telegram nao emite usage_events).')}
                 <div class="kpi-grid" id="bhAirtonTgKpis"></div>
                 <div class="charts-grid">
                     ${canvasHTML('bhAirtonTgDailyChart','Mensagens Telegram (diario)')}
@@ -2004,12 +2086,14 @@
         const totalMsgs = ov.total_messages || 0;
         const errRate = ov.error_rate || 0;
         const tgShare = ov.telegram_share_pct || 0;
+        const waShare = ov.whatsapp_share_pct || 0;
         document.getElementById('bhAirtonHeroKpis').innerHTML = [
             createKpiCardV2('Mensagens', fmt(totalMsgs), { hero:true, hint:`${fmt(ov.messages_success||0)} success / ${fmt(ov.messages_error||0)} error${includeAdmins ? ' · inclui admins' : ''}` }),
             createKpiCardV2('Usuarios unicos', fmt(ov.unique_users||0), { hero:true, hint:'companion_message_sent distinct user_id' }),
             createKpiCardV2('Tool calls', fmt(ov.tool_calls||0), { hint:'companion_tool_call + companion_tool_called' }),
             createKpiCardV2('Tokens totais', fmt(ov.total_tokens||0), { hint:`${ov.requests_with_tokens||0} requests com token telemetry` }),
             createKpiCardV2('Custo estimado', `$${estCost.toFixed(2)}`, { hint:'Client-side via TOKEN_PRICING (Gemini)' }),
+            createKpiCardV2('% via WhatsApp', `${waShare.toFixed(1)}%`, { hint:`${fmt(ov.whatsapp_messages||0)} msgs WA vs ${fmt(ov.messages_success||0)} web` }),
             createKpiCardV2('% via Telegram', `${tgShare.toFixed(1)}%`, { hint:`${fmt(ov.telegram_messages||0)} msgs TG vs ${fmt(ov.messages_success||0)} web` }),
             createKpiCardV2('Error rate', `${errRate.toFixed(2)}%`, { intent: errRate > 5 ? 'negative' : 'neutral', hint:'Erros / total mensagens' }),
             createKpiCardV2('Sessoes abertas', fmt(ov.sessions_opened||0), { hint:`${fmt(ov.sessions_closed||0)} fechadas` }),
@@ -2143,8 +2227,88 @@
             createKpiCardV2('Threads ativas', fmt(threads.threads_active||0), { hint:'Com pelo menos 1 mensagem no periodo' }),
             createKpiCardV2('Avg msgs/thread', (threads.avg_messages_per_thread||0).toString(), { hint:'Mensagens (qualquer source) por thread ativa' }),
             createKpiCardV2('Last source: web', fmt(threads.threads_last_source_web||0), { hint:'Threads cuja ultima mensagem do usuario veio da web' }),
+            createKpiCardV2('Last source: whatsapp', fmt(threads.threads_last_source_whatsapp||0), { hint:'Threads cuja ultima mensagem do usuario veio do WhatsApp' }),
             createKpiCardV2('Last source: telegram', fmt(threads.threads_last_source_telegram||0), { hint:'Threads cuja ultima mensagem do usuario veio do TG' }),
         ].join('');
+
+        // ── WhatsApp KPIs ──
+        document.getElementById('bhAirtonWaKpis').innerHTML = [
+            createKpiCardV2('Usuarios WA', fmt(waOv.wa_unique_users||0), { hero:true, hint:'Distinct user_id em companion_messages source=whatsapp' }),
+            createKpiCardV2('Mensagens user', fmt(waOv.wa_user_messages||0), { hint:'role=user via WhatsApp' }),
+            createKpiCardV2('Respostas modelo', fmt(waOv.wa_model_messages||0), { hint:'role=model/assistant via WhatsApp' }),
+            createKpiCardV2('Threads ativas WA', fmt(waOv.wa_threads_active||0), { hint:'Threads distintas com mensagens WA' }),
+            createKpiCardV2('WA-only users', fmt(waOv.users_wa_only||0), { hint:'Nunca usaram via web' }),
+            createKpiCardV2('Web+WA users', fmt(waOv.users_web_and_wa||0), { hint:'Usam ambos canais', intent:'positive' }),
+            createKpiCardV2('Offer clicks', fmt(waOffers.offer_clicked||0), { hint:`${fmt(waOffers.offer_shown||0)} shown, ${fmt(waOffers.offer_dismissed||0)} dismissed, ${fmt(waOffers.unique_clickers||0)} unique clickers` }),
+        ].join('');
+
+        // ── WhatsApp daily ──
+        if (!showEmptyIfNeeded('bhAirtonWaDailyChart', waDaily, 'Sem mensagens WhatsApp no periodo', 'Canal ativo desde 10/06/2026.')) {
+            barChart('bhAirtonWaDailyChart', waDaily.map(d=>dayLabel(d.day)), [
+                {label:'Mensagens user',data:waDaily.map(d=>d.user_messages||0),backgroundColor:'#25d366'},
+                {label:'Respostas modelo',data:waDaily.map(d=>d.model_messages||0),backgroundColor:'#3ecf8e'},
+            ], {scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}});
+        }
+        const waOffersData = [
+            {label:'Shown',value:waOffers.offer_shown||0},
+            {label:'Clicked',value:waOffers.offer_clicked||0},
+            {label:'Dismissed',value:waOffers.offer_dismissed||0},
+            {label:'Token refresh',value:waOffers.offer_token_refreshed||0},
+        ];
+        if (!showEmptyIfNeeded('bhAirtonWaOffersChart', waOffersData.filter(d=>d.value>0), 'Sem offers registradas')) {
+            barChart('bhAirtonWaOffersChart', waOffersData.map(d=>d.label), [
+                {label:'Eventos',data:waOffersData.map(d=>d.value),backgroundColor:['#25d366','#3ecf8e','#94a3b8','#f59e0b']}
+            ]);
+        }
+
+        // ── WhatsApp linking funnel (usuarios unicos) ──
+        const waLinkStages = [
+            {label:'Offer shown', value:waLinkFunnel.offer_shown||0},
+            {label:'Connect', value:waLinkFunnel.connect_clicked||0},
+            {label:'Token gerado', value:waLinkFunnel.token_generated||0},
+            {label:'Bot link', value:waLinkFunnel.bot_link_clicked||0},
+            {label:'Link recebido', value:waLinkFunnel.link_received||0},
+            {label:'Linked', value:waLinkFunnel.linked||0},
+            {label:'Unlinked', value:waLinkFunnel.unlinked||0},
+        ];
+        if (!showEmptyIfNeeded('bhAirtonWaLinkFunnelChart', waLinkStages.filter(s=>s.value>0), 'Sem dados de vinculação')) {
+            barChart('bhAirtonWaLinkFunnelChart', waLinkStages.map(s=>s.label), [
+                {label:'Usuarios unicos',data:waLinkStages.map(s=>s.value),backgroundColor:'#25d366'}
+            ]);
+        }
+        if (!showEmptyIfNeeded('bhAirtonWaFunnelDailyChart', waFunnelDaily, 'Sem eventos de funil no periodo')) {
+            lineChart('bhAirtonWaFunnelDailyChart', waFunnelDaily.map(d=>dayLabel(d.day)), [
+                {label:'Offer shown',data:waFunnelDaily.map(d=>d.offer_shown||0),borderColor:'#25d366',fill:false},
+                {label:'Token gerado',data:waFunnelDaily.map(d=>d.token_generated||0),borderColor:'#f59e0b',fill:false},
+                {label:'Linked',data:waFunnelDaily.map(d=>d.linked||0),borderColor:'#3ecf8e',fill:false},
+                {label:'Unlinked',data:waFunnelDaily.map(d=>d.unlinked||0),borderColor:'#ef4444',fill:false},
+            ]);
+        }
+
+        // ── WhatsApp features table ──
+        const waFeatTable = document.getElementById('bhAirtonWaFeaturesTable');
+        waFeatTable.innerHTML = `
+            <thead><tr><th>Feature</th><th>Requests</th><th>Entregues / OK</th><th>Usuarios</th></tr></thead>
+            <tbody>
+                <tr><td>Briefing on-demand</td><td><strong>${fmt(waFeatures.briefing_request||0)}</strong></td><td>${fmt(waFeatures.briefing_delivered||0)}</td><td>${fmt(waFeatures.briefing_users||0)}</td></tr>
+                <tr><td>CVM PDF / abrir doc</td><td><strong>${fmt((waFeatures.cvm_pdf_request||0)+(waFeatures.cvm_open_request||0))}</strong></td><td>${fmt(waFeatures.cvm_pdf_request||0)} pdf / ${fmt(waFeatures.cvm_open_request||0)} open</td><td>${fmt(waFeatures.cvm_users||0)}</td></tr>
+            </tbody>`;
+
+        // ── WhatsApp outcomes + migração table ──
+        const waOutTable = document.getElementById('bhAirtonWaOutcomesTable');
+        const waTotalOut = waOutcomes.total||0;
+        const waSuccessPct = waTotalOut > 0 ? ((waOutcomes.success||0)/waTotalOut*100).toFixed(1) : '0';
+        waOutTable.innerHTML = `
+            <thead><tr><th>Metrica</th><th>Valor</th><th>Detalhe</th></tr></thead>
+            <tbody>
+                <tr><td>Mensagens recebidas</td><td><strong>${fmt(waTotalOut)}</strong></td><td>${fmt(waOutcomes.unique_users||0)} usuarios unicos</td></tr>
+                <tr><td>Success</td><td><strong>${fmt(waOutcomes.success||0)}</strong></td><td>${waSuccessPct}% das recebidas</td></tr>
+                <tr><td>Empty response</td><td>${fmt(waOutcomes.empty_response||0)}</td><td>resposta vazia do modelo</td></tr>
+                <tr><td>Falhas</td><td>${fmt(waOutcomes.failed||0)}</td><td>success = false</td></tr>
+                <tr><td>Latencia media</td><td><strong>${fmt(waOutcomes.avg_latency_ms||0)} ms</strong></td><td>whatsapp_gemini_latency_ms</td></tr>
+                <tr><td>Fallback recovery</td><td>${fmt(waOutcomes.fallback_recovery_shown||0)}</td><td>${fmt(waOutcomes.thread_reset||0)} thread resets</td></tr>
+                <tr><td>Migração TG→WA</td><td>${fmt(waMigration.tg_invite_sent||0)} convites</td><td>${fmt(waMigration.whatsmoved_viewed||0)} viram aviso "mudou pro WhatsApp"</td></tr>
+            </tbody>`;
 
         // ── Telegram KPIs ──
         document.getElementById('bhAirtonTgKpis').innerHTML = [
@@ -2398,13 +2562,192 @@
         renderInactivityTable('bhRetInactTable', userInactivity);
     }
 
-    function renderUserTickerTable(tableId, data) {
+    function renderUserTickerTable(tableId, data, detailRows) {
+        const tbl = document.getElementById(tableId);
+        if (!tbl) return;
         if (!data || data.length === 0) {
-            document.getElementById(tableId).innerHTML = '<thead><tr><th>Email</th><th>Total Consultas</th><th>Tickers Unicos</th><th>Top Ticker</th><th>Feature Principal</th><th>Ultimo Uso</th></tr></thead><tbody><tr><td colspan="6" style="text-align:center;color:var(--m)">Sem dados de uso por ticker</td></tr></tbody>';
+            tbl.innerHTML = '<thead><tr><th></th><th>Email</th><th>Total Consultas</th><th>Tickers Unicos</th><th>Top Ticker</th><th>Feature Principal</th><th>Ultimo Uso</th></tr></thead><tbody><tr><td colspan="7" style="text-align:center;color:var(--m)">Sem dados de uso por ticker</td></tr></tbody>';
             return;
         }
-        document.getElementById(tableId).innerHTML = `<thead><tr><th>Email</th><th>Total Consultas</th><th>Tickers Unicos</th><th>Top Ticker</th><th>Feature Principal</th><th>Ultimo Uso</th></tr></thead><tbody>${data.map(u=>`<tr><td>${u.email||'-'}</td><td>${fmt(u.total_queries||0)}</td><td>${u.unique_tickers||0}</td><td>${u.top_ticker||'-'}</td><td>${u.top_feature||'-'}</td><td>${u.last_activity?new Date(u.last_activity).toLocaleDateString('pt-BR'):'-'}</td></tr>`).join('')}</tbody>`;
-        makeSortable(document.getElementById(tableId));
+        // Agrupa detail rows por user_id (uma vez) para drill-down O(1).
+        const detailByUser = {};
+        (detailRows || []).forEach(r => {
+            if (!r || !r.user_id) return;
+            (detailByUser[r.user_id] = detailByUser[r.user_id] || []).push(r);
+        });
+        const hasDetail = Object.keys(detailByUser).length > 0;
+        const rowsHtml = data.map((u, idx) => {
+            const uid = u.user_id || '';
+            const detail = detailByUser[uid] || [];
+            const canExpand = hasDetail && detail.length > 0;
+            const btn = canExpand
+                ? `<button class="utt-expand" data-row="${idx}" style="background:none;border:none;cursor:pointer;color:#6366f1;font-size:0.85rem;padding:2px 6px;">&#9656;</button>`
+                : `<span style="color:#cbd5e1;padding:2px 6px;">&middot;</span>`;
+            const main = `<tr data-uid="${uid}" data-row="${idx}"><td>${btn}</td><td>${u.email||'-'}</td><td>${fmt(u.total_queries||0)}</td><td>${u.unique_tickers||0}</td><td>${u.top_ticker||'-'}</td><td>${u.top_feature||'-'}</td><td>${u.last_activity?new Date(u.last_activity).toLocaleDateString('pt-BR'):'-'}</td></tr>`;
+            if (!canExpand) return main;
+            const sortedDetail = detail.slice().sort((a,b)=>(b.cnt||0)-(a.cnt||0));
+            const visible = sortedDetail.slice(0, 20);
+            const more = sortedDetail.length - visible.length;
+            const detailBody = visible.map(d => `<tr><td>${d.ticker||'-'}</td><td>${d.feature||'-'}</td><td style="text-align:right;">${fmt(d.cnt||0)}</td></tr>`).join('');
+            const moreNote = more > 0 ? `<tr><td colspan="3" style="text-align:center;color:#94a3b8;font-size:0.75rem;padding:6px;">+ ${more} combinacoes nao exibidas</td></tr>` : '';
+            const detailRow = `<tr class="utt-detail" data-for="${idx}" style="display:none;background:#f8fafc;"><td colspan="7" style="padding:10px 14px;"><div style="font-size:0.75rem;color:#475569;margin-bottom:6px;font-weight:600;">Breakdown ticker x feature (no periodo)</div><table style="width:100%;font-size:0.78rem;"><thead><tr><th style="text-align:left;color:#94a3b8;font-weight:500;padding:4px 6px;">Ticker</th><th style="text-align:left;color:#94a3b8;font-weight:500;padding:4px 6px;">Feature</th><th style="text-align:right;color:#94a3b8;font-weight:500;padding:4px 6px;">Eventos</th></tr></thead><tbody>${detailBody}${moreNote}</tbody></table></td></tr>`;
+            return main + detailRow;
+        }).join('');
+        tbl.innerHTML = `<thead><tr><th></th><th>Email</th><th>Total Consultas</th><th>Tickers Unicos</th><th>Top Ticker</th><th>Feature Principal</th><th>Ultimo Uso</th></tr></thead><tbody>${rowsHtml}</tbody>`;
+        makeSortable(tbl);
+        // Listener delegado para expansoes.
+        tbl.querySelectorAll('.utt-expand').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const rowIdx = btn.getAttribute('data-row');
+                const detailTr = tbl.querySelector(`tr.utt-detail[data-for="${rowIdx}"]`);
+                if (!detailTr) return;
+                const open = detailTr.style.display !== 'none';
+                detailTr.style.display = open ? 'none' : '';
+                btn.innerHTML = open ? '&#9656;' : '&#9662;';
+            });
+        });
+    }
+
+    // ── 2026-05-27: controles do bloco de tickers (Engajamento iAcoes) ──
+    // Estado global em window._bhTickerFilters; fetchAnalytics le esse objeto.
+    function wireBhEngTickerControls(bh, tickerByFeature, tickerRanking) {
+        if (!window._bhTickerFilters) {
+            window._bhTickerFilters = { selected: [], includeAdmins: false, metric: 'cnt' };
+        }
+        const state = window._bhTickerFilters;
+
+        // Sincroniza estado de admin com o que o servidor confirmou (se houver meta).
+        const serverIncludeAdmins = !!dashboardData.bh_ticker_include_admins;
+        state.includeAdmins = serverIncludeAdmins;
+
+        // ── Multi-select de tickers ──
+        const selectBtn = document.getElementById('bhEngTickerSelectBtn');
+        const selectLabel = document.getElementById('bhEngTickerSelectLabel');
+        const selectPanel = document.getElementById('bhEngTickerSelectPanel');
+        const selectList = document.getElementById('bhEngTickerSelectList');
+        const selectSearch = document.getElementById('bhEngTickerSelectSearch');
+        const selectApply = document.getElementById('bhEngTickerSelectApply');
+        const selectClear = document.getElementById('bhEngTickerSelectClear');
+
+        // Lista de tickers disponiveis: uniao do ranking (top 20 no periodo) + ticker_by_feature.
+        const candidateSet = new Set();
+        (tickerRanking || []).forEach(r => r.ticker && candidateSet.add(r.ticker));
+        (tickerByFeature || []).forEach(r => r.ticker && candidateSet.add(r.ticker));
+        state.selected.forEach(t => candidateSet.add(t)); // garante que selecionados aparecam mesmo se sumirem
+        const allTickers = [...candidateSet].sort();
+
+        function renderList(filterText) {
+            const ft = (filterText || '').trim().toUpperCase();
+            const filtered = ft ? allTickers.filter(t => t.toUpperCase().includes(ft)) : allTickers;
+            selectList.innerHTML = filtered.length === 0
+                ? '<div style="color:#94a3b8;font-size:0.78rem;padding:8px;text-align:center;">Nenhum ticker</div>'
+                : filtered.map(t => {
+                    const checked = state.selected.includes(t) ? 'checked' : '';
+                    return `<label style="display:flex;align-items:center;gap:8px;padding:4px 6px;font-size:0.8rem;cursor:pointer;border-radius:4px;"><input type="checkbox" value="${t}" ${checked}> <span>${t}</span></label>`;
+                }).join('');
+            selectList.querySelectorAll('input[type=checkbox]').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    const v = cb.value;
+                    if (cb.checked) { if (!state.selected.includes(v)) state.selected.push(v); }
+                    else { state.selected = state.selected.filter(x => x !== v); }
+                });
+            });
+        }
+
+        function refreshSelectLabel() {
+            if (state.selected.length === 0) selectLabel.textContent = 'Top N dinamico';
+            else if (state.selected.length === 1) selectLabel.textContent = state.selected[0];
+            else selectLabel.textContent = `${state.selected.length} tickers`;
+        }
+
+        if (selectBtn && selectPanel && selectList) {
+            refreshSelectLabel();
+            selectBtn.onclick = (e) => {
+                e.stopPropagation();
+                const open = selectPanel.style.display !== 'none' && selectPanel.style.display !== '';
+                // O panel comeca com display:none + display:flex no estilo inline (so o ultimo vale).
+                // Para alternar com clareza, normalizamos.
+                if (open) { selectPanel.style.display = 'none'; }
+                else { selectPanel.style.display = 'flex'; renderList(''); selectSearch.value = ''; selectSearch.focus(); }
+            };
+            selectSearch.oninput = () => renderList(selectSearch.value);
+            selectClear.onclick = (e) => {
+                e.stopPropagation();
+                state.selected = [];
+                refreshSelectLabel();
+                selectPanel.style.display = 'none';
+                refetchAndRerender();
+            };
+            selectApply.onclick = (e) => {
+                e.stopPropagation();
+                refreshSelectLabel();
+                selectPanel.style.display = 'none';
+                refetchAndRerender();
+            };
+            // Fechar ao clicar fora.
+            if (!window._bhEngTickerOutsideBound) {
+                document.addEventListener('click', (ev) => {
+                    const panel = document.getElementById('bhEngTickerSelectPanel');
+                    const btn = document.getElementById('bhEngTickerSelectBtn');
+                    if (!panel || !btn) return;
+                    if (panel.style.display === 'flex' && !panel.contains(ev.target) && !btn.contains(ev.target)) {
+                        panel.style.display = 'none';
+                    }
+                });
+                window._bhEngTickerOutsideBound = true;
+            }
+        }
+
+        // ── Toggle metrica (client-side) ──
+        const metricToggle = document.getElementById('bhEngMetricToggle');
+        if (metricToggle) {
+            metricToggle.querySelectorAll('.bh-eng-metric-opt').forEach(btn => {
+                const m = btn.getAttribute('data-metric');
+                const active = m === state.metric;
+                btn.style.background = active ? '#6366f1' : '#fff';
+                btn.style.color = active ? '#fff' : '#475569';
+                btn.style.fontWeight = active ? '600' : '400';
+                btn.onclick = () => {
+                    if (state.metric === m) return;
+                    state.metric = m;
+                    // Re-renderiza apenas a aba (sem refetch — feature_usage_trend ja tem cnt + unique_users).
+                    reRenderTab(currentTab);
+                };
+            });
+        }
+
+        // ── Toggle admin (server-side, refetch) ──
+        const adminToggle = document.getElementById('bhEngTickerAdminToggle');
+        const adminDot = document.getElementById('bhEngTickerAdminToggleDot');
+        const adminLabel = document.getElementById('bhEngTickerAdminToggleLabel');
+        if (adminToggle && adminDot && adminLabel) {
+            if (state.includeAdmins) {
+                adminToggle.style.borderColor = '#f59e0b';
+                adminToggle.style.color = '#f59e0b';
+                adminDot.style.background = '#f59e0b';
+                adminLabel.textContent = 'Incluindo admins (debug)';
+            } else {
+                adminToggle.style.borderColor = '#94a3b8';
+                adminToggle.style.color = '#64748b';
+                adminDot.style.background = '#94a3b8';
+                adminLabel.textContent = 'Sem admins (oficial)';
+            }
+            adminToggle.onclick = () => {
+                state.includeAdmins = !state.includeAdmins;
+                refetchAndRerender();
+            };
+        }
+
+        // ── Linha de meta (badge informativo) ──
+        const metaEl = document.getElementById('bhEngTickerMeta');
+        if (metaEl) {
+            const parts = [];
+            if (state.selected.length > 0) parts.push(`filtro: ${state.selected.join(', ')}`);
+            else parts.push(`top ${dashboardData.bh_top_n || 30} dinamico`);
+            if (state.includeAdmins) parts.push('inclui admins');
+            metaEl.textContent = parts.join(' · ');
+        }
     }
 
     function renderInactivityTable(tableId, data) {
@@ -2480,9 +2823,9 @@
                 </div>
             </div>
 
-            <!-- Section 3: Conversao & Retencao -->
+            <!-- Section 3: Retencao & Churn -->
             <div class="section-block">
-                ${createSectionHeader('Conversao & Retencao', 'Funil de paywall -> pagamento e sinais de churn.')}
+                ${createSectionHeader('Retencao & Churn', 'Eventos de assinatura, cancelamentos, tempo ate conversao e watchlist.')}
                 <div class="kpi-grid-compact" id="bhCConvKpis"></div>
                 <div class="charts-grid">
                     ${canvasHTML('bhCSubEventsChart','Eventos de Assinatura (diario)')}
@@ -2490,20 +2833,20 @@
                 </div>
                 <div class="charts-grid">
                     ${canvasHTML('bhCTtcChart','Tempo ate Conversao')}
-                    ${canvasHTML('bhCPaywallChart','Features que Levam ao Paywall')}
-                </div>
-                <div class="charts-grid">
                     ${canvasHTML('bhCWatchlistChart','Top Tickers na Watchlist')}
                 </div>
             </div>
 
-            <!-- Section 4: Paywall v2 -->
+            <!-- Section 4: Paywall & Conversao (v1 features + v2 touchpoints) -->
             <div class="section-block">
-                ${createSectionHeader('Paywall v2 (novos touchpoints)', 'Eventos de paywall lancados em 2026-04-23: credit_exhausted, teaser, hint, export_paywall, passive_paywall.')}
+                ${createSectionHeader('Paywall & Conversao', 'Bloqueios de paywall e conversao para checkout. Touchpoints v2 (credit_exhausted, teaser, hint, export, passive) lancados em 2026-04-23. "Features que levam ao paywall" = bloqueios v1 por feature.')}
                 <div class="kpi-grid" id="bhCPaywallV2Kpis"></div>
                 <div class="charts-grid">
                     ${canvasHTML('bhCPaywallV2DailyChart','Paywall v2 ao longo do tempo (diario)')}
-                    ${canvasHTML('bhCPaywallV2FunnelChart','Funil teaser -> CTA -> checkout')}
+                    ${canvasHTML('bhCPaywallV2FunnelChart','Funil bloqueado -> teaser -> CTA -> checkout')}
+                </div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhCPaywallChart','Features que Levam ao Paywall')}
                 </div>
             </div>
 
@@ -2569,7 +2912,6 @@
         const paymentRate = totalCheckouts > 0 ? (totalPayments/totalCheckouts*100) : 0;
         document.getElementById('bhCConvKpis').innerHTML = `
             ${createKpiCardV2('Churn Rate (snapshot)', (subsOv.churn_rate||0).toFixed(1), { unit:'%', intent:(subsOv.churn_rate||0) > 10 ? 'negative' : 'neutral' })}
-            ${createKpiCardV2('Paywall -> Checkout', checkoutRate.toFixed(1), { unit:'%', hint:`${fmt(totalCheckouts)} / ${fmt(totalPaywall)}` })}
             ${createKpiCardV2('Checkout -> Pago', paymentRate.toFixed(1), { unit:'%', hint:`${fmt(totalPayments)} / ${fmt(totalCheckouts)}` })}
             ${createKpiCardV2('Total Pagamentos', fmt(mrr.total_payments||0), { hint:`${fmt(mrr.total_paying_users||0)} pagantes unicos`, spark:paymentsSpark })}
             ${createKpiCardV2('Cancelamentos', fmt(totalCancels), { intent:'negative', spark:cancelsSpark })}
@@ -2696,15 +3038,13 @@
         const creditConvRate = (paywallV2.credit_exhausted_shown||0) > 0
             ? (((paywallV2.credit_exhausted_checkout||0) / paywallV2.credit_exhausted_shown) * 100).toFixed(1)
             : '0';
+        // KPIs enxutos (4): os demais touchpoints (hint/export/passive) seguem
+        // visiveis como series no grafico diario abaixo.
         document.getElementById('bhCPaywallV2Kpis').innerHTML = `
             ${createKpiCardV2('Credit Exhausted', fmt(paywallV2.credit_exhausted_shown||0), { hero:true, hint:`${creditConvRate}% -> checkout` })}
             ${createKpiCardV2('Teaser views', fmt(paywallV2.teaser_views||0), { hint:`${teaserConvRate}% -> CTA click` })}
-            ${createKpiCardV2('Hints', fmt(paywallV2.hint_shown||0), { hint:'paywall_hint_shown' })}
-            ${createKpiCardV2('Export paywall', fmt(paywallV2.export_paywall_shown||0))}
-            ${createKpiCardV2('Passive clicks', fmt(paywallV2.passive_clicks||0), { hint:'passive_paywall_click' })}
-            ${createKpiCardV2('Portfolio detected', fmt(paywallV2.teaser_portfolio_detected||0), { hint:'teaser viu portfolio do user' })}
-            ${createKpiCardV2('Ticker searches', fmt(paywallV2.teaser_ticker_searches||0))}
-            ${createKpiCardV2('Usuarios bloqueados', fmt(paywallV2.unique_users_blocked||0), { intent:'neutral' })}
+            ${createKpiCardV2('Usuarios bloqueados', fmt(paywallV2.unique_users_blocked||0), { intent:'neutral', hint:'distinct users em paywall v2' })}
+            ${createKpiCardV2('Paywall -> Checkout', checkoutRate.toFixed(1), { unit:'%', hint:`${fmt(totalCheckouts)} / ${fmt(totalPaywall)} (v1 paywall_blocks)` })}
         `;
         const pwFiltered = filterSnapshot(paywallV2Daily, f);
         if (!showEmptyIfNeeded('bhCPaywallV2DailyChart', pwFiltered, 'Sem paywall v2 no periodo', 'Eventos novos a partir de 2026-04-23.')) {
@@ -4042,6 +4382,12 @@
             if (globalFilters.from) params.set('from', `${globalFilters.from}T00:00:00.000Z`);
             if (globalFilters.to)   params.set('to',   `${globalFilters.to}T23:59:59.999Z`);
             if (window._airtonIncludeAdmins) params.set('include_admins', 'true');
+            // 2026-05-27: params do bloco de tickers (Engajamento iAcoes).
+            const tf = window._bhTickerFilters;
+            if (tf) {
+                if (tf.includeAdmins) params.set('bh_ticker_include_admins', 'true');
+                if (tf.selected && tf.selected.length > 0) params.set('bh_tickers', tf.selected.join(','));
+            }
             const url = params.toString() ? `${API_ENDPOINT}?${params}` : API_ENDPOINT;
             const response = await fetch(url, { method: 'GET', headers: { 'Authorization': `Bearer ${currentToken}` } });
             if (response.status === 401) throw new Error('Sessao expirada. Faca login novamente.');

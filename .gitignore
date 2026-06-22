@@ -2,3 +2,8 @@
 .env.local
 node_modules/
 .DS_Store
+
+# Local tooling / temp artifacts (nao fazem parte do dashboard)
+.claude/
+_bmad/
+supabase/.temp/

@@ -54,7 +54,24 @@ supabase/
     20260430_iacoes_daily_breakdowns.sql    # NEW RPC get_analytics_data_iacoes_daily() — 8 daily breakdowns p/ filtro temporal
     20260501_bh_oauth_metrics.sql           # NEW RPC get_analytics_data_bh_oauth() — Google OAuth adoption (auth_login + profile_type)
     20260503_bh_engagement_v2_admin_filter.sql # View usage_events_clean + RPC get_analytics_data_bh_extras_v2(p_from, p_to) — admin filter, period window, lifetime fix
+    20260527_bh_engagement_ticker_v3.sql    # NEW RPC get_analytics_data_bh_tickers_v3() — top N dinamico no periodo + multi-select + admin toggle
+    20260622_airton_whatsapp.sql            # Estende airton_v2 (blocos WhatsApp) + NEW RPC get_analytics_data_airton_whatsapp_v1() — canal WhatsApp do Airton (cutover TG->WA 10/06)
 ```
+
+## BH Engagement — Ticker Analytics v3 (2026-05-27)
+
+Reformulação das 6 seções de ticker da aba Engajamento iAções (`ticker_by_feature`, `ticker_trend_daily`, `feature_usage_trend`, `ticker_ranking`, `user_ticker_usage`, `user_ticker_detail`). Bugs corrigidos:
+
+1. **Top N estatico** — Em `get_analytics_data_v2()`, o CTE `top_tickers` calculava o top 30 **all-time** (sem `p_from`/`p_to`). Resultado: trocar de janela nao mudava quais tickers apareciam. v3 calcula o top N dentro do periodo.
+2. **Ranking e tabelas all-time** — `ticker_ranking`, `user_ticker_usage`, `user_ticker_detail` ignoravam o filtro global. v3: todos filtrados por periodo.
+3. **Metricas conflitantes** — `feature_usage_trend` plotava `unique_users` enquanto `ticker_trend_daily` plotava `cnt`. Nunca batiam. Pior: `feature_usage_trend` exigia `ticker IS NOT NULL`, entao Macro Beta/Optimizer sumiam. v3 retorna AMBOS `cnt` e `unique_users` por dia/feature, e remove o filtro de ticker.
+4. **Admins inflavam tudo** — Nenhuma das 6 secoes usava `usage_events_clean`. v3 aplica filtro inline via `profiles.is_admin` (padrao Airton v2.3) com toggle `p_include_admins`.
+5. **`user_ticker_detail` desperdicado** — A RPC v2 ja retornava (user x ticker x feature) mas o frontend nunca renderizava. v3 limita a 5000 linhas e o frontend agora exibe via drill-down expandindo cada linha da tabela.
+
+- **Nova RPC** `get_analytics_data_bh_tickers_v3(p_from timestamptz, p_to timestamptz, p_include_admins boolean DEFAULT false, p_tickers text[] DEFAULT NULL, p_top_n int DEFAULT 30)` em migration `20260527_bh_engagement_ticker_v3.sql`. Defaults: ultimos 30 dias, sem admins, top 30 dinamico. Quando `p_tickers` e nao-nulo, ignora top N e retorna so esses tickers (sem linha 'Outros').
+- **Edge function**: 13o `fetchRpc` em paralelo no `Promise.all`. Aceita query params `?bh_ticker_include_admins=1`, `?bh_tickers=PETR4,VALE3` (CSV), `?bh_top_n=30`. Merge no `bhMerged` em ULTIMO (sobrescreve as 6 secoes vindas de v2).
+- **Frontend** (`index.html`): nova sub-bar de controles em `renderBhEngajamento` (multi-select de tickers com busca, toggle metrica Rodadas/Usuarios unicos, toggle Incluir admins). Estado em `window._bhTickerFilters = { selected, includeAdmins, metric }`. `fetchAnalytics()` envia os 3 params. `renderUserTickerTable` agora aceita `detailRows` (de `bh.user_ticker_detail`) e renderiza expansao por linha. Toggle metrica e client-side (nao refetcha); toggle admin e multi-select disparam `refetchAndRerender()`.
+- **v2 nao foi alterada** — `get_analytics_data_v2()` continua retornando as 6 secoes (rollback gratuito), apenas deixou de ser fonte no frontend.
 
 ## Airton Analytics (2026-05-12)
 
@@ -84,6 +101,27 @@ Nova sub-aba "Airton" no grupo iAcoes (entre Engajamento e Retencao) com trackin
 - **Edge function**: `analytics-dashboard/index.ts` agora chama 10 RPCs em paralelo (10º = `get_analytics_data_airton_v2`); merge em `bhMerged`.
 - **Frontend** (`index.html`): nova funcao `renderBhAirton()` com Hero KPIs (8 cards incluindo custo USD estimado client-side), atividade diaria, funil, bloco de tokens (4 KPIs + daily stacked por modelo + requests por modelo + tabela com custo por modelo), top tools, top contextos, threads, bloco "Airton via Telegram" (7 KPIs + daily + CTA chart) e erros recentes. Mini-secao "Companion (IAnalista)" antiga em `renderBhEngajamento` removida — dados consolidados na nova aba.
 - **NAO migrado nesta fase**: `get_analytics_data.companion_messages_daily` (v1, all-time, inclui admins) continua existindo na RPC base mas nao e mais consumido pelo frontend.
+
+## Airton — canal WhatsApp (2026-06-22)
+
+WhatsApp **substituiu o Telegram** como canal ativo do Airton em **2026-06-10** (o Telegram parou de receber mensagens exatamente quando o WhatsApp comecou). `companion_messages` agora recebe `source='whatsapp'` e ha um funil rico de eventos `whatsapp_*` em `usage_events`. Bloco "Airton via WhatsApp" adicionado na aba Airton com **paridade ao Telegram**, posicionado **antes** dos blocos Telegram (WhatsApp = ativo, Telegram = legado).
+
+- **Extensao de `get_analytics_data_airton_v2`** (migration `20260622_airton_whatsapp.sql`, bump para `airton_v2.4_whatsapp_20260622`): assinatura **inalterada** `(p_from, p_to, p_include_admins)`. Espelha os blocos de mensagens Telegram via o mesmo CTE `cm` (que ja respeita o toggle de admins por `profiles.is_admin`). Novas chaves:
+  - `airton_whatsapp_overview`: wa_unique_users, wa_user/model/total_messages, wa_threads_active, users_wa_only / web_only / web_and_wa
+  - `airton_whatsapp_daily`: mensagens WA por dia (user/model/total/unique_users)
+  - `airton_overview` ganhou `whatsapp_users`, `whatsapp_messages`, `whatsapp_share_pct`
+  - `airton_threads_overview` ganhou `threads_last_source_whatsapp`
+- **Nova RPC complementar** `get_analytics_data_airton_whatsapp_v1(p_from timestamptz, p_to timestamptz)` (mesma migration). Espelho de `get_analytics_data_airton_telegram_v1`, le de `usage_events_clean` (admins ja excluidos pela view; sem toggle). Retorna:
+  - `airton_whatsapp_linking_funnel`: offer_shown → connect_clicked → token_generated → token_copied → bot_link_clicked → link_received → verify_clicked → linked + unlinked + optout (usuarios unicos)
+  - `airton_whatsapp_offers`: offer_shown/clicked/dismissed/token_refreshed + unique_shown/unique_clickers
+  - `airton_whatsapp_funnel_daily`: serie diaria das etapas-chave
+  - `airton_whatsapp_features`: briefing_request/delivered, cvm_pdf_request/open_request (+ unique users)
+  - `airton_whatsapp_message_outcomes`: success/empty_response/failed/total de `whatsapp_message_received` + `avg_latency_ms` (de `whatsapp_gemini_latency_ms.ms`) + fallback_recovery_shown + thread_reset
+  - `airton_whatsapp_migration`: whatsmoved_viewed + tg_invite_sent (sinal de migracao TG→WA)
+  - `meta`: `{from, to, rpc_version: 'airton_whatsapp_v1', source: 'usage_events_clean'}`
+  - **Nota de schema** (verificado 2026-06-22): `whatsapp_token_generated` tem `success = NULL` (NAO filtrar por `success`, diferente do `telegram_token_generated`). `whatsapp_message_received` usa coluna booleana `success` + `properties->>'outcome'` (`success`/`empty_response`). WhatsApp nao tem `command_used`/`start_received` — usa briefing/cvm como features; o funil comeca em `whatsapp_offer_shown`.
+- **Edge function**: 14º `fetchRpc` no `Promise.all` (`get_analytics_data_airton_whatsapp_v1`, apos `..._airton_telegram_v1`); merge `...(bhAirtonWa || {})` em `bhMerged` (apos `bhAirtonTg`).
+- **Frontend** (`renderBhAirton`): blocos WhatsApp antes do Telegram — "Airton via WhatsApp" (7 KPIs + daily stacked `#25d366`/`#3ecf8e` + offers chart), "WhatsApp: funil de vinculacao" (funil de usuarios unicos + daily), "WhatsApp: features & outcomes" (2 tabelas). Card "% via WhatsApp" no hero e "Last source: whatsapp" nas threads. Estado de admin/periodo reutiliza o wiring existente (mensagens em airton_v2 respeitam o toggle; funil le de `usage_events_clean`).
 
 ## BH Engagement v2 — Admin Filter + Period Window (2026-05-03)
 
@@ -407,6 +445,7 @@ O dashboard usa layout com sidebar lateral + area de conteudo light (estilo Kond
 - **Top bar** (sticky): titulo da aba (`iAcoes - X` / `HTA - X`) + filtros globais + admin info
 - **Area de conteudo**: fundo claro (#f5f7fa), cards brancos com sombra sutil
 - **Regra**: dados iAcoes (BH) e HTA nunca combinados num mesmo grafico/tabela/KPI
+- **Paywall consolidado (2026-06-22)** em `renderBhCustos`: paywall v1 + v2 unidos numa unica secao "Paywall & Conversao" (KPIs v2 reduzidos de 8→4 + daily stacked + funil + "Features que Levam ao Paywall" v1). A antiga Section 3 virou "Retencao & Churn" (sem o grafico de paywall e sem o KPI "Paywall→Checkout", movidos para a secao consolidada). Apenas frontend — chaves de backend (`paywall_v2_*`, `feature_paywall`) inalteradas.
 
 > **Internamente** as variaveis JS continuam com prefixo `bh` (`bhVisao`, `bhEngajamento`, `bhCustos`, `dashboardData.bh`, `bhSubFilters`, `renderBhEngajamento`...) — a renomeacao foi apenas em strings visiveis ao admin.
 
