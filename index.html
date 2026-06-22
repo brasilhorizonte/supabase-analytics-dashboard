@@ -1904,6 +1904,9 @@
         const waFeatures = bh.airton_whatsapp_features || {};
         const waOutcomes = bh.airton_whatsapp_message_outcomes || {};
         const waMigration = bh.airton_whatsapp_migration || {};
+        const waAcq = bh.airton_whatsapp_acquisition || {};
+        const waAcqByChannel = waAcq.by_channel || [];
+        const waAcqByUser = waAcq.by_user || [];
         // 2026-05-18 Sprint TELEMETRY B1+B2+B3: pool V2 daily refill (substitui lifetime
         // após cutover 14/05). 5 blocos via RPC get_analytics_data_bh_pool_v2.
         const poolOv = bh.pool_v2_overview || {};
@@ -1985,6 +1988,14 @@
                     ${canvasHTML('bhAirtonWaLinkFunnelChart','Funil de vinculação (usuários únicos)')}
                     ${canvasHTML('bhAirtonWaFunnelDailyChart','Funil diário (eventos)')}
                 </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('WhatsApp: aquisição (por onde cada usuário entrou)', 'Canal pelo qual cada usuário vinculou o WhatsApp (properties.source_channel de whatsapp_linked). email_campaign = blast de email; linking_codeword = codeword/deeplink. Por usuário = canal da PRIMEIRA vinculação. Fonte: usage_events (sem admins).')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhAirtonWaAcqChart','Usuários vinculados por canal')}
+                </div>
+                <div class="table-container mb-2"><div class="table-title">Por usuário (first-touch)</div><table id="bhAirtonWaAcqTable"></table></div>
             </div>
 
             <div class="section-block">
@@ -2283,6 +2294,30 @@
                 {label:'Linked',data:waFunnelDaily.map(d=>d.linked||0),borderColor:'#3ecf8e',fill:false},
                 {label:'Unlinked',data:waFunnelDaily.map(d=>d.unlinked||0),borderColor:'#ef4444',fill:false},
             ]);
+        }
+
+        // ── WhatsApp aquisição (canal + por usuário) ──
+        const ACQ_LABELS = { email_campaign:'Email campaign', linking_codeword:'Codeword / deeplink', '(unknown)':'Desconhecido' };
+        const acqLabel = c => ACQ_LABELS[c] || c;
+        const ACQ_COLORS = { email_campaign:'#6366f1', linking_codeword:'#25d366', '(unknown)':'#94a3b8' };
+        if (!showEmptyIfNeeded('bhAirtonWaAcqChart', waAcqByChannel, 'Sem vinculações no periodo')) {
+            doughnutChart('bhAirtonWaAcqChart',
+                waAcqByChannel.map(c=>acqLabel(c.source_channel)),
+                waAcqByChannel.map(c=>c.unique_users||0),
+                waAcqByChannel.map(c=>ACQ_COLORS[c.source_channel]||'#94a3b8'));
+        }
+        const waAcqTable = document.getElementById('bhAirtonWaAcqTable');
+        if (waAcqByUser.length === 0) {
+            waAcqTable.innerHTML = '<tr><td>Nenhum usuario vinculou WhatsApp no periodo</td></tr>';
+        } else {
+            waAcqTable.innerHTML = `
+                <thead><tr><th>#</th><th>Email</th><th>Canal de aquisição</th><th>Vinculou em</th></tr></thead>
+                <tbody>${waAcqByUser.map((u,i)=>`<tr>
+                    <td>${i+1}</td>
+                    <td>${u.email||'(sem email)'}</td>
+                    <td>${acqLabel(u.source_channel)}</td>
+                    <td>${u.first_linked ? dayLabel(u.first_linked.slice(0,10)) : '-'}</td>
+                </tr>`).join('')}</tbody>`;
         }
 
         // ── WhatsApp features table ──

@@ -539,6 +539,48 @@ BEGIN
       'tg_invite_unique_users',  COUNT(DISTINCT user_id) FILTER (WHERE event_name = 'telegram_whatsapp_invite_sent')
     ) AS data
     FROM ev
+  ),
+  -- Canal de aquisicao = properties.source_channel de whatsapp_linked.
+  -- by_channel = agregado; by_user = first-touch (1 linha por usuario, o canal
+  -- da PRIMEIRA vinculacao). Email via auth.users (SECURITY DEFINER; mesmo padrao
+  -- de lifetime_feature_top_users). usage_events_clean ja exclui admins.
+  acquisition AS (
+    SELECT jsonb_build_object(
+      'by_channel', (
+        SELECT COALESCE(jsonb_agg(d ORDER BY (d->>'unique_users')::int DESC), '[]'::jsonb)
+        FROM (
+          SELECT jsonb_build_object(
+            'source_channel', COALESCE(properties->>'source_channel', '(unknown)'),
+            'events',         COUNT(*),
+            'unique_users',   COUNT(DISTINCT user_id)
+          ) AS d
+          FROM ev
+          WHERE event_name = 'whatsapp_linked'
+          GROUP BY properties->>'source_channel'
+        ) s
+      ),
+      'by_user', (
+        SELECT COALESCE(jsonb_agg(d ORDER BY d->>'first_linked'), '[]'::jsonb)
+        FROM (
+          SELECT jsonb_build_object(
+            'email',          x.email,
+            'source_channel', COALESCE(x.source_channel, '(unknown)'),
+            'first_linked',   to_char(x.first_linked, 'YYYY-MM-DD"T"HH24:MI:SSOF')
+          ) AS d
+          FROM (
+            SELECT
+              u.email,
+              e.properties->>'source_channel' AS source_channel,
+              e.event_ts AS first_linked,
+              row_number() OVER (PARTITION BY e.user_id ORDER BY e.event_ts) AS rn
+            FROM ev e
+            LEFT JOIN auth.users u ON u.id = e.user_id
+            WHERE e.event_name = 'whatsapp_linked'
+          ) x
+          WHERE x.rn = 1
+        ) s
+      )
+    ) AS data
   )
   SELECT jsonb_build_object(
     'airton_whatsapp_linking_funnel',   (SELECT data FROM linking_funnel),
@@ -547,6 +589,7 @@ BEGIN
     'airton_whatsapp_features',         (SELECT data FROM features),
     'airton_whatsapp_message_outcomes', (SELECT data FROM message_outcomes),
     'airton_whatsapp_migration',        (SELECT data FROM migration),
+    'airton_whatsapp_acquisition',      (SELECT data FROM acquisition),
     'meta', jsonb_build_object(
       'from', p_from,
       'to', p_to,
