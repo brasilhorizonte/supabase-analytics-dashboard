@@ -56,7 +56,29 @@ supabase/
     20260503_bh_engagement_v2_admin_filter.sql # View usage_events_clean + RPC get_analytics_data_bh_extras_v2(p_from, p_to) — admin filter, period window, lifetime fix
     20260527_bh_engagement_ticker_v3.sql    # NEW RPC get_analytics_data_bh_tickers_v3() — top N dinamico no periodo + multi-select + admin toggle
     20260622_airton_whatsapp.sql            # Estende airton_v2 (blocos WhatsApp) + NEW RPC get_analytics_data_airton_whatsapp_v1() — canal WhatsApp do Airton (cutover TG->WA 10/06)
+    20260817_dashboard_overhaul_bh.sql      # Overhaul: v2_impl sem 8 secoes mortas, NEW get_notification_analytics_v2(p_from,p_to), utm_v2 sem 50OFF, statement_timeout nas 5 RPCs restantes
 ```
+
+## Overhaul de Performance & Histórico (2026-08-17)
+
+Reforma geral para resolver: (1) histórico incompleto (default 30d sem preset "Máx", notificações travadas em 90d hardcoded), (2) lentidão (2 fetches completos no login, ~148 charts renderizados de uma vez, RPC base com seções mortas), (3) seções irrelevantes (market cap de tickers, campanha 50OFF expirada, `geo` nunca consumido).
+
+- **Migration `20260817_dashboard_overhaul_bh.sql`** (aplicada no BH via MCP em 2026-08-17):
+  - `get_analytics_data_v2_impl` (o corpo real; `get_analytics_data_v2` é só wrapper de auth): **removidas 8 seções** — `top_tickers_market` e `sector_distribution` (liam `brapi_quotes`, market data irrelevante e já quebrado no frontend) + as 6 seções de ticker (`ticker_by_feature`, `ticker_trend_daily`, `feature_usage_trend`, `ticker_ranking`, `user_ticker_usage`, `user_ticker_detail`) que eram 100% descartadas no merge por `get_analytics_data_bh_tickers_v3`. Tempo warm 30d: 4,6s → **3,7s**. Restam 61 chaves.
+  - **NOVA `get_notification_analytics_v2(p_from, p_to)`**: v1 tinha `interval '90 days'` hardcoded em 4 séries daily — dados >90d nunca apareciam. v2 janela as seções event-based (`notifications_by_type_daily`, `notifications_delivery`, `notifications_delivery_daily`, `notifications_top_tickers`, `telegram_links_daily` e contadores event-based do `notification_funnel`); snapshots de estado (`telegram_overview`, `notification_prefs_summary`, `notification_type_popularity`) continuam all-time. Mesmas chaves da v1; v1 preservada.
+  - `get_analytics_data_bh_utm_v2`: removidas as 3 seções da campanha 50OFF (expirada em 05/2026) e as constantes `promo_start`/`promo_end`.
+  - `statement_timeout='30s'` aplicado às 5 RPCs que faltavam: `bh_pool_v2`, `bh_tickers_v3`, `airton_telegram_v1`, `airton_whatsapp_v1`, `get_geo_profiles`.
+- **Edge Function**: chamadas `get_geo_profiles` (BH+HTA) removidas (payload morto, chave `geo` saiu do response); `get_notification_analytics` → `get_notification_analytics_v2` com `{p_from, p_to}`; datas inválidas em `?from`/`?to` agora caem no default em vez de 500; falha de `fetchRpc` loga `console.error` (antes era silenciosa).
+- **Frontend**:
+  - Presets **180d** e **Máx** (Máx = from `2026-01-07`, primeiro evento registrado — constante `MAX_PRESET_FROM`).
+  - **Fetch único no login** (antes eram 2 payloads completos: fetch sem params + `applyPreset(30)` refetchava tudo).
+  - **Render lazy por aba**: `dirtyTabs` Set — só a aba atual renderiza no login/refetch; as outras renderizam ao serem visitadas (antes: 14 abas / ~148 charts de uma vez).
+  - Auto-refresh de 5min pula quando `document.hidden`.
+  - `pruneDetachedCharts()`: destrói instâncias de Chart.js cujo canvas saiu do DOM (vazamento de ~30 charts órfãos por troca de período); resize pós-switchTab só nos charts da aba ativa.
+  - **Timezone**: `from`/`to` enviados como `T00:00:00-03:00`/`T23:59:59.999-03:00` (antes UTC `Z`, cortava 3h nas bordas — RPCs agregam em America/Sao_Paulo).
+  - Removidos: tabela "Top Tickers (Market Cap)" + doughnut "Distribuicao por Setor" (bhDetalhes), bloco "Campanha 50OFF" (bhAquisicao), gráfico duplicado `bhAqSignupsChart` (igual ao da Visão Geral), leitura morta de `dashboardData.geo`.
+- **Não feito nesta fase** (candidatos futuros): rewrite da `get_analytics_data_v2_impl` com CTEs compartilhadas (os 3,7s restantes são ~55 seções × ~65ms — sem baleia individual; stickiness 76ms, retention_cohorts 290ms); parametrizar `get_analytics_data` do HTA (hoje all-time, mas rápida ~135ms — o recorte é client-side e o histórico completo já trafega); consolidar duplicatas HTA (login chart em 3 abas).
+- **Nota**: seções ainda all-time por design (KPIs de estado): `overview`, `subscribers_*`, `mrr_estimate`, `revenue_by_plan*`, `user_inactivity`, `activation_*`, `time_to_convert`, `watchlist_summary` — não reagem ao filtro de período.
 
 ## BH Engagement — Ticker Analytics v3 (2026-05-27)
 
@@ -180,9 +202,7 @@ Captura e visualizacao de campanhas via parametros `utm_*` em `usage_events` (ta
   - `usage_utm_daily` — serie diaria por utm_source
   - `usage_utm_by_content` — top 50 criativos (utm_content) com sessions/logins/payments
   - `usage_utm_funnel_by_source` — conversao por fonte (sessao -> login -> paywall -> pagamento), session-level join
-  - `usage_utm_50off_summary` — snapshot da campanha 50OFF (window 27/04 a 03/05 BRT)
-  - `usage_utm_50off_daily` — serie diaria da campanha
-  - `usage_utm_50off_top_content` — top 30 criativos da campanha
+  - ~~`usage_utm_50off_*`~~ — as 3 secoes da campanha 50OFF foram **removidas em 2026-08-17** (campanha expirada; ver Overhaul acima)
 - **Edge function**: `analytics-dashboard/index.ts` adicionou um 7º `fetchRpc(BH_URL, BH_ANON, "get_analytics_data_bh_utm")` no `Promise.all` e merge no `bhMerged` via spread.
 - **Frontend** (`index.html`): tab `bhAquisicao` ganhou 2 secoes — "Campanhas UTM" (KPIs + bar chart top sources + stacked daily + funnel-by-source table + top criativos table) e "Campanha 50OFF" (KPIs hero com CVR/checkout rate + daily stacked por fonte + top criativos da campanha).
 - **Campaign window** harcoded na RPC: `promo_start = '2026-04-27 00:00:00-03'` / `promo_end = '2026-05-03 23:59:59-03'`. Pra campanhas futuras, criar nova RPC ou parametrizar.
@@ -243,7 +263,7 @@ Edge Function faz merge de 3 RPCs no BH: `get_analytics_data` (base), `get_notif
 - `feature_usage_trend`: adocao de ferramentas ao longo do tempo (eventos com ticker)
 - `user_inactivity` / `inactivity_distribution` / `user_feature_breadth`
 - `ticker_ranking` / `user_ticker_usage` / `user_ticker_detail`
-- `top_tickers_market`, `sector_distribution`, `report_downloads_daily`
+- `report_downloads_daily` (~~`top_tickers_market`, `sector_distribution`~~ removidas em 2026-08-17 — market data de `brapi_quotes`, irrelevante)
 - `iacoes_*` (overview, daily, top_pages, referrers, devices, browsers, os, utm, conversion_funnel, cta_breakdown, ...) — landing page tracking
 
 **Notification (`get_notification_analytics`):**

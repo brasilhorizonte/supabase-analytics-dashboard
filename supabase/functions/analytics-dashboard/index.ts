@@ -42,7 +42,11 @@ async function fetchRpc(url: string, key: string, fn: string, body: Record<strin
     headers: { "Content-Type": "application/json", apikey: key, Authorization: `Bearer ${key}` },
     body: JSON.stringify(body),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    // Falha de RPC nao pode ser silenciosa: a secao some do dashboard sem aviso.
+    console.error(`fetchRpc ${fn} failed: ${res.status} ${(await res.text()).slice(0, 300)}`);
+    return null;
+  }
   return await res.json();
 }
 
@@ -57,8 +61,12 @@ function parseTimeWindow(req: Request): {
   const url = new URL(req.url);
   const fromParam = url.searchParams.get("from");
   const toParam = url.searchParams.get("to");
-  const to = toParam ? new Date(toParam) : new Date();
-  const from = fromParam ? new Date(fromParam) : new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+  // 2026-08-17: datas invalidas caiam em "Invalid Date".toISOString() -> 500.
+  // Agora param invalido e ignorado (fallback: to=agora, from=to-30d).
+  let to = toParam ? new Date(toParam) : new Date();
+  if (isNaN(to.getTime())) to = new Date();
+  let from = fromParam ? new Date(fromParam) : new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+  if (isNaN(from.getTime()) || from > to) from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
   // 2026-05-14: include_admins (default false) flag exclusiva da aba AIrton.
   // Permite alternar entre visao oficial (sem admins) e debug interno enquanto o
   // produto esta em early adoption e a equipe domina o volume.
@@ -127,12 +135,13 @@ Deno.serve(async (req: Request) => {
     // BH RPCs v2 aceitam janela temporal {p_from, p_to} -- reduz tempo da base
     // de ~3s (all-time) para ~1.2s em 7d / ~2.4s em 30d. v1 das RPCs sao mantidas
     // no banco para rollback (drop nao foi feito).
-    const [bh, hta, bhGeo, htaGeo, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhOauth, bhAirton, bhAirtonTg, bhAirtonWa, bhPoolV2, bhTickersV3] = await Promise.all([
+    // 2026-08-17 overhaul: get_geo_profiles (x2) removidas — o frontend nunca
+    // consumiu `geo`, eram 2 RPCs mortas por request. Notificacoes migraram para
+    // get_notification_analytics_v2(p_from, p_to) — a v1 tinha 90 dias hardcoded.
+    const [bh, hta, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhOauth, bhAirton, bhAirtonTg, bhAirtonWa, bhPoolV2, bhTickersV3] = await Promise.all([
       fetchRpc(BH_URL, BH_KEY, "get_analytics_data_v2", { p_from: from, p_to: to }),
       fetchRpc(HTA_URL, HTA_KEY, "get_analytics_data"),
-      fetchRpc(BH_URL, BH_KEY, "get_geo_profiles"),
-      fetchRpc(HTA_URL, HTA_KEY, "get_geo_profiles"),
-      fetchRpc(BH_URL, BH_KEY, "get_notification_analytics"),
+      fetchRpc(BH_URL, BH_KEY, "get_notification_analytics_v2", { p_from: from, p_to: to }),
       fetchRpc(BH_URL, BH_KEY, "get_analytics_data_bh_extras_v2", { p_from: from, p_to: to }),
       fetchRpc(BH_URL, BH_KEY, "get_analytics_data_bh_utm_v2", { p_from: from, p_to: to }),
       fetchRpc(BH_URL, BH_KEY, "get_analytics_data_iacoes_daily_v2", { p_from: from, p_to: to }),
@@ -170,7 +179,6 @@ Deno.serve(async (req: Request) => {
       admin: email,
       bh: bhMerged,
       hta,
-      geo: { bh: bhGeo || [], hta: htaGeo || [] },
       window: { from, to },
       airton_include_admins: includeAdmins,
       bh_ticker_include_admins: bhTickerIncludeAdmins,
@@ -185,7 +193,7 @@ Deno.serve(async (req: Request) => {
       },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), {
       status: 500,
       headers: { ...CORS, "Content-Type": "application/json" },
     });

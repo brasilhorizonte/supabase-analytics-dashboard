@@ -298,6 +298,8 @@
                         <button class="preset-btn" data-days="7">7d</button>
                         <button class="preset-btn active" data-days="30">30d</button>
                         <button class="preset-btn" data-days="90">90d</button>
+                        <button class="preset-btn" data-days="180">180d</button>
+                        <button class="preset-btn" data-days="max">M&aacute;x</button>
                         <button class="preset-btn" data-days="custom">Custom</button>
                     </div>
                     <div class="date-range" id="dateRangeInputs" style="display:none">
@@ -945,7 +947,6 @@
 
     function renderBhAquisicao() {
         const bh = dashboardData.bh; const f = globalFilters;
-        const signupsDaily = bh.signups_daily || [];
         const referrers = (bh.referrer_summary||[]).filter(r => !['Lovable (Dev)','Localhost (Dev)'].includes(r.source));
         const refDaily = bh.referrer_daily || [];
         const refDetail = bh.referrer_detail || [];
@@ -960,7 +961,6 @@
 
         buildHTML('bhAquisicao', `
             <div class="charts-grid">
-                ${canvasHTML('bhAqSignupsChart','Novos Cadastros (diario)')}
                 ${canvasHTML('bhAqReferrerChart','Origem do Trafego')}
             </div>
             <div class="charts-grid">
@@ -999,7 +999,7 @@
 
             <!-- ===== Campanhas UTM (acquisition tracking via utm_*) ===== -->
             <div class="section-block">
-                ${createSectionHeader('Campanhas UTM', 'Atribuicao de trafego e conversao por canal a partir dos parametros utm_* em usage_events. Janela: ultimos 90 dias. Bloco da campanha 50OFF abaixo cobre 27/04 a 03/05.')}
+                ${createSectionHeader('Campanhas UTM', 'Atribuicao de trafego e conversao por canal a partir dos parametros utm_* em usage_events. Respeita o filtro de periodo global.')}
                 <div class="kpi-grid-compact" id="bhAqUtmTopKpis"></div>
                 <div class="charts-grid">
                     ${canvasHTML('bhAqUtmSourceChart','Top fontes (utm_source/medium)')}
@@ -1010,20 +1010,7 @@
                     <div class="chart-container"><div class="chart-title">Top Criativos (utm_content)</div><div id="bhAqUtmContentTable"></div></div>
                 </div>
             </div>
-
-            <!-- ===== Campanha 50OFF (abr/2026) ===== -->
-            <div class="section-block">
-                ${createSectionHeader('Campanha 50OFF (27/04 a 03/05)', 'Promo 50% OFF nos primeiros 12 meses. utm_campaign=50off_apr2026. Veredito: views, sessoes, signups, paywall, checkout, pagamentos.')}
-                <div class="kpi-grid" id="bhAq50offKpis"></div>
-                <div class="charts-grid">
-                    ${canvasHTML('bhAq50offDailyChart','50OFF — eventos diarios por fonte')}
-                    <div class="chart-container"><div class="chart-title">50OFF — Top criativos (utm_content)</div><div id="bhAq50offContentTable"></div></div>
-                </div>
-            </div>
         `);
-
-        const sPrep = prepareTimeSeries(signupsDaily, f, ['signups']);
-        barChart('bhAqSignupsChart', sPrep.labels, [{label:'Cadastros',data:sPrep.data.map(d=>d.signups||0),backgroundColor:'#22c55e'}]);
 
         // Filter referrer summary by date range
         const filteredRefDaily = filterSnapshot(refDaily, f);
@@ -1183,18 +1170,15 @@
         const utmDaily = bh.usage_utm_daily || [];
         const utmFunnel = bh.usage_utm_funnel_by_source || [];
         const utmContent = bh.usage_utm_by_content || [];
-        const utm50 = bh.usage_utm_50off_summary || {};
-        const utm50Daily = bh.usage_utm_50off_daily || [];
-        const utm50Content = bh.usage_utm_50off_top_content || [];
 
-        // Top KPIs (last 90d, attributed traffic only)
+        // Top KPIs (attributed traffic only)
         const totalAttribEvents = utmSummary.reduce((s,r)=>s+(r.events||0),0);
         const totalAttribSessions = utmSummary.reduce((s,r)=>s+(r.sessions||0),0);
         const totalAttribPayments = utmSummary.reduce((s,r)=>s+(r.payments||0),0);
         const distinctCampaigns = new Set(utmSummary.map(r=>r.utm_campaign).filter(c=>c && c!=='(none)')).size;
         const distinctSources = new Set(utmSummary.map(r=>r.utm_source).filter(s=>s && s!=='(none)')).size;
         document.getElementById('bhAqUtmTopKpis').innerHTML = `
-            ${createKpiCardV2('Eventos atribuidos (90d)', fmt(totalAttribEvents), { hint:'usage_events com utm_* preenchido' })}
+            ${createKpiCardV2('Eventos atribuidos', fmt(totalAttribEvents), { hint:'usage_events com utm_* preenchido' })}
             ${createKpiCardV2('Sessoes atribuidas', fmt(totalAttribSessions))}
             ${createKpiCardV2('Pagamentos atribuidos', fmt(totalAttribPayments), { intent:'positive' })}
             ${createKpiCardV2('Campanhas ativas', fmt(distinctCampaigns), { hint:'utm_campaign distintos' })}
@@ -1202,7 +1186,7 @@
         `;
 
         // Bar: top sources
-        if (!showEmptyIfNeeded('bhAqUtmSourceChart', utmSummary, 'Sem trafego com utm_* nos ultimos 90 dias', 'Aguardando primeiros cliques de campanhas com UTM.')) {
+        if (!showEmptyIfNeeded('bhAqUtmSourceChart', utmSummary, 'Sem trafego com utm_* no periodo', 'Aguardando primeiros cliques de campanhas com UTM.')) {
             const top = utmSummary.slice(0, 12);
             barChart('bhAqUtmSourceChart',
                 top.map(r=>`${r.utm_source}/${r.utm_medium||'-'}`),
@@ -1240,7 +1224,7 @@
             }
         }
 
-        // Top creatives table (last 90d)
+        // Top creatives table
         const contentEl = document.getElementById('bhAqUtmContentTable');
         if (contentEl) {
             if (utmContent.length === 0) {
@@ -1248,42 +1232,6 @@
             } else {
                 const top20 = utmContent.slice(0, 20);
                 contentEl.innerHTML = `<div style="max-height:340px;overflow-y:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem;"><thead style="position:sticky;top:0;background:white;"><tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;color:#64748b;">Criativo</th><th style="text-align:left;padding:6px;color:#64748b;">Fonte</th><th style="text-align:right;padding:6px;color:#64748b;">Sessoes</th><th style="text-align:right;padding:6px;color:#64748b;">Logins</th><th style="text-align:right;padding:6px;color:#64748b;">Pagamentos</th></tr></thead><tbody>${top20.map(r=>`<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:6px;font-family:monospace;font-size:0.78rem;" title="${r.utm_content}">${r.utm_content}</td><td style="padding:6px;color:#64748b;">${r.utm_source}/${r.utm_medium}</td><td style="text-align:right;padding:6px;">${fmt(r.sessions||0)}</td><td style="text-align:right;padding:6px;">${fmt(r.logins||0)}</td><td style="text-align:right;padding:6px;color:#3ecf8e;font-weight:600;">${fmt(r.payments||0)}</td></tr>`).join('')}</tbody></table></div>`;
-            }
-        }
-
-        // ===== Campanha 50OFF =====
-        const cvr50 = (utm50.sessions||0) > 0 ? (((utm50.payments||0)/utm50.sessions)*100).toFixed(2) : '0';
-        const checkoutRate50 = (utm50.paywall_views||0) > 0 ? (((utm50.checkout_starts||0)/utm50.paywall_views)*100).toFixed(1) : '0';
-        document.getElementById('bhAq50offKpis').innerHTML = `
-            ${createKpiCardV2('Eventos 50OFF', fmt(utm50.events||0), { hero:true, hint:'utm_campaign=50off_apr2026 entre 27/04 e 03/05' })}
-            ${createKpiCardV2('Sessoes', fmt(utm50.sessions||0))}
-            ${createKpiCardV2('Usuarios unicos', fmt(utm50.unique_users||0))}
-            ${createKpiCardV2('Logins', fmt(utm50.logins||0))}
-            ${createKpiCardV2('Signups', fmt(utm50.signups||0), { hint:'novos cadastros via campanha' })}
-            ${createKpiCardV2('Paywall views', fmt(utm50.paywall_views||0))}
-            ${createKpiCardV2('Checkout starts', fmt(utm50.checkout_starts||0), { hint:`${checkoutRate50}% do paywall -> checkout` })}
-            ${createKpiCardV2('Pagamentos', fmt(utm50.payments||0), { intent:'positive', hint:`CVR ${cvr50}%` })}
-        `;
-
-        // 50OFF daily by source
-        if (!showEmptyIfNeeded('bhAq50offDailyChart', utm50Daily, 'Aguardando trafego da campanha 50OFF', 'Inicia em 27/04/2026.')) {
-            const mc50 = prepareMultiCategoryTS(utm50Daily, f, 'utm_source', 'events');
-            const palette50 = ['#3b82f6','#ef4444','#3ecf8e','#f59e0b','#8b5cf6','#06b6d4','#ec4899','#6366f1'];
-            const datasets50 = mc50.categories.slice(0,8).map((src,i)=>({label:src,data:mc50.getValues(src),backgroundColor:palette50[i%palette50.length]}));
-            destroyChart('bhAq50offDailyChart');
-            charts.bhAq50offDailyChart = new Chart(document.getElementById('bhAq50offDailyChart'), {
-                type:'bar', data:{labels:mc50.labels,datasets:datasets50},
-                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
-            });
-        }
-
-        // 50OFF top creatives
-        const c50El = document.getElementById('bhAq50offContentTable');
-        if (c50El) {
-            if (utm50Content.length === 0) {
-                c50El.innerHTML = '<p style="color:#64748b;font-size:0.85rem;padding:12px">Aguardando primeiros cliques na campanha 50OFF.</p>';
-            } else {
-                c50El.innerHTML = `<div style="max-height:340px;overflow-y:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82rem;"><thead style="position:sticky;top:0;background:white;"><tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px;color:#64748b;">Criativo</th><th style="text-align:left;padding:6px;color:#64748b;">Canal</th><th style="text-align:right;padding:6px;color:#64748b;">Sessoes</th><th style="text-align:right;padding:6px;color:#64748b;">Logins</th><th style="text-align:right;padding:6px;color:#64748b;">Pagos</th></tr></thead><tbody>${utm50Content.map(r=>`<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:6px;font-family:monospace;font-size:0.78rem;">${r.utm_content}</td><td style="padding:6px;color:#64748b;">${r.utm_source}/${r.utm_medium}</td><td style="text-align:right;padding:6px;">${fmt(r.sessions||0)}</td><td style="text-align:right;padding:6px;">${fmt(r.logins||0)}</td><td style="text-align:right;padding:6px;color:#3ecf8e;font-weight:600;">${fmt(r.payments||0)}</td></tr>`).join('')}</tbody></table></div>`;
             }
         }
     }
@@ -3132,11 +3080,8 @@
 
     function renderBhDetalhes() {
         const bh = dashboardData.bh; const f = globalFilters;
-        const geo = dashboardData.geo || {};
         const downloads = bh.report_downloads_daily || [];
         const topReports = (bh.top_reports_downloaded||[]).slice(0,10);
-        const topTickers = (bh.top_tickers_market||[]).slice(0,15);
-        const sectors = bh.sector_distribution || [];
         const screens = bh.screen_summary || [];
         const routes = bh.top_routes || [];
         const sectionDaily = bh.section_daily || [];
@@ -3162,9 +3107,7 @@
             </div>
             <div class="charts-grid">
                 ${canvasHTML('bhDetTickersSearchedChart','Tickers Mais Buscados no Dashboard')}
-                ${canvasHTML('bhDetSectorsChart','Distribuicao por Setor')}
             </div>
-            <div class="table-container"><div class="table-title">Top Tickers (Market Cap)</div><table id="bhDetTickersTable"></table></div>
             <div class="table-container"><div class="table-title">Tamanhos de Tabela</div><table id="bhDetTableSizes"></table></div>
 
             <div class="section-block">
@@ -3206,12 +3149,6 @@
         barChart('bhDetTopReportsChart', topReports.map(r=>{const t=r.title||'Sem titulo';return t.length>35?t.substring(0,32)+'...':t;}), [{label:'Downloads',data:topReports.map(r=>r.downloads||0),backgroundColor:topReports.map(r=>rtColors[r.report_type]||'#8b5cf6')}], {horizontal:true});
 
         barChart('bhDetTickersSearchedChart', tickersSearched.map(t=>t.ticker||'Unknown'), [{label:'Buscas',data:tickersSearched.map(t=>t.cnt||0),backgroundColor:'#6366f1'}], {horizontal:true});
-
-        doughnutChart('bhDetSectorsChart', sectors.map(s=>s.sector||'N/A'), sectors.map(s=>s.cnt||0), COLORS);
-
-        // Tickers table
-        document.getElementById('bhDetTickersTable').innerHTML = `<thead><tr><th>Ticker</th><th>Preco</th><th>Market Cap</th><th>Setor</th><th>DY</th><th>P/L</th></tr></thead><tbody>${topTickers.map(t=>`<tr><td>${t.ticker||'-'}</td><td>R$${(t.price||0).toFixed(2)}</td><td>${fmtBytes(t.market_cap||0)}</td><td>${t.sector||'-'}</td><td>${(t.dy||0).toFixed(2)}%</td><td>${(t.pe||0).toFixed(1)}</td></tr>`).join('')}</tbody>`;
-        makeSortable(document.getElementById('bhDetTickersTable'));
 
         // Table sizes
         const tableSizes = bh.table_sizes || [];
@@ -4343,6 +4280,21 @@
 
     // ===== TAB NAVIGATION =====
     let currentTab = 'bhVisao';
+    const ALL_TABS = ['bhVisao','bhAquisicao','bhEngajamento','bhAirton','bhRetencao','bhCustos','bhDetalhes','htaVisao','htaAquisicao','htaEngajamento','htaRetencao','htaCustos','htaDetalhes','iacoes'];
+    // Lazy render: abas marcadas dirty so sao (re)renderizadas quando visitadas.
+    const dirtyTabs = new Set(ALL_TABS);
+    function markAllTabsDirty() { ALL_TABS.forEach(t=>dirtyTabs.add(t)); }
+
+    // Destroi charts cujo canvas saiu do DOM (innerHTML trocado) para nao vazar instancias.
+    function pruneDetachedCharts() {
+        Object.keys(charts).forEach(id=>{
+            const c = charts[id];
+            if (!c || !c.canvas || !document.body.contains(c.canvas)) {
+                try { if (c) c.destroy(); } catch(e) {}
+                delete charts[id];
+            }
+        });
+    }
 
     function switchTab(tabName) {
         document.querySelectorAll('.sidebar-sub-item, .sidebar-item[data-tab]').forEach(el=>el.classList.remove('active'));
@@ -4360,8 +4312,11 @@
         document.getElementById('sidebar').classList.remove('open');
         document.getElementById('sidebarOverlay').classList.remove('show');
 
-        if (dashboardData) reRenderTab(tabName);
-        setTimeout(()=>{Object.values(charts).forEach(chart=>{try{chart.resize();}catch(e){}});},100);
+        if (dashboardData && dirtyTabs.has(tabName)) reRenderTab(tabName);
+        setTimeout(()=>{
+            const activeEl = document.getElementById(tabName);
+            Object.values(charts).forEach(chart=>{try{ if (activeEl && activeEl.contains(chart.canvas)) chart.resize(); }catch(e){}});
+        },100);
     }
 
     function reRenderTab(tabName) {
@@ -4376,7 +4331,9 @@
                 iacoes: renderIacoesTab
             };
             if (renderMap[tabName]) renderMap[tabName]();
+            dirtyTabs.delete(tabName);
         } catch(e) { console.error(`Render error [${tabName}]:`, e); }
+        pruneDetachedCharts();
     }
 
     // ===== AUTHENTICATION =====
@@ -4414,8 +4371,9 @@
     async function fetchAnalytics() {
         try {
             const params = new URLSearchParams();
-            if (globalFilters.from) params.set('from', `${globalFilters.from}T00:00:00.000Z`);
-            if (globalFilters.to)   params.set('to',   `${globalFilters.to}T23:59:59.999Z`);
+            // Bordas no fuso de Brasilia (as RPCs agregam em America/Sao_Paulo)
+            if (globalFilters.from) params.set('from', `${globalFilters.from}T00:00:00-03:00`);
+            if (globalFilters.to)   params.set('to',   `${globalFilters.to}T23:59:59.999-03:00`);
             if (window._airtonIncludeAdmins) params.set('include_admins', 'true');
             // 2026-05-27: params do bloco de tickers (Engajamento iAcoes).
             const tf = window._bhTickerFilters;
@@ -4438,7 +4396,7 @@
         refetchInFlight = (async () => {
             try {
                 const data = await fetchAnalytics();
-                if (data) { dashboardData = data; window.dashData = data; reRenderTab(currentTab); }
+                if (data) { dashboardData = data; window.dashData = data; markAllTabsDirty(); reRenderTab(currentTab); }
             } catch (e) { console.error('Refetch error:', e); }
             finally { refetchInFlight = null; }
         })();
@@ -4451,18 +4409,26 @@
         refetchDebounceTimer = setTimeout(() => { refetchDebounceTimer = null; refetchAndRerender(); }, 400);
     }
 
-    function applyPreset(days) {
+    const MAX_PRESET_FROM = '2026-01-07'; // primeiro evento registrado
+    function setPresetFilters(days) {
         const to = new Date().toISOString().slice(0,10);
-        const from = new Date(Date.now()-days*86400000).toISOString().slice(0,10);
+        const from = days === 'max' ? MAX_PRESET_FROM : new Date(Date.now()-days*86400000).toISOString().slice(0,10);
         globalFilters.from = from;
         globalFilters.to = to;
         globalFilters.preset = days.toString();
+    }
+
+    function applyPreset(days) {
+        setPresetFilters(days);
         refetchAndRerender();
     }
 
     async function loadDashboard() {
         showLoading(true);
         try {
+            // Preset default 30d setado ANTES do fetch (sem disparar refetch) — um unico payload no login.
+            setPresetFilters(30);
+            document.querySelectorAll('.preset-btn').forEach(b=>b.classList.toggle('active', b.dataset.days==='30'));
             dashboardData = await fetchAnalytics();
             if (!dashboardData) return;
             currentAdmin = dashboardData.admin;
@@ -4470,14 +4436,14 @@
             document.getElementById('adminBadge').textContent = currentAdmin;
             document.getElementById('loginContainer').classList.add('hidden');
             document.getElementById('dashboard').classList.add('show');
-            applyPreset(30);
-            // Render all tabs once for initial data
-            const allTabs = ['bhVisao','bhAquisicao','bhEngajamento','bhAirton','bhRetencao','bhCustos','bhDetalhes','htaVisao','htaAquisicao','htaEngajamento','htaRetencao','htaCustos','htaDetalhes','iacoes'];
-            allTabs.forEach(tab=>{ try { reRenderTab(tab); } catch(e) { console.error(`Render error [${tab}]:`, e); } });
+            // Render lazy: so a aba atual agora; as demais renderizam ao serem visitadas.
+            markAllTabsDirty();
+            reRenderTab(currentTab);
 
             if (refreshInterval) clearInterval(refreshInterval);
             refreshInterval = setInterval(async()=>{
-                try { dashboardData = await fetchAnalytics(); window.dashData = dashboardData; if(dashboardData) reRenderTab(currentTab); } catch(e) { console.error('Refresh error:', e); }
+                if (document.hidden) return;
+                try { dashboardData = await fetchAnalytics(); window.dashData = dashboardData; if(dashboardData){ markAllTabsDirty(); reRenderTab(currentTab); } } catch(e) { console.error('Refresh error:', e); }
             }, 5*60*1000);
             showLoading(false);
         } catch (error) {
@@ -4538,7 +4504,7 @@
             document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active'));
             btn.classList.add('active');
             if (days === 'custom') { document.getElementById('dateRangeInputs').style.display = 'flex'; }
-            else { document.getElementById('dateRangeInputs').style.display = 'none'; applyPreset(parseInt(days)); }
+            else { document.getElementById('dateRangeInputs').style.display = 'none'; applyPreset(days === 'max' ? 'max' : parseInt(days)); }
         });
     });
 
@@ -4551,6 +4517,7 @@
         globalFilters.gran = btn.dataset.gran;
         document.getElementById('globalGranToggle').querySelectorAll('.gran-btn').forEach(b=>b.classList.remove('active'));
         btn.classList.add('active');
+        markAllTabsDirty();
         reRenderTab(currentTab);
     });
 
