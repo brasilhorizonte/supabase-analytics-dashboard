@@ -338,6 +338,7 @@
     </div>
 
     <div class="loading-overlay" id="loadingOverlay"><div class="loading-spinner"></div></div>
+    <div id="dashToast" style="display:none;position:fixed;bottom:24px;right:24px;z-index:10000;background:#ef4444;color:#fff;padding:12px 18px;border-radius:8px;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.25);max-width:360px;"></div>
 
     <script>
     const HTA_URL = 'https://llqhmywodxzstjlrulcw.supabase.co';
@@ -4348,6 +4349,7 @@
             const data = await response.json();
             currentToken = data.access_token;
             localStorage.setItem('dashToken', currentToken);
+            if (data.refresh_token) localStorage.setItem('dashRefresh', data.refresh_token);
             showLoading(false);
             await loadDashboard();
         } catch (error) { showLoading(false); showError(error.message || 'Erro ao fazer login'); }
@@ -4356,6 +4358,7 @@
     function logout() {
         currentToken = null; currentAdmin = null; dashboardData = null;
         localStorage.removeItem('dashToken');
+        localStorage.removeItem('dashRefresh');
         Object.keys(charts).forEach(key=>destroyChart(key)); charts = {};
         if (refreshInterval) clearInterval(refreshInterval);
         document.getElementById('loginContainer').classList.remove('hidden');
@@ -4367,6 +4370,24 @@
 
     function showError(msg) { const err = document.getElementById('errorMessage'); err.textContent = msg; err.classList.add('show'); }
     function clearError() { document.getElementById('errorMessage').classList.remove('show'); }
+
+    // Renova o access_token via refresh_token (expira em ~1h). Retorna true se renovou.
+    async function tryRefreshToken() {
+        const rt = localStorage.getItem('dashRefresh');
+        if (!rt) return false;
+        try {
+            const response = await fetch(`${HTA_URL}/auth/v1/token?grant_type=refresh_token`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': HTA_ANON_KEY },
+                body: JSON.stringify({ refresh_token: rt })
+            });
+            if (!response.ok) return false;
+            const data = await response.json();
+            currentToken = data.access_token;
+            localStorage.setItem('dashToken', currentToken);
+            if (data.refresh_token) localStorage.setItem('dashRefresh', data.refresh_token);
+            return true;
+        } catch { return false; }
+    }
 
     async function fetchAnalytics() {
         try {
@@ -4382,23 +4403,44 @@
                 if (tf.selected && tf.selected.length > 0) params.set('bh_tickers', tf.selected.join(','));
             }
             const url = params.toString() ? `${API_ENDPOINT}?${params}` : API_ENDPOINT;
-            const response = await fetch(url, { method: 'GET', headers: { 'Authorization': `Bearer ${currentToken}` } });
-            if (response.status === 401) throw new Error('Sessao expirada. Faca login novamente.');
-            if (response.status === 403) throw new Error('Acesso negado. Apenas administradores podem acessar o dashboard.');
+            const doFetch = () => fetch(url, { method: 'GET', headers: { 'Authorization': `Bearer ${currentToken}` } });
+            let response = await doFetch();
+            // A Edge Function retorna 403 tambem para token expirado (verifyAdmin falha).
+            // Tenta refresh e repete uma vez antes de desistir.
+            if (response.status === 401 || response.status === 403) {
+                if (await tryRefreshToken()) response = await doFetch();
+            }
+            if (response.status === 401 || response.status === 403) {
+                logout();
+                showError('Sessao expirada. Faca login novamente.');
+                throw new Error('Sessao expirada. Faca login novamente.');
+            }
             if (!response.ok) throw new Error(`Erro ${response.status} ao buscar dados`);
             return await response.json();
         } catch (error) { console.error('API Error:', error); throw error; }
+    }
+
+    let dashToastTimer = null;
+    function showDashToast(msg) {
+        const el = document.getElementById('dashToast');
+        el.textContent = msg; el.style.display = 'block';
+        if (dashToastTimer) clearTimeout(dashToastTimer);
+        dashToastTimer = setTimeout(()=>{ el.style.display = 'none'; }, 8000);
     }
 
     let refetchInFlight = null;
     async function refetchAndRerender() {
         if (refetchInFlight) return refetchInFlight;
         refetchInFlight = (async () => {
+            showLoading(true);
             try {
                 const data = await fetchAnalytics();
                 if (data) { dashboardData = data; window.dashData = data; markAllTabsDirty(); reRenderTab(currentTab); }
-            } catch (e) { console.error('Refetch error:', e); }
-            finally { refetchInFlight = null; }
+            } catch (e) {
+                console.error('Refetch error:', e);
+                showDashToast('Falha ao atualizar dados: ' + (e.message || 'erro desconhecido'));
+            }
+            finally { refetchInFlight = null; showLoading(false); }
         })();
         return refetchInFlight;
     }

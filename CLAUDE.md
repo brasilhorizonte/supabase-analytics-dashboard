@@ -57,6 +57,7 @@ supabase/
     20260527_bh_engagement_ticker_v3.sql    # NEW RPC get_analytics_data_bh_tickers_v3() — top N dinamico no periodo + multi-select + admin toggle
     20260622_airton_whatsapp.sql            # Estende airton_v2 (blocos WhatsApp) + NEW RPC get_analytics_data_airton_whatsapp_v1() — canal WhatsApp do Airton (cutover TG->WA 10/06)
     20260817_dashboard_overhaul_bh.sql      # Overhaul: v2_impl sem 8 secoes mortas, NEW get_notification_analytics_v2(p_from,p_to), utm_v2 sem 50OFF, statement_timeout nas 5 RPCs restantes
+    20260818_v2_impl_timeout_90s.sql        # Fix preset Max sem dados (57014): timeout real era 8s da role authenticator (SET em nivel de funcao e inerte no path REST); fix = ALTER ROLE service_role SET statement_timeout='90s'
 ```
 
 ## Overhaul de Performance & Histórico (2026-08-17)
