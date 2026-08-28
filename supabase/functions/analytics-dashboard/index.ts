@@ -57,6 +57,7 @@ function parseTimeWindow(req: Request): {
   bhTickerIncludeAdmins: boolean;
   bhTickers: string[] | null;
   bhTopN: number;
+  emailIncludeAdmins: boolean;
 } {
   const url = new URL(req.url);
   const fromParam = url.searchParams.get("from");
@@ -87,6 +88,11 @@ function parseTimeWindow(req: Request): {
     ? bhTopNParam
     : 30;
 
+  // 2026-08-28: toggle da aba Emails. Independente dos outros porque a base de
+  // envio inclui os enderecos @brasilhorizonte.com.br (contas de teste/QA), que
+  // distorcem CTR e frequencia mas as vezes precisam ser inspecionados.
+  const emailIncludeAdmins = url.searchParams.get("email_include_admins") === "true";
+
   return {
     from: from.toISOString(),
     to: to.toISOString(),
@@ -94,6 +100,7 @@ function parseTimeWindow(req: Request): {
     bhTickerIncludeAdmins,
     bhTickers: bhTickers && bhTickers.length > 0 ? bhTickers : null,
     bhTopN,
+    emailIncludeAdmins,
   };
 }
 
@@ -130,7 +137,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const { from, to, includeAdmins, bhTickerIncludeAdmins, bhTickers, bhTopN } = parseTimeWindow(req);
+    const { from, to, includeAdmins, bhTickerIncludeAdmins, bhTickers, bhTopN, emailIncludeAdmins } = parseTimeWindow(req);
 
     // BH RPCs v2 aceitam janela temporal {p_from, p_to} -- reduz tempo da base
     // de ~3s (all-time) para ~1.2s em 7d / ~2.4s em 30d. v1 das RPCs sao mantidas
@@ -138,7 +145,7 @@ Deno.serve(async (req: Request) => {
     // 2026-08-17 overhaul: get_geo_profiles (x2) removidas — o frontend nunca
     // consumiu `geo`, eram 2 RPCs mortas por request. Notificacoes migraram para
     // get_notification_analytics_v2(p_from, p_to) — a v1 tinha 90 dias hardcoded.
-    const [bh, hta, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhOauth, bhAirton, bhAirtonTg, bhAirtonWa, bhPoolV2, bhTickersV3] = await Promise.all([
+    const [bh, hta, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhOauth, bhAirton, bhAirtonTg, bhAirtonWa, bhPoolV2, bhTickersV3, bhEmail] = await Promise.all([
       fetchRpc(BH_URL, BH_KEY, "get_analytics_data_v2", { p_from: from, p_to: to }),
       fetchRpc(HTA_URL, HTA_KEY, "get_analytics_data"),
       fetchRpc(BH_URL, BH_KEY, "get_notification_analytics_v2", { p_from: from, p_to: to }),
@@ -169,11 +176,25 @@ Deno.serve(async (req: Request) => {
         p_tickers: bhTickers,
         p_top_n: bhTopN,
       }),
+      // 2026-08-28: aba Emails — taxonomia (categoria/cadencia/estagio) +
+      // atribuicao de clique por UTM first-touch. Ver migration
+      // 20260828_bh_email_analytics_v1.sql.
+      fetchRpc(BH_URL, BH_KEY, "get_analytics_data_bh_email_v1", {
+        p_from: from,
+        p_to: to,
+        p_include_admins: emailIncludeAdmins,
+      }),
     ]);
 
-    // Merge BH data: base + notif + extras + utm + iacoes_daily + oauth + airton + airton_tg + airton_wa + pool_v2 + tickers_v3
+    // A RPC de email devolve uma chave `meta` generica, igual a de varias outras
+    // RPCs. Como o merge e por spread, deixa-la passar faria a meta do email
+    // sobrescrever a das demais. Renomeia para `email_meta` antes de mesclar.
+    const { meta: emailMeta, ...bhEmailRest } = (bhEmail || {}) as Record<string, unknown>;
+
+    // Merge BH data: base + notif + extras + utm + iacoes_daily + oauth + airton + airton_tg + airton_wa + pool_v2 + tickers_v3 + email
     // tickers_v3 vem por ULTIMO de proposito — sobrescreve as 6 secoes de ticker da v2.
-    const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}), ...(bhUtm || {}), ...(bhIacoesDaily || {}), ...(bhOauth || {}), ...(bhAirton || {}), ...(bhAirtonTg || {}), ...(bhAirtonWa || {}), ...(bhPoolV2 || {}), ...(bhTickersV3 || {}) };
+    // bhEmail usa o prefixo email_* (nenhuma colisao com email_log_* das extras).
+    const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}), ...(bhUtm || {}), ...(bhIacoesDaily || {}), ...(bhOauth || {}), ...(bhAirton || {}), ...(bhAirtonTg || {}), ...(bhAirtonWa || {}), ...(bhPoolV2 || {}), ...(bhTickersV3 || {}), ...bhEmailRest, email_meta: emailMeta };
 
     return new Response(JSON.stringify({
       admin: email,
@@ -184,6 +205,7 @@ Deno.serve(async (req: Request) => {
       bh_ticker_include_admins: bhTickerIncludeAdmins,
       bh_tickers_filter: bhTickers,
       bh_top_n: bhTopN,
+      email_include_admins: emailIncludeAdmins,
       ts: new Date().toISOString(),
     }), {
       headers: {

@@ -263,6 +263,7 @@
                         <div class="sidebar-sub-item" data-tab="bhAquisicao">Aquisicao</div>
                         <div class="sidebar-sub-item" data-tab="bhEngajamento">Engajamento</div>
                         <div class="sidebar-sub-item" data-tab="bhAirton">Airton</div>
+                        <div class="sidebar-sub-item" data-tab="bhEmails">Emails</div>
                         <div class="sidebar-sub-item" data-tab="bhRetencao">Retencao</div>
                         <div class="sidebar-sub-item" data-tab="bhCustos">Receita & Assinaturas</div>
                         <div class="sidebar-sub-item" data-tab="bhDetalhes">Detalhes</div>
@@ -323,6 +324,7 @@
                 <div class="tab-content" id="bhAquisicao"></div>
                 <div class="tab-content" id="bhEngajamento"></div>
                 <div class="tab-content" id="bhAirton"></div>
+                <div class="tab-content" id="bhEmails"></div>
                 <div class="tab-content" id="bhRetencao"></div>
                 <div class="tab-content" id="bhCustos"></div>
                 <div class="tab-content" id="bhDetalhes"></div>
@@ -375,7 +377,7 @@
 
     const TAB_TITLES = {
         bhVisao: 'iAcoes - Visao Geral', bhAquisicao: 'iAcoes - Aquisicao', bhEngajamento: 'iAcoes - Engajamento',
-        bhAirton: 'iAcoes - Airton', bhRetencao: 'iAcoes - Retencao', bhCustos: 'iAcoes - Receita & Assinaturas', bhDetalhes: 'iAcoes - Detalhes',
+        bhAirton: 'iAcoes - Airton', bhEmails: 'iAcoes - Emails', bhRetencao: 'iAcoes - Retencao', bhCustos: 'iAcoes - Receita & Assinaturas', bhDetalhes: 'iAcoes - Detalhes',
         htaVisao: 'HTA - Visao Geral', htaAquisicao: 'HTA - Aquisicao', htaEngajamento: 'HTA - Engajamento',
         htaRetencao: 'HTA - Retencao', htaCustos: 'HTA - Custos', htaDetalhes: 'HTA - Detalhes',
         iacoes: 'iAcoes - Landing'
@@ -2496,6 +2498,347 @@
         }
     }
 
+    // ===== EMAILS (iAcoes) =====
+    // Fonte: get_analytics_data_bh_email_v1 (migration 20260828_bh_email_analytics_v1.sql).
+    // Substitui a secao "Comunicacao outbound" da aba Detalhes, que mostrava
+    // email_type cru (37 valores distintos, sem taxonomia e sem performance).
+    //
+    // NAO existe taxa de abertura: email_log nao tem opened_at e o provedor nao
+    // manda webhook. A metrica de engajamento aqui e o CLIQUE, reconstruido por
+    // utm_source=email em usage_events (first-touch por usuario x campanha).
+    const EMAIL_CAT_LABELS = {
+        digest:'Digest CVM', onboarding:'Onboarding', trial:'Trial', dunning:'Cobranca',
+        winback:'Winback', activation:'Ativacao', community:'Comunidade',
+        announcement:'Anuncio', content:'Conteudo', manual:'Manual', other:'Outro'
+    };
+    const EMAIL_CAT_COLORS = {
+        digest:'#6366f1', onboarding:'#3ecf8e', trial:'#f59e0b', dunning:'#ef4444',
+        winback:'#8b5cf6', activation:'#22c55e', community:'#ec4899',
+        announcement:'#3b82f6', content:'#14b8a6', manual:'#94a3b8', other:'#64748b'
+    };
+    const EMAIL_CADENCE_LABELS = {
+        recorrente:'Recorrente', automatico:'Automatico (gatilho)', campanha:'Campanha (blast)', manual:'Manual', other:'Outro'
+    };
+    const EMAIL_STAGE_LABELS = {
+        ativacao:'Ativacao', engajamento:'Engajamento', retencao:'Retencao', monetizacao:'Monetizacao', outro:'Outro'
+    };
+    const emailCatLabel = c => EMAIL_CAT_LABELS[c] || c || '-';
+    const emailCatColor = c => EMAIL_CAT_COLORS[c] || '#94a3b8';
+    /** Badge colorido de categoria para uso em tabelas. */
+    function emailCatBadge(c) {
+        const color = emailCatColor(c);
+        return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;background:${color}1a;color:${color};white-space:nowrap;">${emailCatLabel(c)}</span>`;
+    }
+
+    function renderBhEmails() {
+        const bh = dashboardData.bh; const f = globalFilters;
+        const ov = bh.email_overview || {};
+        const byCat = bh.email_by_category || [];
+        const byCadence = bh.email_by_cadence || [];
+        const byStage = bh.email_by_stage || [];
+        const byType = bh.email_by_type || [];
+        const campaigns = bh.email_campaigns || [];
+        const daily = bh.email_daily || [];
+        const clickFunnel = bh.email_click_funnel || {};
+        const timeToClick = bh.email_time_to_click || [];
+        const domains = bh.email_domains || [];
+        const subjectSrc = bh.email_subject_source || [];
+        const frequency = bh.email_frequency || [];
+        const topRecipients = bh.email_top_recipients || [];
+        const failures = bh.email_failures || [];
+        const sendHour = bh.email_send_hour || [];
+        const optin = bh.email_optin || {};
+        const byTier = bh.email_by_tier || [];
+
+        const includeAdmins = !!window._emailIncludeAdmins;
+
+        buildHTML('bhEmails', `
+            <div class="section-block">
+                ${createSectionHeader('Emails enviados pela plataforma',
+                  'Todos os disparos de <code>email_log</code> classificados em 3 eixos: categoria (familia), cadencia (como dispara) e estagio (onde atua no funil).',
+                  `<div id="bhEmailAdminToggle" style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid #94a3b8;border-radius:16px;cursor:pointer;font-size:0.78rem;color:#64748b;user-select:none;">
+                     <span id="bhEmailAdminDot" style="width:8px;height:8px;border-radius:50%;background:#94a3b8;"></span>
+                     <span id="bhEmailAdminLabel">Sem admins (oficial)</span>
+                   </div>`)}
+                <div id="bhEmailNoOpenNotice" style="margin:0 0 14px;padding:10px 14px;border-left:3px solid #f59e0b;background:#fffbeb;border-radius:4px;font-size:0.82rem;color:#78350f;line-height:1.5;">
+                    <strong>Taxa de abertura nao esta disponivel.</strong>
+                    A tabela <code>email_log</code> registra apenas o envio &mdash; nao ha <code>opened_at</code>,
+                    pixel de rastreio nem webhook do provedor. O engajamento aqui e medido por
+                    <strong>clique</strong>, reconstruido pelas UTMs (<code>utm_source=email</code>) que chegam
+                    em <code>usage_events</code>. Como so os links que carregam UTM sao rastreados,
+                    o CTR abaixo e um <em>piso</em>, nao o valor real.
+                </div>
+                <div class="kpi-grid-compact" id="bhEmailHeroKpis"></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Taxonomia', 'Volume e desempenho por familia de email. O CTR usa entregues como denominador.')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhEmailCatVolumeChart','Enviados por Categoria')}
+                    ${canvasHTML('bhEmailCatCtrChart','CTR por Categoria (%)')}
+                </div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhEmailCadenceChart','Enviados por Cadencia')}
+                    ${canvasHTML('bhEmailStageChart','Enviados por Estagio do Funil')}
+                </div>
+                <div class="chart-container mb-2"><div class="chart-title">Envios diarios por categoria</div><canvas id="bhEmailDailyChart"></canvas></div>
+                <div class="table-container"><div class="table-title" id="bhEmailTypeTitle">Todos os tipos de email</div><div style="max-height:460px;overflow-y:auto"><table id="bhEmailTypeTable"></table></div></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Do envio ao pagamento', 'Funil de clique. Sessoes = primeira sessao de cada usuario por campanha (a UTM fica gravada na sessao, entao visitas organicas posteriores nao contam como clique novo).')}
+                <div class="kpi-grid-compact" id="bhEmailFunnelKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhEmailFunnelChart','Funil de clique')}
+                    ${canvasHTML('bhEmailTimeToClickChart','Tempo ate o primeiro clique')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Campanhas', 'Cada linha e uma chave de atribuicao (utm_campaign, campaign ou email_type). Sessoes/Login/Pago vem da sessao aberta pelo clique.')}
+                <div class="table-container"><div class="table-title" id="bhEmailCampaignTitle">Performance por campanha</div><div style="max-height:460px;overflow-y:auto"><table id="bhEmailCampaignTable"></table></div></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Entregabilidade & timing', 'Falhas por dominio e efeito do horario de disparo sobre o clique.')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhEmailHourChart','Envios por hora do dia (Brasilia)')}
+                    ${canvasHTML('bhEmailSubjectChart','Assunto: IA vs fallback (CTR %)')}
+                </div>
+                <div class="table-container"><div class="table-title">Dominios dos destinatarios</div><table id="bhEmailDomainTable"></table></div>
+                <div class="table-container"><div class="table-title">Falhas de envio</div><table id="bhEmailFailureTable"></table></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Pressao sobre a base', 'Quantos emails cada pessoa recebe e quem esta sendo mais impactado. Base de opt-in dos digests e estado atual (nao respeita o filtro de periodo).')}
+                <div class="kpi-grid-compact" id="bhEmailOptinKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhEmailFrequencyChart','Emails recebidos por pessoa')}
+                    ${canvasHTML('bhEmailTierChart','Envios por tier (digests)')}
+                </div>
+                <div class="table-container"><div class="table-title" id="bhEmailRecipientTitle">Destinatarios mais impactados</div><div style="max-height:400px;overflow-y:auto"><table id="bhEmailRecipientTable"></table></div></div>
+            </div>
+        `);
+
+        // ── Toggle admins ──
+        const adminToggle = document.getElementById('bhEmailAdminToggle');
+        if (adminToggle) {
+            const dot = document.getElementById('bhEmailAdminDot');
+            const label = document.getElementById('bhEmailAdminLabel');
+            adminToggle.style.borderColor = includeAdmins ? '#f59e0b' : '#94a3b8';
+            adminToggle.style.color = includeAdmins ? '#f59e0b' : '#64748b';
+            dot.style.background = includeAdmins ? '#f59e0b' : '#94a3b8';
+            label.textContent = includeAdmins ? 'Incluindo admins (debug)' : 'Sem admins (oficial)';
+            adminToggle.onclick = () => {
+                window._emailIncludeAdmins = !window._emailIncludeAdmins;
+                refetchAndRerender();
+            };
+        }
+
+        // ── Hero KPIs ──
+        const failRate = ov.fail_rate || 0;
+        document.getElementById('bhEmailHeroKpis').innerHTML = [
+            createKpiCardV2('Enviados', fmt(ov.total_sent||0), { hero:true, hint:`${fmt(ov.campaigns||0)} campanhas, ${fmt(ov.email_types||0)} tipos` }),
+            createKpiCardV2('Aceitos pelo provedor', fmt(ov.delivered||0), { intent:'positive', hint:`${(100-failRate).toFixed(1)}% dos disparos` }),
+            createKpiCardV2('Falhas', fmt(ov.failed||0), { intent: failRate > 1 ? 'negative' : 'positive', hint:`${failRate.toFixed(2)}% de falha` }),
+            createKpiCardV2('Destinatarios unicos', fmt(ov.unique_recipients||0), { hint:`${ov.sends_per_recipient||0} emails por pessoa` }),
+            createKpiCardV2('Cliques rastreados', fmt(ov.clicked_sends||0), { hint:`${ov.ctr_sends||0}% dos entregues (piso)` }),
+            createKpiCardV2('Pessoas que clicaram', fmt(ov.unique_clickers||0), { intent:'positive', hint:`${ov.ctr_recipients||0}% dos destinatarios` }),
+            createKpiCardV2('Mediana ate o clique', ov.median_hours_to_click != null ? String(ov.median_hours_to_click) : '-', { unit:'h' }),
+            createKpiCardV2('Dominios atingidos', fmt(ov.domains||0))
+        ].join('');
+
+        // ── Taxonomia ──
+        const catSorted = [...byCat].sort((a,b)=>(b.sent||0)-(a.sent||0));
+        if (!showEmptyIfNeeded('bhEmailCatVolumeChart', catSorted, 'Nenhum email no periodo')) {
+            doughnutChart('bhEmailCatVolumeChart',
+                catSorted.map(r=>emailCatLabel(r.category)),
+                catSorted.map(r=>r.sent||0),
+                catSorted.map(r=>emailCatColor(r.category)));
+        }
+        // CTR ordenado por desempenho (nao por volume) — a leitura util aqui e "o que engaja".
+        const ctrSorted = [...byCat].filter(r=>(r.delivered||0)>0).sort((a,b)=>(b.ctr||0)-(a.ctr||0));
+        if (!showEmptyIfNeeded('bhEmailCatCtrChart', ctrSorted, 'Sem cliques rastreados no periodo')) {
+            doughnutChart('bhEmailCatCtrChart',
+                ctrSorted.map(r=>emailCatLabel(r.category)),
+                ctrSorted.map(r=>r.ctr||0),
+                ctrSorted.map(r=>emailCatColor(r.category)));
+        }
+        if (!showEmptyIfNeeded('bhEmailCadenceChart', byCadence, 'Sem dados')) {
+            doughnutChart('bhEmailCadenceChart',
+                byCadence.map(r=>EMAIL_CADENCE_LABELS[r.cadence]||r.cadence),
+                byCadence.map(r=>r.sent||0), COLORS);
+        }
+        if (!showEmptyIfNeeded('bhEmailStageChart', byStage, 'Sem dados')) {
+            doughnutChart('bhEmailStageChart',
+                byStage.map(r=>EMAIL_STAGE_LABELS[r.stage]||r.stage),
+                byStage.map(r=>r.sent||0), COLORS.slice(3));
+        }
+
+        const dailyFiltered = filterSnapshot(daily, f);
+        if (!showEmptyIfNeeded('bhEmailDailyChart', dailyFiltered, 'Sem envios no periodo')) {
+            const mc = prepareMultiCategoryTS(daily, f, 'category', 'sent');
+            destroyChart('bhEmailDailyChart');
+            charts.bhEmailDailyChart = new Chart(document.getElementById('bhEmailDailyChart'), {
+                type:'bar',
+                data:{labels:mc.labels,datasets:mc.categories.map(c=>({label:emailCatLabel(c),data:mc.getValues(c),backgroundColor:emailCatColor(c)}))},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
+        }
+
+        const typeTable = document.getElementById('bhEmailTypeTable');
+        typeTable.innerHTML = `<thead><tr>
+            <th>Tipo</th><th>Categoria</th><th>Cadencia</th><th>Estagio</th>
+            <th>Enviados</th><th>Destinatarios</th><th>Falhas</th><th>Cliques</th><th>CTR %</th><th>Mediana (h)</th><th>Ultimo envio</th>
+        </tr></thead><tbody>${byType.map(r=>`<tr>
+            <td style="font-family:monospace;font-size:0.78rem;">${r.email_type||'-'}</td>
+            <td>${emailCatBadge(r.category)}</td>
+            <td style="color:var(--m);font-size:0.8rem;">${EMAIL_CADENCE_LABELS[r.cadence]||r.cadence||'-'}</td>
+            <td style="color:var(--m);font-size:0.8rem;">${EMAIL_STAGE_LABELS[r.stage]||r.stage||'-'}</td>
+            <td><strong>${fmt(r.sent||0)}</strong></td>
+            <td>${fmt(r.recipients||0)}</td>
+            <td style="color:${(r.failed||0)>0?'#ef4444':'inherit'};">${fmt(r.failed||0)}</td>
+            <td>${fmt(r.clicks||0)}</td>
+            <td style="font-weight:600;color:${(r.ctr||0)>=1?'#3ecf8e':'var(--m)'};">${r.ctr != null ? r.ctr : '0'}%</td>
+            <td>${r.median_hours_to_click != null ? r.median_hours_to_click : '-'}</td>
+            <td style="color:var(--m);font-size:0.8rem;">${r.last_send||'-'}</td>
+        </tr>`).join('')}</tbody>`;
+        makeSortable(typeTable);
+        addExportBtn('#bhEmailTypeTitle', 'bhEmailTypeTable');
+
+        // ── Funil de clique ──
+        const fSent = clickFunnel.sent||0, fDelivered = clickFunnel.delivered||0;
+        const fRecipients = clickFunnel.recipients||0, fClickers = clickFunnel.clickers||0;
+        const fSessions = clickFunnel.sessions||0, fLogin = clickFunnel.sessions_login||0;
+        const fPaywall = clickFunnel.sessions_paywall||0, fPayment = clickFunnel.sessions_payment||0;
+        const pctOf = (n,d) => d > 0 ? ((n/d)*100).toFixed(1)+'%' : '-';
+        document.getElementById('bhEmailFunnelKpis').innerHTML = [
+            createKpiCardV2('Destinatarios', fmt(fRecipients), { hint:`${fmt(fDelivered)} emails aceitos` }),
+            createKpiCardV2('Clicaram', fmt(fClickers), { intent:'positive', hint:`${pctOf(fClickers, fRecipients)} dos destinatarios` }),
+            createKpiCardV2('Sessoes abertas', fmt(fSessions), { hint:'primeira sessao por usuario x campanha' }),
+            createKpiCardV2('Com login', fmt(fLogin), { hint:`${pctOf(fLogin, fSessions)} das sessoes` }),
+            createKpiCardV2('Bateram no paywall', fmt(fPaywall), { hint:`${pctOf(fPaywall, fSessions)} das sessoes` }),
+            createKpiCardV2('Pagaram', fmt(fPayment), { intent: fPayment > 0 ? 'positive' : null, hint:`${pctOf(fPayment, fSessions)} das sessoes` })
+        ].join('');
+
+        const funnelLabels = ['Enviados','Aceitos','Destinatarios','Clicaram','Sessoes','Login','Paywall','Pagamento'];
+        const funnelValues = [fSent, fDelivered, fRecipients, fClickers, fSessions, fLogin, fPaywall, fPayment];
+        if (!showEmptyIfNeeded('bhEmailFunnelChart', funnelValues.filter(v=>v>0), 'Sem dados de funil')) {
+            destroyChart('bhEmailFunnelChart');
+            charts.bhEmailFunnelChart = new Chart(document.getElementById('bhEmailFunnelChart'), {
+                type:'bar',
+                data:{labels:funnelLabels,datasets:[{label:'Volume',data:funnelValues,backgroundColor:['#94a3b8','#64748b','#6366f1','#8b5cf6','#3b82f6','#3ecf8e','#f59e0b','#22c55e'],borderRadius:6}]},
+                // Escala log: o funil vai de milhares de envios a unidades de pagamento.
+                options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{type:'logarithmic',beginAtZero:false,grid:{color:'#f1f5f9'}}}}
+            });
+        }
+
+        const ttcRows = timeToClick.filter(r=>(r.cnt||0)>0);
+        if (!showEmptyIfNeeded('bhEmailTimeToClickChart', ttcRows, 'Nenhum clique rastreado')) {
+            barChart('bhEmailTimeToClickChart', timeToClick.map(r=>r.bucket),
+                [{label:'Cliques',data:timeToClick.map(r=>r.cnt||0),backgroundColor:'#6366f1',borderRadius:6}]);
+        }
+
+        // ── Campanhas ──
+        const campTable = document.getElementById('bhEmailCampaignTable');
+        campTable.innerHTML = `<thead><tr>
+            <th>Campanha</th><th>Categoria</th><th>Enviados</th><th>Destinatarios</th>
+            <th>Cliques</th><th>CTR %</th><th>Sessoes</th><th>Login</th><th>Paywall</th><th>Pago</th><th>1o envio</th>
+        </tr></thead><tbody>${campaigns.map(r=>`<tr>
+            <td style="font-family:monospace;font-size:0.78rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.campaign_key||''}">${r.campaign_key||'-'}</td>
+            <td>${emailCatBadge(r.category)}</td>
+            <td><strong>${fmt(r.sent||0)}</strong></td>
+            <td>${fmt(r.recipients||0)}</td>
+            <td>${fmt(r.clicks||0)}</td>
+            <td style="font-weight:600;color:${(r.ctr||0)>=1?'#3ecf8e':'var(--m)'};">${r.ctr != null ? r.ctr : '0'}%</td>
+            <td>${fmt(r.sessions||0)}</td>
+            <td>${fmt(r.sessions_login||0)}</td>
+            <td>${fmt(r.sessions_paywall||0)}</td>
+            <td style="color:${(r.sessions_payment||0)>0?'#3ecf8e':'inherit'};font-weight:${(r.sessions_payment||0)>0?'600':'400'};">${fmt(r.sessions_payment||0)}</td>
+            <td style="color:var(--m);font-size:0.8rem;">${r.first_send||'-'}</td>
+        </tr>`).join('')}</tbody>`;
+        makeSortable(campTable);
+        addExportBtn('#bhEmailCampaignTitle', 'bhEmailCampaignTable');
+
+        // ── Entregabilidade & timing ──
+        if (!showEmptyIfNeeded('bhEmailHourChart', sendHour, 'Sem envios no periodo')) {
+            destroyChart('bhEmailHourChart');
+            charts.bhEmailHourChart = new Chart(document.getElementById('bhEmailHourChart'), {
+                type:'bar',
+                data:{labels:sendHour.map(r=>String(r.hour).padStart(2,'0')+'h'),datasets:[
+                    {type:'bar',label:'Enviados',data:sendHour.map(r=>r.sent||0),backgroundColor:'#6366f1',borderRadius:4,yAxisID:'y'},
+                    {type:'line',label:'CTR %',data:sendHour.map(r=>r.ctr||0),borderColor:'#3ecf8e',backgroundColor:'#3ecf8e',fill:false,tension:0.4,pointRadius:2,yAxisID:'y1'}
+                ]},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},
+                    scales:{y:{beginAtZero:true,position:'left',grid:{color:'#f1f5f9'}},y1:{beginAtZero:true,position:'right',grid:{display:false},ticks:{callback:v=>v+'%'}}}}
+            });
+        }
+        if (!showEmptyIfNeeded('bhEmailSubjectChart', subjectSrc, 'Sem metadados de assunto (so digests registram)')) {
+            barChart('bhEmailSubjectChart', subjectSrc.map(r=>r.subject_source),
+                [{label:'CTR %',data:subjectSrc.map(r=>r.ctr||0),backgroundColor:subjectSrc.map((_,i)=>COLORS[i%COLORS.length]),borderRadius:6}]);
+        }
+
+        const domTable = document.getElementById('bhEmailDomainTable');
+        domTable.innerHTML = `<thead><tr><th>Dominio</th><th>Enviados</th><th>Destinatarios</th><th>Falhas</th><th>Falha %</th><th>Cliques</th><th>CTR %</th></tr></thead>
+            <tbody>${domains.map(r=>`<tr>
+                <td>${r.domain||'-'}</td>
+                <td><strong>${fmt(r.sent||0)}</strong></td>
+                <td>${fmt(r.recipients||0)}</td>
+                <td style="color:${(r.failed||0)>0?'#ef4444':'inherit'};">${fmt(r.failed||0)}</td>
+                <td style="color:${(r.fail_rate||0)>1?'#ef4444':'var(--m)'};">${r.fail_rate != null ? r.fail_rate : '0'}%</td>
+                <td>${fmt(r.clicks||0)}</td>
+                <td style="font-weight:600;">${r.ctr != null ? r.ctr : '0'}%</td>
+            </tr>`).join('')}</tbody>`;
+        makeSortable(domTable);
+
+        const failTable = document.getElementById('bhEmailFailureTable');
+        failTable.innerHTML = failures.length === 0
+            ? `<tbody><tr><td style="padding:14px;color:var(--m);">Nenhuma falha de envio no periodo.</td></tr></tbody>`
+            : `<thead><tr><th>Tipo</th><th>Categoria</th><th>Erro</th><th>Ocorrencias</th><th>Primeira</th><th>Ultima</th></tr></thead>
+               <tbody>${failures.map(r=>`<tr>
+                   <td style="font-family:monospace;font-size:0.78rem;">${r.email_type||'-'}</td>
+                   <td>${emailCatBadge(r.category)}</td>
+                   <td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.8rem;" title="${(r.error_message||'').replace(/"/g,'&quot;')}">${r.error_message||'-'}</td>
+                   <td><strong>${fmt(r.cnt||0)}</strong></td>
+                   <td style="color:var(--m);font-size:0.8rem;">${r.first_seen||'-'}</td>
+                   <td style="color:var(--m);font-size:0.8rem;">${r.last_seen||'-'}</td>
+               </tr>`).join('')}</tbody>`;
+        if (failures.length > 0) makeSortable(failTable);
+
+        // ── Pressao sobre a base ──
+        document.getElementById('bhEmailOptinKpis').innerHTML = [
+            createKpiCardV2('Opt-in digest por email', fmt(optin.any_email_digest||0), { hero:true, hint:`de ${fmt(optin.total_prefs||0)} com preferencias salvas` }),
+            createKpiCardV2('Digest diario (email)', fmt(optin.daily_email||0)),
+            createKpiCardV2('Digest semanal (email)', fmt(optin.weekly_email||0)),
+            createKpiCardV2('Digest diario (WhatsApp)', fmt(optin.daily_whatsapp||0)),
+            createKpiCardV2('Digest diario (Telegram)', fmt(optin.daily_telegram||0))
+        ].join('');
+
+        const freqRows = frequency.filter(r=>(r.users||0)>0);
+        if (!showEmptyIfNeeded('bhEmailFrequencyChart', freqRows, 'Sem destinatarios no periodo')) {
+            barChart('bhEmailFrequencyChart', frequency.map(r=>r.bucket),
+                [{label:'Pessoas',data:frequency.map(r=>r.users||0),backgroundColor:'#8b5cf6',borderRadius:6}]);
+        }
+        if (!showEmptyIfNeeded('bhEmailTierChart', byTier, 'Sem metadados de tier (so digests registram)')) {
+            doughnutChart('bhEmailTierChart', byTier.map(r=>r.tier), byTier.map(r=>r.sent||0), COLORS.slice(1));
+        }
+
+        const recTable = document.getElementById('bhEmailRecipientTable');
+        recTable.innerHTML = `<thead><tr><th>Email</th><th>Recebidos</th><th>Tipos</th><th>Categorias</th><th>Cliques</th><th>CTR %</th><th>Ultimo envio</th><th>Ultimo clique</th></tr></thead>
+            <tbody>${topRecipients.map(r=>`<tr>
+                <td style="font-size:0.82rem;">${r.email||'-'}</td>
+                <td><strong>${fmt(r.sent||0)}</strong></td>
+                <td>${fmt(r.types||0)}</td>
+                <td>${fmt(r.categories||0)}</td>
+                <td>${fmt(r.clicks||0)}</td>
+                <td style="font-weight:600;color:${(r.ctr||0)>=1?'#3ecf8e':'var(--m)'};">${r.ctr != null ? r.ctr : '0'}%</td>
+                <td style="color:var(--m);font-size:0.8rem;">${r.last_send||'-'}</td>
+                <td style="color:var(--m);font-size:0.8rem;">${r.last_click||'-'}</td>
+            </tr>`).join('')}</tbody>`;
+        makeSortable(recTable);
+        addExportBtn('#bhEmailRecipientTitle', 'bhEmailRecipientTable');
+    }
+
     function renderBhRetencao() {
         const bh = dashboardData.bh; const f = globalFilters;
         const stickiness = bh.stickiness || [];
@@ -3112,14 +3455,10 @@
             <div class="table-container"><div class="table-title">Tamanhos de Tabela</div><table id="bhDetTableSizes"></table></div>
 
             <div class="section-block">
-                ${createSectionHeader('Comunicacao outbound', 'Volumes de email (email_log) e WhatsApp (whatsapp_log) enviados pela plataforma.')}
+                ${createSectionHeader('Comunicacao outbound (WhatsApp)', 'Volumes de <code>whatsapp_log</code>. As metricas de email sairam daqui: viraram a aba <strong>Emails</strong>, com taxonomia por categoria/cadencia/estagio e atribuicao de clique.')}
                 <div class="kpi-grid-compact" id="bhDetCommKpis"></div>
                 <div class="charts-grid">
-                    ${canvasHTML('bhDetEmailChart','Email por Tipo (totais)')}
                     ${canvasHTML('bhDetWhatsappChart','WhatsApp por Categoria (totais)')}
-                </div>
-                <div class="charts-grid">
-                    ${canvasHTML('bhDetEmailDailyChart','Emails enviados (diario)')}
                     ${canvasHTML('bhDetWhatsappDailyChart','WhatsApp enviados (diario)')}
                 </div>
             </div>
@@ -3156,41 +3495,24 @@
         document.getElementById('bhDetTableSizes').innerHTML = `<thead><tr><th>Tabela</th><th>Tamanho</th><th>Rows</th></tr></thead><tbody>${tableSizes.map(t=>`<tr><td>${t.table_name||'-'}</td><td>${fmtBytes(t.total_bytes||0)}</td><td>${fmt(t.row_count||0)}</td></tr>`).join('')}</tbody>`;
         makeSortable(document.getElementById('bhDetTableSizes'));
 
-        // ===== Comunicacao outbound =====
-        const emailDaily = bh.email_log_daily || [];
-        const emailSummary = bh.email_log_summary || [];
+        // ===== Comunicacao outbound (WhatsApp) =====
+        // 2026-08-28: email saiu desta aba. As chaves email_log_* continuam vindo
+        // de get_analytics_data_bh_extras_v2, mas nao sao mais renderizadas aqui —
+        // a aba Emails usa get_analytics_data_bh_email_v1, que filtra admins e
+        // classifica os tipos. Manter os dois na tela mostrava numeros divergentes.
         const whatsappDaily = bh.whatsapp_log_daily || [];
         const whatsappSummary = bh.whatsapp_log_summary || [];
-        const totalEmails = emailSummary.reduce((s,r)=>s+(r.total||0),0);
-        const sentEmails = emailSummary.reduce((s,r)=>s+(r.sent||0),0);
-        const failedEmails = emailSummary.reduce((s,r)=>s+(r.failed||0),0);
         const totalWhatsapp = whatsappSummary.reduce((s,r)=>s+(r.total||0),0);
-        const emailSuccessRate = totalEmails > 0 ? (sentEmails/totalEmails*100) : 0;
+        // unique_recipients e por categoria — somar entre categorias contaria o
+        // mesmo usuario varias vezes, entao mostramos so a maior categoria.
+        const waTop = whatsappSummary[0];
         document.getElementById('bhDetCommKpis').innerHTML = `
-            ${createKpiCardV2('Emails Enviados', fmt(totalEmails), { hint:`${fmt(sentEmails)} sent, ${fmt(failedEmails)} failed` })}
-            ${createKpiCardV2('Taxa de Sucesso Email', emailSuccessRate.toFixed(1), { unit:'%', intent: emailSuccessRate > 95 ? 'positive' : 'warning' })}
-            ${createKpiCardV2('WhatsApp Enviados', fmt(totalWhatsapp))}
-            ${createKpiCardV2('Tipos Email', fmt(emailSummary.length))}
+            ${createKpiCardV2('WhatsApp Enviados', fmt(totalWhatsapp), { hero:true })}
             ${createKpiCardV2('Categorias WhatsApp', fmt(whatsappSummary.length))}
+            ${createKpiCardV2('Categoria principal', waTop ? (waTop.category||'-') : '-', { hint: waTop ? `${fmt(waTop.total||0)} envios, ${fmt(waTop.unique_recipients||0)} destinatarios` : '' })}
         `;
-        if (!showEmptyIfNeeded('bhDetEmailChart', emailSummary, 'Nenhum email enviado')) {
-            barChart('bhDetEmailChart', emailSummary.map(r=>r.email_type||'-'), [
-                {label:'Sent',data:emailSummary.map(r=>r.sent||0),backgroundColor:'#3ecf8e'},
-                {label:'Failed',data:emailSummary.map(r=>r.failed||0),backgroundColor:'#ef4444'}
-            ], {horizontal:true});
-        }
         if (!showEmptyIfNeeded('bhDetWhatsappChart', whatsappSummary, 'Nenhum WhatsApp enviado')) {
             barChart('bhDetWhatsappChart', whatsappSummary.map(r=>r.category||'-'), [{label:'Total',data:whatsappSummary.map(r=>r.total||0),backgroundColor:'#25d366'}], {horizontal:true});
-        }
-        const emailDailyFiltered = filterSnapshot(emailDaily, f);
-        if (!showEmptyIfNeeded('bhDetEmailDailyChart', emailDailyFiltered, 'Sem emails no periodo')) {
-            const mcED = prepareMultiCategoryTS(emailDaily, f, 'email_type', 'sent');
-            const topTypes = mcED.categories.slice(0,6);
-            destroyChart('bhDetEmailDailyChart');
-            charts.bhDetEmailDailyChart = new Chart(document.getElementById('bhDetEmailDailyChart'), {
-                type:'bar',data:{labels:mcED.labels,datasets:topTypes.map((t,i)=>({label:t,data:mcED.getValues(t),backgroundColor:COLORS[i%COLORS.length]}))},
-                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
-            });
         }
         const waDailyFiltered = filterSnapshot(whatsappDaily, f);
         if (!showEmptyIfNeeded('bhDetWhatsappDailyChart', waDailyFiltered, 'Sem WhatsApp no periodo')) {
@@ -4281,7 +4603,7 @@
 
     // ===== TAB NAVIGATION =====
     let currentTab = 'bhVisao';
-    const ALL_TABS = ['bhVisao','bhAquisicao','bhEngajamento','bhAirton','bhRetencao','bhCustos','bhDetalhes','htaVisao','htaAquisicao','htaEngajamento','htaRetencao','htaCustos','htaDetalhes','iacoes'];
+    const ALL_TABS = ['bhVisao','bhAquisicao','bhEngajamento','bhAirton','bhEmails','bhRetencao','bhCustos','bhDetalhes','htaVisao','htaAquisicao','htaEngajamento','htaRetencao','htaCustos','htaDetalhes','iacoes'];
     // Lazy render: abas marcadas dirty so sao (re)renderizadas quando visitadas.
     const dirtyTabs = new Set(ALL_TABS);
     function markAllTabsDirty() { ALL_TABS.forEach(t=>dirtyTabs.add(t)); }
@@ -4325,7 +4647,7 @@
         try {
             const renderMap = {
                 bhVisao: renderBhVisao, bhAquisicao: renderBhAquisicao, bhEngajamento: renderBhEngajamento,
-                bhAirton: renderBhAirton,
+                bhAirton: renderBhAirton, bhEmails: renderBhEmails,
                 bhRetencao: renderBhRetencao, bhCustos: renderBhCustos, bhDetalhes: renderBhDetalhes,
                 htaVisao: renderHtaVisao, htaAquisicao: renderHtaAquisicao, htaEngajamento: renderHtaEngajamento,
                 htaRetencao: renderHtaRetencao, htaCustos: renderHtaCustos, htaDetalhes: renderHtaDetalhes,
@@ -4396,6 +4718,8 @@
             if (globalFilters.from) params.set('from', `${globalFilters.from}T00:00:00-03:00`);
             if (globalFilters.to)   params.set('to',   `${globalFilters.to}T23:59:59.999-03:00`);
             if (window._airtonIncludeAdmins) params.set('include_admins', 'true');
+            // 2026-08-28: toggle da aba Emails (inclui contas @brasilhorizonte.com.br).
+            if (window._emailIncludeAdmins) params.set('email_include_admins', 'true');
             // 2026-05-27: params do bloco de tickers (Engajamento iAcoes).
             const tf = window._bhTickerFilters;
             if (tf) {
