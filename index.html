@@ -1260,6 +1260,55 @@
         });
     }
 
+    // 2026-09-10: "Uso das ferramentas" — visita x uso x retorno por ferramenta.
+    // Fonte: RPC get_analytics_data_bh_tool_usage_v1 (chave bh.tool_usage).
+    // &#x23f3; no lugar do zero quando o evento de acao ainda nao chegou de usuario
+    // real (acao_pendentes): mostrar 0 ali seria ler "ninguem usa" onde o certo e
+    // "ainda nao medimos".
+    function renderBhToolUsageTable(rows) {
+        const el = document.getElementById('bhEngToolUsageTable');
+        if (!el) return;
+        if (!rows.length) {
+            el.innerHTML = '<tr><td style="padding:16px;text-align:center;color:var(--m)">Sem dados de uso das ferramentas no periodo (RPC tool_usage ausente ou vazia)</td></tr>';
+            return;
+        }
+        const WAIT = '&#x23f3;';
+        const num = n => (n == null ? '&mdash;' : Number(n).toLocaleString('pt-BR'));
+        const sub = t => `<div style="font-size:11px;color:var(--m);margin-top:2px;white-space:normal">${t}</div>`;
+        const brDate = d => (d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '');
+        el.innerHTML =
+            '<thead><tr><th>Ferramenta</th><th style="text-align:right">Abriram</th><th style="text-align:right">Usaram</th><th style="text-align:right">% uso</th><th style="text-align:right">Voltaram (2+ dias)</th><th>Evento de uso</th></tr></thead><tbody>' +
+            rows.map(r => {
+                const acoes = r.acao_eventos || [];
+                const pend = r.acao_pendentes || [];
+                const semAcao = acoes.length === 0;
+                const tudoPendente = !semAcao && pend.length >= acoes.length;
+
+                let usaram = semAcao ? '&mdash;' : (tudoPendente ? WAIT : num(r.usaram) + (pend.length ? ' ' + WAIT : ''));
+                if (r.etapa2_label) usaram += sub(`${r.etapa2_label}: ${r.etapa2_pendente ? WAIT : num(r.etapa2_usuarios)}`);
+
+                const pct = (semAcao || tudoPendente || r.uso_eh_visita || !r.abriram)
+                    ? '&mdash;'
+                    : Math.round(100 * (r.usaram || 0) / r.abriram) + '%';
+
+                const abriram = num(r.abriram) + (r.is_default ? sub(`${num(r.escolheram)} escolheram &middot; aba padrao`) : '');
+
+                let evento;
+                if (semAcao) {
+                    evento = '<span style="color:var(--m)">sem evento de acao &mdash; so visita</span>';
+                } else {
+                    const status = tudoPendente
+                        ? `${WAIT} aguardando deploy`
+                        : (pend.length ? `${WAIT} pendente: ${pend.join(', ')} &middot; ` : '') + `desde ${brDate(r.acao_desde)}`;
+                    evento = `<code style="font-size:11px">${acoes.join(', ')}</code>` + sub(status);
+                }
+
+                return `<tr><td>${r.label}</td><td style="text-align:right">${abriram}</td><td style="text-align:right">${usaram}</td><td style="text-align:right">${pct}</td><td style="text-align:right">${num(r.voltaram)}</td><td>${evento}</td></tr>`;
+            }).join('') +
+            '</tbody>';
+        makeSortable(el);
+    }
+
     function renderBhEngajamento() {
         const bh = dashboardData.bh; const f = globalFilters;
         const features = (bh.feature_usage||[]).sort((a,b)=>(b.cnt||0)-(a.cnt||0)).slice(0,10);
@@ -1397,6 +1446,11 @@
             </div>
 
             <div class="section-block">
+                ${createSectionHeader('Uso das ferramentas', 'Por ferramenta: quem ABRIU (visita; nas abas padrao da secao inclui quem so aterrissou &mdash; "escolheram" e o clique vindo de outra aba), quem USOU (evento de acao disparado no clique, nunca no render) e quem VOLTOU (visitou em 2+ dias). Admins sempre excluidos. &#x23f3; = evento de acao instrumentado em 10/09/2026 que ainda nao chegou de usuario real: so conta depois do deploy na main &mdash; ate la, zero NAO significa que ninguem usa.')}
+                <div class="table-container mb-2"><div class="table-title">Visita x uso x retorno (periodo selecionado)</div><table id="bhEngToolUsageTable"></table></div>
+            </div>
+
+            <div class="section-block">
                 ${createSectionHeader('Tab views', 'Visualizacoes de abas internas por feature (evento tab_view).')}
                 <div class="charts-grid">
                     ${canvasHTML('bhEngTabUsageChart','Tabs mais visitadas')}
@@ -1424,6 +1478,8 @@
                 </div>
             </div>
         `);
+
+        renderBhToolUsageTable(bh.tool_usage || []);
 
         // Filter feature usage by date (aggregate from featureDaily for date-filtered view)
         const filteredFeatureDaily = filterSnapshot(featureDaily, f);
