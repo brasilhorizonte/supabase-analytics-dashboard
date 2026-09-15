@@ -145,13 +145,18 @@ Deno.serve(async (req: Request) => {
     // 2026-08-17 overhaul: get_geo_profiles (x2) removidas — o frontend nunca
     // consumiu `geo`, eram 2 RPCs mortas por request. Notificacoes migraram para
     // get_notification_analytics_v2(p_from, p_to) — a v1 tinha 90 dias hardcoded.
-    const [bh, hta, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhOauth, bhAirton, bhAirtonTg, bhAirtonWa, bhPoolV2, bhTickersV3, bhEmail] = await Promise.all([
+    const [bh, hta, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhIacoesV3, bhOauth, bhAirton, bhAirtonTg, bhAirtonWa, bhPoolV2, bhTickersV3, bhEmail, bhSankey] = await Promise.all([
       fetchRpc(BH_URL, BH_KEY, "get_analytics_data_v2", { p_from: from, p_to: to }),
       fetchRpc(HTA_URL, HTA_KEY, "get_analytics_data"),
       fetchRpc(BH_URL, BH_KEY, "get_notification_analytics_v2", { p_from: from, p_to: to }),
       fetchRpc(BH_URL, BH_KEY, "get_analytics_data_bh_extras_v2", { p_from: from, p_to: to }),
       fetchRpc(BH_URL, BH_KEY, "get_analytics_data_bh_utm_v2", { p_from: from, p_to: to }),
       fetchRpc(BH_URL, BH_KEY, "get_analytics_data_iacoes_daily_v2", { p_from: from, p_to: to }),
+      // 2026-09-14: landing v3 — modelo por sessao (first-touch) + scroll depth.
+      // Entrega `iacoes_dim_daily`, uma tabela tidy (day, dim, value, metricas)
+      // que alimenta o explorador generico da aba Landing. Ver migration
+      // 20260914_iacoes_landing_v3.sql.
+      fetchRpc(BH_URL, BH_KEY, "get_analytics_data_iacoes_v3", { p_from: from, p_to: to }),
       fetchRpc(BH_URL, BH_KEY, "get_analytics_data_bh_oauth_v2", { p_from: from, p_to: to }),
       fetchRpc(BH_URL, BH_KEY, "get_analytics_data_airton_v2", { p_from: from, p_to: to, p_include_admins: includeAdmins }),
       // 2026-05-13: RPC complementar — funnel de linking + friction signals
@@ -184,17 +189,28 @@ Deno.serve(async (req: Request) => {
         p_to: to,
         p_include_admins: emailIncludeAdmins,
       }),
+      // 2026-09-14: diagramas de fluxo (Sankey) da plataforma. Aquisicao
+      // (fonte -> largura de uso -> desfecho, nivel usuario) e engajamento
+      // (transicoes entre features dentro da sessao). Ver migration
+      // 20260914_bh_sankey_v1.sql. Reusa o toggle de admins do Airton.
+      fetchRpc(BH_URL, BH_KEY, "get_analytics_data_bh_sankey_v1", {
+        p_from: from,
+        p_to: to,
+        p_include_admins: includeAdmins,
+      }),
     ]);
 
-    // A RPC de email devolve uma chave `meta` generica, igual a de varias outras
-    // RPCs. Como o merge e por spread, deixa-la passar faria a meta do email
-    // sobrescrever a das demais. Renomeia para `email_meta` antes de mesclar.
+    // Varias RPCs devolvem uma chave `meta` generica. Como o merge e por spread,
+    // deixa-las passar faria a ultima sobrescrever as demais — cada uma ganha um
+    // nome proprio antes de mesclar.
     const { meta: emailMeta, ...bhEmailRest } = (bhEmail || {}) as Record<string, unknown>;
+    const { meta: iacoesMeta, ...bhIacoesV3Rest } = (bhIacoesV3 || {}) as Record<string, unknown>;
+    const { meta: sankeyMeta, ...bhSankeyRest } = (bhSankey || {}) as Record<string, unknown>;
 
-    // Merge BH data: base + notif + extras + utm + iacoes_daily + oauth + airton + airton_tg + airton_wa + pool_v2 + tickers_v3 + email
+    // Merge BH data: base + notif + extras + utm + iacoes_daily + iacoes_v3 + oauth + airton + airton_tg + airton_wa + pool_v2 + tickers_v3 + email + sankey
     // tickers_v3 vem por ULTIMO de proposito — sobrescreve as 6 secoes de ticker da v2.
     // bhEmail usa o prefixo email_* (nenhuma colisao com email_log_* das extras).
-    const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}), ...(bhUtm || {}), ...(bhIacoesDaily || {}), ...(bhOauth || {}), ...(bhAirton || {}), ...(bhAirtonTg || {}), ...(bhAirtonWa || {}), ...(bhPoolV2 || {}), ...(bhTickersV3 || {}), ...bhEmailRest, email_meta: emailMeta };
+    const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}), ...(bhUtm || {}), ...(bhIacoesDaily || {}), ...bhIacoesV3Rest, ...(bhOauth || {}), ...(bhAirton || {}), ...(bhAirtonTg || {}), ...(bhAirtonWa || {}), ...(bhPoolV2 || {}), ...(bhTickersV3 || {}), ...bhEmailRest, ...bhSankeyRest, email_meta: emailMeta, iacoes_meta: iacoesMeta, sankey_meta: sankeyMeta };
 
     return new Response(JSON.stringify({
       admin: email,

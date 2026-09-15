@@ -194,6 +194,31 @@
         .filter-bar select { background: var(--bg); border: 1px solid var(--bd); color: var(--t); padding: 6px 10px; border-radius: 6px; font-size: 13px; font-family: inherit; }
         .filter-bar select:focus { outline: 2px solid var(--p); outline-offset: 2px; border-color: var(--p); }
 
+        /* Barra de controles local de um bloco (explorador da landing, etc.) */
+        .ctrl-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 8px 0 18px; padding: 12px 16px; background: var(--bg); border: 1px solid var(--bd); border-radius: 10px; font-size: 13px; }
+        .ctrl-bar label { display: inline-flex; align-items: center; gap: 6px; color: var(--m); font-weight: 600; font-size: 12px; }
+        .ctrl-bar select { background: var(--c); border: 1px solid var(--bd); color: var(--t); padding: 5px 9px; border-radius: 6px; font-size: 13px; font-family: inherit; }
+        .ctrl-bar select:focus { outline: 2px solid var(--p); outline-offset: 1px; border-color: var(--p); }
+        .ctrl-sep { width: 1px; height: 18px; background: var(--bd); }
+
+        /* Chips de isolamento de serie: "ver uma variavel especifica" num grafico */
+        .series-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; }
+        .series-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 9999px; border: 1px solid var(--bd); background: var(--c); color: var(--m); font-size: 11px; font-weight: 600; cursor: pointer; transition: border-color .15s, color .15s, background-color .15s; }
+        .series-chip:hover { border-color: var(--p); color: var(--t); }
+        .series-chip.active { border-color: var(--t); background: var(--t); color: #fff; }
+        .series-chip .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+        .series-chip.active .dot { box-shadow: 0 0 0 1.5px rgba(255,255,255,.65); }
+
+        /* Sankey (SVG proprio, sem dependencia externa) */
+        .sankey-wrap { overflow-x: auto; }
+        .sankey-wrap svg { display: block; width: 100%; min-width: 620px; height: auto; }
+        .sankey-link { fill-opacity: .32; transition: fill-opacity .15s; }
+        .sankey-link:hover { fill-opacity: .68; }
+        .sankey-node rect { rx: 2; }
+        .sankey-label { font-size: 11px; fill: var(--t); paint-order: stroke; stroke: var(--c); stroke-width: 3px; stroke-linejoin: round; }
+        .sankey-label .v { fill: var(--m); }
+        .sankey-stage { font-size: 11px; font-weight: 700; fill: var(--m); letter-spacing: .02em; }
+
         .retention-table { overflow-x: auto; margin-bottom: 24px; }
         .retention-table td.ret-good { color: var(--g); font-weight: 600; }
         .retention-table td.ret-mid { color: var(--a); font-weight: 600; }
@@ -809,6 +834,162 @@
 
     function canvasHTML(id, title, extra='') { return `<div class="chart-container ${extra}"><div class="chart-title">${title}</div><canvas id="${id}"></canvas></div>`; }
 
+    // ===== SERIES ISOLATOR =====
+    /**
+     * Adiciona uma linha de chips acima do canvas para isolar UMA serie do
+     * grafico (ou voltar a ver todas). O clique na legenda do Chart.js so
+     * esconde/mostra uma serie por vez; com 5-6 series, ver so uma exige 5
+     * cliques. Aqui e 1 clique — e fica visivel que da pra fazer isso.
+     * Generico: le os datasets do proprio chart, entao serve pra qualquer
+     * grafico multi-serie ja existente.
+     */
+    function attachSeriesIsolator(canvasId, opts = {}) {
+        const chart = charts[canvasId];
+        const canvas = document.getElementById(canvasId);
+        if (!chart || !canvas) return;
+        const container = canvas.closest('.chart-container');
+        if (!container) return;
+        const datasets = chart.data.datasets || [];
+        if (datasets.length < 2) return;
+
+        // Evita duplicar a barra num re-render que reaproveitou o container
+        const existing = container.querySelector('.series-chips[data-for="' + canvasId + '"]');
+        if (existing) existing.remove();
+
+        const colorOf = ds => ds.borderColor || (Array.isArray(ds.backgroundColor) ? ds.backgroundColor[0] : ds.backgroundColor) || '#94a3b8';
+        const bar = document.createElement('div');
+        bar.className = 'series-chips';
+        bar.dataset.for = canvasId;
+        bar.innerHTML = `<button type="button" class="series-chip active" data-idx="all">${opts.allLabel || 'Todas'}</button>` +
+            datasets.map((ds, i) => `<button type="button" class="series-chip" data-idx="${i}"><span class="dot" style="background:${colorOf(ds)}"></span>${ds.label || 'Serie ' + (i + 1)}</button>`).join('');
+
+        bar.addEventListener('click', ev => {
+            const btn = ev.target.closest('.series-chip');
+            if (!btn) return;
+            const idx = btn.dataset.idx;
+            bar.querySelectorAll('.series-chip').forEach(b => b.classList.toggle('active', b === btn));
+            datasets.forEach((_, i) => chart.setDatasetVisibility(i, idx === 'all' || Number(idx) === i));
+            chart.update();
+        });
+
+        // Abaixo do titulo, acima do canvas
+        canvas.parentNode.insertBefore(bar, canvas);
+    }
+
+    // ===== SANKEY (SVG proprio, sem dependencia externa) =====
+    /**
+     * Desenha um diagrama de fluxo a partir de links no formato
+     * `{stage, source, target, value}` — o no `source` fica na coluna `stage`
+     * e o `target` na coluna `stage+1`.
+     *
+     * A chave de um no e (stage, label), nao so o label: o mesmo nome em
+     * colunas diferentes e um no diferente. Sem isso o fluxo de features
+     * viraria um emaranhado, ja que 'core' reaparece em todas as etapas.
+     *
+     * opts: { height, stageLabels: [], colors: {label: '#hex'}, unit }
+     */
+    function renderSankey(containerId, links, opts = {}) {
+        const el = document.getElementById(containerId);
+        if (!el) return;
+        const rows = (links || []).map(l => ({
+            stage: Number(l.stage) || 0, source: l.source, target: l.target, value: Number(l.value) || 0
+        })).filter(l => l.value > 0 && l.source && l.target);
+
+        if (rows.length === 0) {
+            el.innerHTML = `<p style="color:var(--m);font-size:13px;padding:12px">${opts.emptyMsg || 'Sem fluxo registrado no periodo selecionado.'}</p>`;
+            return;
+        }
+
+        const lastCol = Math.max(...rows.map(r => r.stage)) + 1;
+        const cols = Array.from({ length: lastCol + 1 }, () => new Map());
+        const nodeAt = (stage, label) => {
+            const m = cols[stage];
+            if (!m.has(label)) m.set(label, { stage, label, out: 0, inc: 0, value: 0, y: 0, h: 0 });
+            return m.get(label);
+        };
+        rows.forEach(r => {
+            r.s = nodeAt(r.stage, r.source);
+            r.t = nodeAt(r.stage + 1, r.target);
+            r.s.out += r.value; r.t.inc += r.value;
+        });
+
+        const colLists = cols.map(m => {
+            const list = [...m.values()];
+            list.forEach(n => { n.value = Math.max(n.out, n.inc); });
+            return list.sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+        });
+
+        // Escala unica pra todas as colunas: uma fita de 100 e visualmente
+        // igual em qualquer etapa. Escalar por coluna esconderia a evasao.
+        const GAP = 10, NW = 13, PAD_L = 158, PAD_R = 168, TOP = 26, VBW = 1000;
+        const maxCount = Math.max(...colLists.map(l => l.length));
+        const maxTotal = Math.max(...colLists.map(l => l.reduce((s, n) => s + n.value, 0)), 1);
+        const H = opts.height || Math.max(240, maxCount * 38);
+        const scale = Math.max((H - GAP * Math.max(maxCount - 1, 0)) / maxTotal, 0.0001);
+
+        colLists.forEach(list => {
+            let y = TOP;
+            list.forEach(n => { n.h = Math.max(n.value * scale, 1.5); n.y = y; y += n.h + GAP; });
+        });
+
+        const innerW = VBW - PAD_L - PAD_R;
+        const colX = i => PAD_L + (lastCol === 0 ? 0 : (i * (innerW - NW)) / lastCol);
+
+        // Cor por rotulo (estavel entre colunas), com override opcional
+        const palette = ['#6366f1', '#3ecf8e', '#f59e0b', '#3b82f6', '#ec4899', '#22c55e', '#8b5cf6', '#06b6d4', '#ef4444', '#94a3b8'];
+        const colorMap = Object.assign({}, opts.colors || {});
+        let ci = 0;
+        colLists.flat().forEach(n => { if (!colorMap[n.label]) colorMap[n.label] = palette[ci++ % palette.length]; });
+
+        // Offsets das fitas: na saida ordena por y do destino, na entrada por y
+        // da origem. Sao ordens diferentes de proposito — e o que minimiza
+        // cruzamentos dentro de cada no.
+        const outOff = new Map(), inOff = new Map();
+        rows.slice().sort((a, b) => a.s.y - b.s.y || a.t.y - b.t.y).forEach(r => {
+            const o = outOff.get(r.s) || 0;
+            r.sy = r.s.y + o; outOff.set(r.s, o + r.value * scale);
+        });
+        rows.slice().sort((a, b) => a.t.y - b.t.y || a.s.y - b.s.y).forEach(r => {
+            const o = inOff.get(r.t) || 0;
+            r.ty = r.t.y + o; inOff.set(r.t, o + r.value * scale);
+        });
+
+        const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const unit = opts.unit || 'itens';
+        const totalFirst = colLists[0].reduce((s, n) => s + n.value, 0);
+        const pct = v => totalFirst > 0 ? ((v / totalFirst) * 100).toFixed(1) + '%' : '';
+
+        const ribbons = rows.map(r => {
+            const x0 = colX(r.stage) + NW, x1 = colX(r.stage + 1);
+            const w = Math.max(r.value * scale, 0.8), c = (x1 - x0) / 2;
+            const d = `M${x0},${r.sy} C${x0 + c},${r.sy} ${x1 - c},${r.ty} ${x1},${r.ty} ` +
+                      `L${x1},${r.ty + w} C${x1 - c},${r.ty + w} ${x0 + c},${r.sy + w} ${x0},${r.sy + w} Z`;
+            return `<path class="sankey-link" d="${d}" fill="${colorMap[r.source]}"><title>${esc(r.source)} → ${esc(r.target)}: ${fmt(r.value)} ${unit} (${pct(r.value)})</title></path>`;
+        }).join('');
+
+        const nodesSvg = colLists.map((list, i) => list.map(n => {
+            const x = colX(i);
+            // Primeira coluna com rotulo a esquerda (usa PAD_L), as demais a
+            // direita do no (a ultima usa PAD_R). Assim nenhuma etiqueta
+            // atravessa o proprio diagrama nas bordas.
+            const onLeft = i === 0;
+            const tx = onLeft ? x - 8 : x + NW + 8;
+            const anchor = onLeft ? 'end' : 'start';
+            const ty = n.y + n.h / 2 + 4;
+            return `<g class="sankey-node">` +
+                `<rect x="${x}" y="${n.y}" width="${NW}" height="${n.h}" fill="${colorMap[n.label]}"><title>${esc(n.label)}: ${fmt(n.value)} ${unit} (${pct(n.value)})</title></rect>` +
+                `<text class="sankey-label" x="${tx}" y="${ty}" text-anchor="${anchor}">${esc(n.label)} <tspan class="v">${fmt(n.value)}</tspan></text>` +
+                `</g>`;
+        }).join('')).join('');
+
+        const stageLabels = (opts.stageLabels || []).map((lbl, i) => {
+            if (i > lastCol || !lbl) return '';
+            return `<text class="sankey-stage" x="${colX(i) + NW / 2}" y="12" text-anchor="middle">${esc(lbl)}</text>`;
+        }).join('');
+
+        el.innerHTML = `<div class="sankey-wrap"><svg viewBox="0 0 ${VBW} ${H + TOP + 12}" preserveAspectRatio="xMidYMin meet" role="img">${ribbons}${nodesSvg}${stageLabels}</svg></div>`;
+    }
+
     // ===== CHART HELPERS =====
     // (doughnut click-to-filter removed — replaced by horizontal bars)
     function _unused_setupDoughnutFilter(doughnutCanvasId, relatedChartId, rawData, f, categoryField, valueField, dateField, colorMap, colorArray) {
@@ -985,6 +1166,13 @@
             </div>
             <div class="chart-container mb-2"><div class="chart-title">Funil de Conversao</div><div class="funnel" id="bhAqFunnel"></div></div>
 
+            <!-- ===== Sankey de aquisicao (fonte -> profundidade de uso -> desfecho) ===== -->
+            <div class="section-block">
+                ${createSectionHeader('Fluxo de aquisicao', 'Cada usuario do periodo percorre fonte de origem (first-touch do primeiro session_start) &rarr; quantas features distintas usou &rarr; desfecho comercial. A largura da fita e o numero de usuarios. Responde "de onde vem quem paga?", que o funil agregado nao responde.')}
+                <div class="kpi-grid-compact" id="bhAqSankeyKpis"></div>
+                <div class="chart-container mb-2"><div class="chart-title">Fonte &rarr; Uso &rarr; Desfecho</div><div id="bhAqSankey"></div></div>
+            </div>
+
             <!-- ===== Metodos de Login (Google OAuth adoption) ===== -->
             <div class="section-block">
                 ${createSectionHeader('Metodos de Login (Google OAuth)', 'Adocao de Google OAuth vs email/senha. Habilitado em 2026-04-30. Eventos auth_login (started/success/error) e profile_type_onboarding_complete em usage_events. Respeita filtro temporal global.')}
@@ -1014,6 +1202,27 @@
                 </div>
             </div>
         `);
+
+        // ===== Sankey de aquisicao =====
+        const sankeyAcq = bh.sankey_acquisition || [];
+        const sankeyOv = bh.sankey_overview || {};
+        const acqUsers = Number(sankeyOv.acq_users) || 0;
+        const acqPaid = Number(sankeyOv.acq_paid) || 0;
+        document.getElementById('bhAqSankeyKpis').innerHTML = `
+            ${createKpiCardV2('Usuarios no periodo', fmt(acqUsers), { hint:'com pelo menos 1 evento' })}
+            ${createKpiCardV2('Pagaram / assinaram', fmt(acqPaid), { intent:'positive' })}
+            ${createKpiCardV2('Conversao', acqUsers>0?((acqPaid/acqUsers)*100).toFixed(1)+'%':'0%')}
+        `;
+        renderSankey('bhAqSankey', sankeyAcq, {
+            unit: 'usuarios',
+            height: 280,
+            stageLabels: ['Fonte (first-touch)', 'Profundidade de uso', 'Desfecho'],
+            // A fita herda a cor do no de origem: sem cor explicita no meio, todo
+            // o trecho "uso -> desfecho" sairia cinza.
+            colors: { 'Explorou (3+ features)':'#0ea5e9', 'Usou 1-2 features':'#f59e0b', 'So abriu':'#cbd5e1',
+                      'Pagou / assinou':'#22c55e', 'Checkout sem pagar':'#f59e0b', 'Parou no paywall':'#ec4899', 'Sem sinal de compra':'#cbd5e1' },
+            emptyMsg: 'Sem usuarios no periodo (ou a RPC get_analytics_data_bh_sankey_v1 ainda nao foi deployada).'
+        });
 
         // Filter referrer summary by date range
         const filteredRefDaily = filterSnapshot(refDaily, f);
@@ -1292,6 +1501,13 @@
             </div>
             <div class="chart-container mb-2"><div class="chart-title">Uso de Recursos (diario)</div><canvas id="bhEngFeatureDailyChart"></canvas></div>
 
+            <!-- ===== Sankey de navegacao entre features ===== -->
+            <div class="section-block">
+                ${createSectionHeader('Fluxo entre recursos', 'Ordem em que os recursos sao usados DENTRO de uma sessao: 1o recurso &rarr; 2o &rarr; 3o &rarr; 4o. Repeticoes consecutivas do mesmo recurso sao colapsadas (sem isso o fluxo seria quase so auto-loop). "Encerrou sessao" = a sessao acabou naquela etapa. `feature_usage` conta usos isolados e nao mostra essa ordem.')}
+                <div class="kpi-grid-compact" id="bhEngSankeyKpis"></div>
+                <div class="chart-container mb-2"><div class="chart-title">1o &rarr; 2o &rarr; 3o &rarr; 4o recurso da sessao</div><div id="bhEngSankey"></div></div>
+            </div>
+
             <!-- 2026-05-27: sub-barra de controles do bloco de tickers.
                  Multi-select aplica em ticker_trend_daily (server-side via RPC v3).
                  Toggle "Incluir admins" refetcha (server-side).
@@ -1445,6 +1661,24 @@
         charts.bhEngFeatureDailyChart = new Chart(document.getElementById('bhEngFeatureDailyChart'), {
             type:'bar', data:{labels:mcFD.labels,datasets:mcFD.categories.map((feat,i)=>({label:feat,data:mcFD.getValues(feat),backgroundColor:colorForCategory(feat,i)}))},
             options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+        });
+        attachSeriesIsolator('bhEngFeatureDailyChart');
+
+        // ===== Sankey de navegacao entre features =====
+        const sankeyEng = bh.sankey_engagement || [];
+        const sankeyOvEng = bh.sankey_overview || {};
+        const engSessions = Number(sankeyOvEng.eng_sessions) || 0;
+        const engMulti = Number(sankeyOvEng.eng_multi_feature) || 0;
+        document.getElementById('bhEngSankeyKpis').innerHTML = `
+            ${createKpiCardV2('Sessoes com recurso', fmt(engSessions))}
+            ${createKpiCardV2('Usaram 2+ recursos', fmt(engMulti), { hint: engSessions>0?((engMulti/engSessions)*100).toFixed(1)+'% das sessoes':'' })}
+        `;
+        renderSankey('bhEngSankey', sankeyEng, {
+            unit: 'sessoes',
+            height: 380,
+            stageLabels: ['1o recurso', '2o recurso', '3o recurso', '4o recurso', '5o recurso'],
+            colors: { 'Encerrou sessao': '#cbd5e1', 'Outros': '#94a3b8' },
+            emptyMsg: 'Sem sessoes com recurso identificado no periodo (ou a RPC get_analytics_data_bh_sankey_v1 ainda nao foi deployada).'
         });
 
         // ── 2026-05-27: wire ticker controls ──
@@ -4262,6 +4496,57 @@
     }
 
     // ===== IACOES TAB =====
+
+    // Dimensoes disponiveis em `iacoes_dim_daily` (RPC get_analytics_data_iacoes_v3).
+    // A RPC entrega uma tabela tidy (day, dim, value, metricas), entao o
+    // explorador abaixo e um so bloco de codigo para as 9 dimensoes.
+    const LANDING_DIMS = [
+        { k: 'fonte',        l: 'Fonte de trafego' },
+        { k: 'tipo_pagina',  l: 'Tipo de pagina' },
+        { k: 'pagina',       l: 'Pagina de entrada' },
+        { k: 'dispositivo',  l: 'Dispositivo' },
+        { k: 'navegador',    l: 'Navegador' },
+        { k: 'so',           l: 'Sistema operacional' },
+        { k: 'utm_source',   l: 'UTM source' },
+        { k: 'utm_medium',   l: 'UTM medium' },
+        { k: 'utm_campaign', l: 'UTM campaign' }
+    ];
+    // Campos somaveis de `iacoes_dim_daily`. Tudo que e taxa fica FORA daqui e
+    // e recalculado depois da soma (`derive`) -- somar percentuais de dias
+    // diferentes daria um numero sem significado.
+    const LANDING_SUM_FIELDS = ['sessions', 'views', 'cta_clicks', 'bounces', 'clicked_sessions',
+                                'scroll_25', 'scroll_50', 'scroll_75', 'scroll_100',
+                                'multi_page_sessions', 'dur_sum'];
+    const LANDING_METRICS = [
+        { k: 'sessions',        l: 'Sessoes',                 kind: 'int' },
+        { k: 'views',           l: 'Page views',              kind: 'int' },
+        { k: 'cta_clicks',      l: 'Cliques em CTA',          kind: 'int' },
+        { k: 'clicked_sessions',l: 'Sessoes que clicaram',    kind: 'int' },
+        { k: 'scroll_100',      l: 'Leram ate o fim',         kind: 'int' },
+        { k: 'bounce_rate',     l: 'Taxa de rejeicao',        kind: 'pct', derive: r => r.sessions > 0 ? r.bounces / r.sessions * 100 : 0 },
+        { k: 'cta_rate',        l: 'Taxa de CTA',             kind: 'pct', derive: r => r.sessions > 0 ? r.clicked_sessions / r.sessions * 100 : 0 },
+        { k: 'scroll50_rate',   l: '% passou da metade',      kind: 'pct', derive: r => r.sessions > 0 ? r.scroll_50 / r.sessions * 100 : 0 },
+        { k: 'scroll100_rate',  l: '% leu ate o fim',         kind: 'pct', derive: r => r.sessions > 0 ? r.scroll_100 / r.sessions * 100 : 0 },
+        { k: 'pages_per_session', l: 'Paginas por sessao',    kind: 'dec', derive: r => r.sessions > 0 ? r.views / r.sessions : 0 },
+        { k: 'avg_duration',    l: 'Tempo medio na sessao',   kind: 'dur', derive: r => r.sessions > 0 ? r.dur_sum / r.sessions : 0 }
+    ];
+
+    function fmtDur(sec) {
+        const s = Math.round(Number(sec) || 0);
+        if (s < 60) return s + 's';
+        const m = Math.floor(s / 60);
+        if (m < 60) return m + 'm ' + String(s % 60).padStart(2, '0') + 's';
+        return Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm';
+    }
+    function fmtMetric(v, kind) {
+        if (kind === 'pct') return (Number(v) || 0).toFixed(1) + '%';
+        if (kind === 'dec') return (Number(v) || 0).toFixed(2);
+        if (kind === 'dur') return fmtDur(v);
+        return fmt(Math.round(Number(v) || 0));
+    }
+    const emptyLandingRow = () => LANDING_SUM_FIELDS.reduce((o, k) => (o[k] = 0, o), {});
+    const addLandingRow = (acc, r) => { LANDING_SUM_FIELDS.forEach(k => acc[k] += Number(r[k]) || 0); return acc; };
+
     function renderIacoesTab() {
         const bh = dashboardData.bh; const f = globalFilters;
         const convFunnel = bh.iacoes_conversion_funnel || {};
@@ -4272,7 +4557,7 @@
         const pagesDaily = bh.iacoes_pages_daily || [];
         const referrers = bh.iacoes_referrers || [];
         const referrerDaily = bh.iacoes_referrer_daily || [];
-        // Daily breakdowns (RPC get_analytics_data_iacoes_daily) -- substitui snapshots all-time pra respeitarem o filtro temporal global
+        // Daily breakdowns (RPC get_analytics_data_iacoes_daily_v2) -- substitui snapshots all-time pra respeitarem o filtro temporal global
         const devicesDaily = bh.iacoes_devices_daily || [];
         const browsersDaily = bh.iacoes_browsers_daily || [];
         const osDaily = bh.iacoes_os_daily || [];
@@ -4283,6 +4568,13 @@
         const vsOtherConversionDaily = bh.iacoes_vs_other_conversion_daily || [];
         const hourlyDaily = bh.iacoes_hourly_daily || [];
         const conversionHourlyDaily = bh.iacoes_conversion_hourly_daily || [];
+        // Landing v3 (RPC get_analytics_data_iacoes_v3) -- modelo por sessao + scroll depth.
+        // `dim_daily` tem `day` e e refiltrado no cliente; as outras 3 sao
+        // agregados do periodo ja recortado pelo backend (from/to == globalFilters).
+        const dimDaily = bh.iacoes_dim_daily || [];
+        const scrollByPage = bh.iacoes_scroll_by_page || [];
+        const sessionDepth = bh.iacoes_session_depth || [];
+        const landingSankey = bh.iacoes_landing_sankey || [];
 
         // Helper local: agrega rows filtradas somando sumFields por chave composta.
         const aggregateBy = (rows, keyFields, sumFields) => {
@@ -4290,7 +4582,7 @@
             rows.forEach(r => {
                 const key = keyFields.map(k => r[k] ?? '').join('|');
                 if (!out[key]) { out[key] = {}; keyFields.forEach(k => out[key][k] = r[k]); sumFields.forEach(s => out[key][s] = 0); }
-                sumFields.forEach(s => out[key][s] += Number(r[s])||0);
+                sumFields.forEach(s => out[key][s] += Number(r[s]) || 0);
             });
             return Object.values(out);
         };
@@ -4334,7 +4626,53 @@
             paywall_rate:c.sessions>0 ? Math.round((c.paywall / c.sessions)*1000)/10 : 0
         }));
 
+        // ===== Totais de sessao do periodo =====
+        // Qualquer dimensao cobre 100% das sessoes (todo valor vem coalescido na
+        // RPC), entao 'fonte' serve de total. Usar a soma de TODAS as dimensoes
+        // contaria cada sessao 9 vezes.
+        const dimFiltered = filterSnapshot(dimDaily, f);
+        const sessTotals = dimFiltered.filter(r => r.dim === 'fonte').reduce(addLandingRow, emptyLandingRow());
+        const hasV3 = dimFiltered.length > 0;
+
         buildHTML('iacoes', `
+            <h3 class="section-title">Qualidade das sessoes</h3>
+            <p class="section-desc">Uma linha por sessao da landing, com os atributos do primeiro evento (first-touch) e a profundidade de leitura atingida. "Rejeicao" = 1 pageview, nenhum CTA e sem passar da metade da pagina.</p>
+            <div class="kpi-grid" id="iacoesSessionKpis"></div>
+            <div class="charts-grid">
+                ${canvasHTML('iacoesScrollFunnelChart','Ate onde as pessoas leem (profundidade de scroll)')}
+                ${canvasHTML('iacoesDepthPagesChart','Paginas por sessao')}
+            </div>
+            <div class="charts-grid">
+                ${canvasHTML('iacoesDepthDurChart','Duracao da sessao')}
+                <div class="chart-container"><div class="chart-title">Scroll por pagina (top 15)</div><div style="max-height:320px;overflow-y:auto"><table id="iacoesScrollPageTable"></table></div></div>
+            </div>
+
+            <h3 class="section-title">Explorador &mdash; qualquer dimensao x qualquer metrica</h3>
+            <p class="section-desc">Escolha a dimensao (fonte, dispositivo, pagina, UTM...) e a metrica. Os dois graficos e a tabela abaixo respondem juntos.</p>
+            <div class="ctrl-bar" id="iacoesExplorerCtrl">
+                <label>Dimensao
+                    <select id="iacoesExpDim">${LANDING_DIMS.map(d=>`<option value="${d.k}">${d.l}</option>`).join('')}</select>
+                </label>
+                <label>Metrica
+                    <select id="iacoesExpMetric">${LANDING_METRICS.map(m=>`<option value="${m.k}">${m.l}</option>`).join('')}</select>
+                </label>
+                <label>Top
+                    <select id="iacoesExpTopN">${[5,8,10,15,25].map(n=>`<option value="${n}"${n===8?' selected':''}>${n}</option>`).join('')}</select>
+                </label>
+                <span class="ctrl-sep"></span>
+                <label style="font-weight:500;color:var(--m)"><input type="checkbox" id="iacoesExpMinSessions" checked style="accent-color:var(--p)"> Ocultar valores com &lt; 5 sessoes</label>
+                <span id="iacoesExpMeta" style="margin-left:auto;color:var(--m);font-size:11px"></span>
+            </div>
+            <div class="charts-grid">
+                ${canvasHTML('iacoesExpRankChart','Ranking')}
+                ${canvasHTML('iacoesExpDailyChart','Ao longo do tempo')}
+            </div>
+            <div class="table-container"><div class="table-title" id="iacoesExpTableTitle">Detalhamento</div><div style="max-height:460px;overflow:auto"><table id="iacoesExpTable"></table></div></div>
+
+            <h3 class="section-title">Fluxo da landing</h3>
+            <p class="section-desc">Cada sessao percorre fonte &rarr; pagina de entrada &rarr; profundidade de leitura &rarr; clique. A largura da fita e o numero de sessoes.</p>
+            <div class="chart-container mb-2"><div class="chart-title">Fonte &rarr; Entrada &rarr; Leitura &rarr; CTA</div><div id="iacoesLandingSankey"></div></div>
+
             <h3 class="section-title">Visao Diaria &mdash; padrao por hora do dia</h3>
             <p class="section-desc">Distribuicao por hora (0-23h) somada sobre o periodo selecionado. Hora local Sao Paulo (BRT).</p>
             <div class="charts-grid" id="iacoesDailyMiniGrid" style="grid-template-columns:repeat(3,1fr);gap:12px"></div>
@@ -4370,6 +4708,89 @@
             </div>
         `);
 
+        // ===== Qualidade das sessoes =====
+        const sT = sessTotals;
+        document.getElementById('iacoesSessionKpis').innerHTML = hasV3 ? `
+            ${createKpiCardV2('Sessoes', fmt(sT.sessions), { hero:true, hint:'first-touch por session_id' })}
+            ${createKpiCardV2('Page views', fmt(sT.views))}
+            ${createKpiCardV2('Paginas / sessao', sT.sessions>0?(sT.views/sT.sessions).toFixed(2):'0')}
+            ${createKpiCardV2('Taxa de rejeicao', (sT.sessions>0?(sT.bounces/sT.sessions*100):0).toFixed(1)+'%', { hint:'1 pageview, sem CTA, sem passar da metade' })}
+            ${createKpiCardV2('Leram ate o fim', (sT.sessions>0?(sT.scroll_100/sT.sessions*100):0).toFixed(1)+'%', { hint:fmt(sT.scroll_100)+' sessoes com scroll_100' })}
+            ${createKpiCardV2('Sessoes que clicaram', (sT.sessions>0?(sT.clicked_sessions/sT.sessions*100):0).toFixed(1)+'%', { hint:fmt(sT.clicked_sessions)+' sessoes', intent:'positive' })}
+            ${createKpiCardV2('Tempo medio', fmtDur(sT.sessions>0?sT.dur_sum/sT.sessions:0), { hint:'cap de 30min/sessao — o session_id persiste por semanas' })}
+        ` : createEmptyState('Aguardando a RPC get_analytics_data_iacoes_v3', 'A aba continua funcionando com as secoes antigas.');
+
+        // Funil de scroll: base = todas as sessoes, depois cada marco
+        const scrollSteps = [
+            { l: 'Sessoes',        v: sT.sessions },
+            { l: 'Scroll 25%',     v: sT.scroll_25 },
+            { l: 'Scroll 50%',     v: sT.scroll_50 },
+            { l: 'Scroll 75%',     v: sT.scroll_75 },
+            { l: 'Leu ate o fim',  v: sT.scroll_100 }
+        ];
+        if (!showEmptyIfNeeded('iacoesScrollFunnelChart', hasV3 ? scrollSteps : [], 'Sem dados de scroll no periodo')) {
+            destroyChart('iacoesScrollFunnelChart');
+            charts.iacoesScrollFunnelChart = new Chart(document.getElementById('iacoesScrollFunnelChart'), {
+                type:'bar',
+                data:{labels:scrollSteps.map(s=>s.l), datasets:[{label:'Sessoes', data:scrollSteps.map(s=>s.v), backgroundColor:['#94a3b8','#6366f1','#3b82f6','#3ecf8e','#22c55e'], borderRadius:4}]},
+                options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
+                    const base = scrollSteps[0].v;
+                    return fmt(ctx.parsed.x) + (base>0?' ('+((ctx.parsed.x/base)*100).toFixed(1)+'% das sessoes)':'');
+                }}}},scales:{x:{beginAtZero:true,grid:{color:'#f1f5f9'}},y:{grid:{display:false}}}}
+            });
+        }
+
+        const depthPages = sessionDepth.filter(d => d.kind === 'paginas').sort((a,b)=>(a.ord||0)-(b.ord||0));
+        const depthDur   = sessionDepth.filter(d => d.kind === 'duracao').sort((a,b)=>(a.ord||0)-(b.ord||0));
+        if (!showEmptyIfNeeded('iacoesDepthPagesChart', depthPages, 'Sem dados de profundidade no periodo')) {
+            barChart('iacoesDepthPagesChart', depthPages.map(d=>d.bucket), [{label:'Sessoes',data:depthPages.map(d=>d.sessions||0),backgroundColor:'#6366f1'}]);
+        }
+        if (!showEmptyIfNeeded('iacoesDepthDurChart', depthDur, 'Sem dados de duracao no periodo')) {
+            barChart('iacoesDepthDurChart', depthDur.map(d=>d.bucket), [{label:'Sessoes',data:depthDur.map(d=>d.sessions||0),backgroundColor:'#3ecf8e'}]);
+        }
+
+        const scrollTbl = document.getElementById('iacoesScrollPageTable');
+        if (scrollTbl) {
+            if (scrollByPage.length === 0) {
+                scrollTbl.outerHTML = '<p style="color:var(--m);font-size:13px;padding:12px">Sem eventos de scroll no periodo.</p>';
+            } else {
+                const rows = scrollByPage.slice(0, 15);
+                const pctOf = (v, base) => base > 0 ? ((v/base)*100).toFixed(0)+'%' : '-';
+                scrollTbl.innerHTML = '<thead><tr><th>Pagina</th><th>Sessoes</th><th>50%</th><th>Fim</th><th>CTA</th></tr></thead><tbody>' +
+                    rows.map(p => `<tr><td>${p.page_path==='/'?'Home (/)':p.page_path}</td><td>${fmt(p.sessions||0)}</td><td>${pctOf(p.scroll_50||0,p.sessions||0)}</td><td>${pctOf(p.scroll_100||0,p.sessions||0)}</td><td>${fmt(p.cta_clicks||0)}</td></tr>`).join('') +
+                    '</tbody>';
+                makeSortable(scrollTbl);
+            }
+        }
+
+        // ===== Explorador =====
+        // Estado global pra sobreviver ao re-render de periodo/granularidade.
+        if (!window._landingExplorer) window._landingExplorer = { dim:'fonte', metric:'sessions', topN:8, minSessions:true };
+        const expState = window._landingExplorer;
+        const dimSel = document.getElementById('iacoesExpDim');
+        const metricSel = document.getElementById('iacoesExpMetric');
+        const topNSel = document.getElementById('iacoesExpTopN');
+        const minSel = document.getElementById('iacoesExpMinSessions');
+        if (dimSel) dimSel.value = expState.dim;
+        if (metricSel) metricSel.value = expState.metric;
+        if (topNSel) topNSel.value = String(expState.topN);
+        if (minSel) minSel.checked = expState.minSessions;
+        [dimSel, metricSel, topNSel, minSel].forEach(elx => { if (elx) elx.onchange = () => {
+            expState.dim = dimSel.value; expState.metric = metricSel.value;
+            expState.topN = Number(topNSel.value) || 8; expState.minSessions = minSel.checked;
+            drawLandingExplorer(dimFiltered, f);
+        }; });
+        drawLandingExplorer(dimFiltered, f);
+
+        // ===== Sankey da landing =====
+        renderSankey('iacoesLandingSankey', landingSankey, {
+            unit: 'sessoes',
+            height: 300,
+            stageLabels: ['Fonte', 'Pagina de entrada', 'Profundidade', 'Desfecho'],
+            colors: { 'Clicou CTA':'#22c55e', 'Saiu sem clicar':'#cbd5e1', 'Leu ate o fim':'#22c55e', 'Sem scroll':'#cbd5e1' },
+            emptyMsg: 'Sem sessoes no periodo (ou a RPC iacoes_v3 ainda nao foi deployada).'
+        });
+
         document.getElementById('iacoesConvKpis').innerHTML = `
             ${createKpiCard('Sessoes no BH', fmt(bhSessions))}
             ${createKpiCard('Usuarios Unicos', fmt(bhUniqueUsers))}
@@ -4385,12 +4806,14 @@
         const funnelTSPrep = prepareTimeSeries(funnelDailyMerged, f, ['views','landing_sessions','cta_clicks','sessions','logins','paywall','payments']);
 
         // ===== Visao Diaria - distribuicao por hora-do-dia =====
+        // A RPC devolve as colunas `hour` e `dow` (nao `hr`/`wday`) -- ler as
+        // chaves erradas jogava 100% dos eventos na hora 0 / domingo.
         const filteredHourly = filterSnapshot(hourlyDaily, f);
         const filteredConvHourly = filterSnapshot(conversionHourlyDaily, f);
         // Agregadas por hora (0..23) somando todos os dias do filtro
         const hourBuckets = (rows, fields) => {
             const out = Array.from({length:24}, (_,h) => { const o={hr:h}; fields.forEach(fld => o[fld]=0); return o; });
-            rows.forEach(r => { const h=Number(r.hr)||0; fields.forEach(fld => out[h][fld] += Number(r[fld])||0); });
+            rows.forEach(r => { const h=Number(r.hour)||0; if (h<0||h>23) return; fields.forEach(fld => out[h][fld] += Number(r[fld])||0); });
             return out;
         };
         const hourLanding = hourBuckets(filteredHourly, ['views','sessions','cta_clicks']);
@@ -4421,7 +4844,7 @@
         // Heatmap dow x hour para Views da landing
         const heatRows = {};
         filteredHourly.forEach(r => {
-            const k = (r.wday ?? 0) + '|' + (r.hr ?? 0);
+            const k = (r.dow ?? 0) + '|' + (r.hour ?? 0);
             heatRows[k] = (heatRows[k] || 0) + (Number(r.views)||0);
         });
         const heatmapData = Object.entries(heatRows).map(([k,v]) => { const [wday,hr]=k.split('|'); return {dow:Number(wday), hour:Number(hr), events:v}; });
@@ -4439,6 +4862,7 @@
                 {label:'Pagamentos',data:funnelTSPrep.data.map(d=>d.payments||0),borderColor:'#22c55e',backgroundColor:'transparent',borderWidth:2,pointRadius:2,tension:0.4}
             ]}, options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:10}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{type:'logarithmic',beginAtZero:false,grid:{color:'#f1f5f9'},ticks:{callback:v=>fmt(v)}}}}
         });
+        attachSeriesIsolator('iacoesFunnelTimeChart');
 
         // Conversion rates over time
         const rateData = funnelTSPrep.data.map(d => ({
@@ -4458,6 +4882,7 @@
                 {label:'Pagamento/Paywall %',data:rateData.map(d=>d.payment_rate),borderColor:'#22c55e',backgroundColor:'transparent',borderWidth:2,pointRadius:2,tension:0.4}
             ]}, options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:10}}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+ctx.parsed.y.toFixed(1)+'%'}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'},ticks:{callback:v=>v+'%'}}}}
         });
+        attachSeriesIsolator('iacoesConvRateTimeChart');
 
         const convDailyPrep = prepareTimeSeries(convDaily, f, ['sessions','unique_users','logins','paywall','payments']);
         barChart('iacoesConvDailyChart', convDailyPrep.labels, [
@@ -4466,6 +4891,7 @@
             {label:'Paywall',data:convDailyPrep.data.map(d=>d.paywall||0),backgroundColor:'#f59e0b'},
             {label:'Pagamentos',data:convDailyPrep.data.map(d=>d.payments||0),backgroundColor:'#3b82f6'}
         ]);
+        attachSeriesIsolator('iacoesConvDailyChart');
 
         // Comparison chart (convComparison agregado de iacoes_vs_other_conversion_daily filtrado)
         const srcColors ={'iAcoes':'#f97316','Google':'#4285f4','Google (ads)':'#4285f4','Direto':'#94a3b8','Stripe':'#635bff','App BH':'#3ecf8e','Twitter/X':'#1d9bf0','Twitter/X (ads)':'#1d9bf0','Twitter/X (app)':'#1d9bf0','Facebook':'#1877f2','Facebook (ads)':'#1877f2','Facebook (app)':'#1877f2','Instagram':'#e4405f','Instagram (app)':'#e4405f','LinkedIn':'#0a66c2','LinkedIn (ads)':'#0a66c2','LinkedIn (app)':'#0a66c2','WhatsApp':'#25d366','WhatsApp (app)':'#25d366','YouTube':'#ff0000','Telegram':'#26a5e4','Telegram (app)':'#26a5e4','TikTok (ads)':'#010101','Bing (ads)':'#00809d','Reddit':'#ff4500','Lovable (Dev)':'#d946ef','Localhost (Dev)':'#a1a1aa'};
@@ -4515,6 +4941,7 @@
                 type:'bar',data:{labels:mcRef.labels,datasets:refSources.map((s,i)=>({label:s,data:mcRef.getValues(s),backgroundColor:COLORS[i%COLORS.length]}))},
                 options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
             });
+            attachSeriesIsolator('iacoesReferrerChart');
         } else if (referrers.length > 0) {
             barChart('iacoesReferrerChart', referrers.map(r=>r.source), [{label:'Views',data:referrers.map(r=>r.views||0),backgroundColor:COLORS}], {horizontal:true});
         }
@@ -4579,6 +5006,149 @@
 
         if (browsers.length > 0) { doughnutChart('iacoesBrowserChart', browsers.map(b=>b.browser||'N/A'), browsers.map(b=>b.cnt||b.views||0), COLORS.slice(2)); }
         if (osSummary.length > 0) { doughnutChart('iacoesOsChart', osSummary.map(o=>o.os||'N/A'), osSummary.map(o=>o.cnt||o.views||0), COLORS); }
+    }
+
+    /**
+     * Explorador da landing: um ranking, uma serie temporal e uma tabela
+     * completa para o par (dimensao, metrica) escolhido na barra de controles.
+     * Recebe `rows` = iacoes_dim_daily ja filtrado pelo periodo global.
+     */
+    function drawLandingExplorer(rows, f) {
+        const st = window._landingExplorer;
+        const metricDef = LANDING_METRICS.find(m => m.k === st.metric) || LANDING_METRICS[0];
+        const dimDef = LANDING_DIMS.find(d => d.k === st.dim) || LANDING_DIMS[0];
+        const valueOf = row => metricDef.derive ? metricDef.derive(row) : (Number(row[metricDef.k]) || 0);
+
+        const dimRows = rows.filter(r => r.dim === st.dim);
+        const titleEl = document.getElementById('iacoesExpTableTitle');
+        const metaEl = document.getElementById('iacoesExpMeta');
+
+        if (dimRows.length === 0) {
+            // Nao usa showEmptyIfNeeded aqui: ele substitui o innerHTML do
+            // container e mataria o <canvas> — trocar a dimensao de volta
+            // deixaria o grafico vazio pra sempre. Esvazia o chart e mantem o DOM.
+            ['iacoesExpRankChart', 'iacoesExpDailyChart'].forEach(id => destroyChart(id));
+            const t = document.getElementById('iacoesExpTable');
+            if (t) t.innerHTML = `<tbody><tr><td style="color:var(--m);padding:12px">Sem dados de ${dimDef.l.toLowerCase()} no periodo.</td></tr></tbody>`;
+            if (metaEl) metaEl.textContent = 'sem dados';
+            return;
+        }
+
+        // Totais do periodo por valor da dimensao
+        const byValue = {};
+        dimRows.forEach(r => {
+            if (!byValue[r.value]) byValue[r.value] = Object.assign({ value: r.value }, emptyLandingRow());
+            addLandingRow(byValue[r.value], r);
+        });
+        let ranked = Object.values(byValue);
+        // Valores com pouquissimas sessoes produzem taxas de 0% ou 100% que
+        // dominam o ranking sem significar nada. O corte e opcional e visivel.
+        const hidden = st.minSessions ? ranked.filter(r => r.sessions < 5).length : 0;
+        if (st.minSessions) ranked = ranked.filter(r => r.sessions >= 5);
+        ranked.sort((a, b) => valueOf(b) - valueOf(a) || b.sessions - a.sessions);
+        const top = ranked.slice(0, st.topN);
+        const topNames = top.map(r => r.value);
+
+        if (metaEl) {
+            const totalSess = Object.values(byValue).reduce((s, r) => s + r.sessions, 0);
+            metaEl.textContent = `${Object.keys(byValue).length} valores - ${fmt(totalSess)} sessoes` + (hidden ? ` - ${hidden} ocultos (<5 sessoes)` : '');
+        }
+
+        // ===== Ranking =====
+        destroyChart('iacoesExpRankChart');
+        const rankCanvas = document.getElementById('iacoesExpRankChart');
+        if (rankCanvas) {
+            const cont = rankCanvas.closest('.chart-container');
+            const t = cont && cont.querySelector('.chart-title');
+            if (t) t.textContent = `${metricDef.l} por ${dimDef.l.toLowerCase()}`;
+            charts.iacoesExpRankChart = new Chart(rankCanvas, {
+                type: 'bar',
+                data: { labels: top.map(r => r.value), datasets: [{ label: metricDef.l, data: top.map(valueOf), backgroundColor: top.map((_, i) => COLORS[i % COLORS.length]), borderRadius: 4 }] },
+                options: { indexAxis:'y', responsive:true, maintainAspectRatio:true,
+                    plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: ctx => {
+                        const r = top[ctx.dataIndex];
+                        return `${metricDef.l}: ${fmtMetric(ctx.parsed.x, metricDef.kind)}  (${fmt(r.sessions)} sessoes)`;
+                    }}}},
+                    scales:{ x:{ beginAtZero:true, grid:{color:'#f1f5f9'}, ticks:{ callback: v => fmtMetric(v, metricDef.kind) } }, y:{ grid:{display:false} } } }
+            });
+        }
+
+        // ===== Serie temporal =====
+        // Indexa (valor, dia) somado, depois aplica a granularidade global.
+        const idx = {};
+        const dayset = new Set();
+        dimRows.forEach(r => {
+            if (!topNames.includes(r.value)) return;
+            dayset.add(r.day);
+            const key = r.value + '|' + r.day;
+            if (!idx[key]) idx[key] = emptyLandingRow();
+            addLandingRow(idx[key], r);
+        });
+        const days = [...dayset].sort();
+        const granDays = aggregateDayList(days, f.gran);
+        const buckets = buildDayBuckets(days, f.gran);
+        const labels = granDays.map(d => formatLabel(d, f.gran));
+        const seriesFor = name => buckets.map(bucket => {
+            const acc = emptyLandingRow();
+            bucket.forEach(day => { const row = idx[name + '|' + day]; if (row) addLandingRow(acc, row); });
+            return valueOf(acc);
+        });
+
+        destroyChart('iacoesExpDailyChart');
+        const dailyCanvas = document.getElementById('iacoesExpDailyChart');
+        if (dailyCanvas) {
+            const cont = dailyCanvas.closest('.chart-container');
+            const t = cont && cont.querySelector('.chart-title');
+            if (t) t.textContent = `${metricDef.l} ao longo do tempo`;
+            // Taxas e medias NAO empilham (a soma nao tem significado) -> linhas.
+            const isRate = !!metricDef.derive;
+            charts.iacoesExpDailyChart = new Chart(dailyCanvas, {
+                type: isRate ? 'line' : 'bar',
+                data: { labels, datasets: topNames.map((name, i) => ({
+                    label: name,
+                    data: seriesFor(name),
+                    backgroundColor: isRate ? 'transparent' : COLORS[i % COLORS.length],
+                    borderColor: COLORS[i % COLORS.length],
+                    borderWidth: 2, pointRadius: 2, tension: 0.4
+                })) },
+                options: { responsive:true, maintainAspectRatio:true,
+                    plugins:{ legend:{position:'top',labels:{boxWidth:12,font:{size:10}}},
+                              tooltip:{ callbacks:{ label: ctx => ctx.dataset.label + ': ' + fmtMetric(ctx.parsed.y, metricDef.kind) } } },
+                    scales: isRate
+                        ? { y:{ beginAtZero:true, grid:{color:'#f1f5f9'}, ticks:{ callback: v => fmtMetric(v, metricDef.kind) } } }
+                        : { x:{stacked:true}, y:{ stacked:true, beginAtZero:true, grid:{color:'#f1f5f9'} } } }
+            });
+            attachSeriesIsolator('iacoesExpDailyChart');
+        }
+
+        // ===== Tabela completa =====
+        if (titleEl) titleEl.textContent = `Detalhamento por ${dimDef.l.toLowerCase()}`;
+        const tableEl = document.getElementById('iacoesExpTable');
+        if (tableEl) {
+            const cols = [
+                { h: dimDef.l,             v: r => r.value, raw: true },
+                { h: 'Sessoes',            v: r => fmt(r.sessions) },
+                { h: 'Page views',         v: r => fmt(r.views) },
+                { h: 'Pg/sessao',          v: r => (r.sessions>0 ? r.views/r.sessions : 0).toFixed(2) },
+                { h: 'Rejeicao',           v: r => (r.sessions>0 ? r.bounces/r.sessions*100 : 0).toFixed(1)+'%' },
+                { h: 'Scroll 50%',         v: r => (r.sessions>0 ? r.scroll_50/r.sessions*100 : 0).toFixed(0)+'%' },
+                { h: 'Leu ate o fim',      v: r => (r.sessions>0 ? r.scroll_100/r.sessions*100 : 0).toFixed(0)+'%' },
+                { h: 'CTA clicks',         v: r => fmt(r.cta_clicks) },
+                { h: 'Taxa CTA',           v: r => (r.sessions>0 ? r.clicked_sessions/r.sessions*100 : 0).toFixed(1)+'%' },
+                { h: 'Tempo medio',        v: r => fmtDur(r.sessions>0 ? r.dur_sum/r.sessions : 0) }
+            ];
+            // A tabela lista TODOS os valores (nao so o top N do grafico) --
+            // ordenada por sessoes, que e o volume, nao pela metrica escolhida.
+            const tableRows = ranked.slice().sort((a,b)=>b.sessions-a.sessions);
+            const totals = tableRows.reduce(addLandingRow, Object.assign({ value: 'TOTAL' }, emptyLandingRow()));
+            tableEl.innerHTML =
+                '<thead><tr>' + cols.map(c => `<th>${c.h}</th>`).join('') + '</tr></thead>' +
+                '<tbody>' + tableRows.map(r => '<tr>' + cols.map(c => `<td>${c.v(r)}</td>`).join('') + '</tr>').join('') +
+                `<tr style="font-weight:700;border-top:2px solid var(--bd)">` + cols.map(c => `<td>${c.v(totals)}</td>`).join('') + '</tr>' +
+                '</tbody>';
+            makeSortable(tableEl);
+            addExportBtn('#iacoesExpTableTitle', 'iacoesExpTable');
+        }
     }
 
     function renderHeatmap(containerId, data) {

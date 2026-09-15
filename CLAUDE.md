@@ -59,6 +59,8 @@ supabase/
     20260817_dashboard_overhaul_bh.sql      # Overhaul: v2_impl sem 8 secoes mortas, NEW get_notification_analytics_v2(p_from,p_to), utm_v2 sem 50OFF, statement_timeout nas 5 RPCs restantes
     20260818_v2_impl_timeout_90s.sql        # Fix preset Max sem dados (57014): timeout real era 8s da role authenticator (SET em nivel de funcao e inerte no path REST); fix = ALTER ROLE service_role SET statement_timeout='90s'
     20260828_bh_email_analytics_v1.sql      # Taxonomia de email (3 funcoes IMMUTABLE) + NEW RPC get_analytics_data_bh_email_v1() — aba Emails com atribuicao de clique por UTM
+    20260914_iacoes_landing_v3.sql          # NEW RPC get_analytics_data_iacoes_v3() — landing por sessao (first-touch) + scroll depth + tabela tidy iacoes_dim_daily
+    20260914_bh_sankey_v1.sql               # NEW RPC get_analytics_data_bh_sankey_v1() — Sankey de aquisicao (usuario) e de navegacao entre features (sessao)
 ```
 
 ## Overhaul de Performance & Histórico (2026-08-17)
@@ -96,6 +98,53 @@ Reformulação das 6 seções de ticker da aba Engajamento iAções (`ticker_by_
 - **Edge function**: 13o `fetchRpc` em paralelo no `Promise.all`. Aceita query params `?bh_ticker_include_admins=1`, `?bh_tickers=PETR4,VALE3` (CSV), `?bh_top_n=30`. Merge no `bhMerged` em ULTIMO (sobrescreve as 6 secoes vindas de v2).
 - **Frontend** (`index.html`): nova sub-bar de controles em `renderBhEngajamento` (multi-select de tickers com busca, toggle metrica Rodadas/Usuarios unicos, toggle Incluir admins). Estado em `window._bhTickerFilters = { selected, includeAdmins, metric }`. `fetchAnalytics()` envia os 3 params. `renderUserTickerTable` agora aceita `detailRows` (de `bh.user_ticker_detail`) e renderiza expansao por linha. Toggle metrica e client-side (nao refetcha); toggle admin e multi-select disparam `refetchAndRerender()`.
 - **v2 nao foi alterada** — `get_analytics_data_v2()` continua retornando as 6 secoes (rollback gratuito), apenas deixou de ser fonte no frontend.
+
+## Landing iAcoes v3 + Sankey (2026-09-14)
+
+Reforma da aba **Landing iAcoes** (metricas de sessao, explorador generico, tabela) e introducao de **diagramas de fluxo (Sankey)** nas abas Aquisicao e Engajamento da plataforma.
+
+### Bug corrigido: a "Visao Diaria por hora" estava toda na hora 0
+
+`get_analytics_data_iacoes_daily_v2` devolve as colunas **`hour`** e **`dow`**; o frontend lia `r.hr` e `r.wday`. Como `Number(undefined)||0` e `0`, **todos** os eventos caiam no bucket 0h / domingo — os 6 mini-graficos por hora e o heatmap mostravam uma barra unica desde que foram criados. Corrigido em `renderIacoesTab`.
+
+### RPC `get_analytics_data_iacoes_v3(p_from, p_to)`
+
+Modelo **por sessao** com atribuicao **first-touch** (atributos do primeiro evento da sessao) + metricas agregadas da sessao inteira. Roda em ~690ms no periodo Max; payload ~1,7 MB em Max / ~500 KB em 30d.
+
+- **Scroll depth finalmente usado**: `iacoes_page_views` tem 30k eventos `scroll_25/50/75/100` que o dashboard nunca consumiu. Sao o unico sinal real de engajamento da landing.
+- **`iacoes_dim_daily`** — tabela **tidy** `(day, dim, value, sessions, views, cta_clicks, bounces, clicked_sessions, scroll_25/50/75/100, multi_page_sessions, dur_sum)`. 9 dimensoes num unpivot: `fonte`, `tipo_pagina`, `pagina`, `dispositivo`, `navegador`, `so`, `utm_source`, `utm_medium`, `utm_campaign`. Cada dimensao cobre 100% das sessoes (valores coalescidos), entao **somar `dim='fonte'` da o total** — somar todas as dimensoes contaria cada sessao 9 vezes.
+- **`tipo_pagina`**: a landing tem uma pagina por ticker (326 paths distintos em Max), que como dimensao crua vira so cauda longa. Classifica em Home / Lista de acoes / Airton / Calculadoras / Pagina de ticker / Outras. A ordem das clausulas importa — `/ACOES` e `/AIRTON` tambem casariam no regex de ticker.
+- **`pagina` limitada ao top 40** + 'Outras paginas': sem o corte, essa dimensao sozinha respondia por metade das linhas do payload.
+- **Rejeicao** = 1 pageview + nenhum CTA + nao passou de 50% de scroll.
+- **Duracao**: o `session_id` da landing persiste por **semanas** (p50 = 0s, p99 = 16h, max = 21 dias) — media crua nao significa nada. `dur_sum` soma a duracao **limitada a 30min/sessao** e a UI rotula "cap 30min". A distribuicao real (sem cap) vai em `iacoes_session_depth`.
+- Demais chaves: `iacoes_scroll_by_page` (scroll real por pagina, nivel `(sessao, pagina)`), `iacoes_session_depth` (buckets de paginas e de duracao), `iacoes_landing_sankey`, `meta` (renomeada para `iacoes_meta` na Edge Function).
+
+### RPC `get_analytics_data_bh_sankey_v1(p_from, p_to, p_include_admins)`
+
+Duas secoes, ambas no contrato de linha `{stage, source, target, value}` (mesmo do `iacoes_landing_sankey`). ~800ms em Max, payload ~20 kB.
+
+- **`sankey_acquisition`** (nivel **usuario**): Fonte (first-touch do primeiro `session_start`, top 8 + Outras) → Profundidade de uso (`Explorou (3+ features)` / `Usou 1-2 features` / `So abriu`) → Desfecho (`Pagou / assinou` / `Checkout sem pagar` / `Parou no paywall` / `Sem sinal de compra`).
+  - **Por que nao usar login como etapa**: `auth_login` so dispara no login explicito, entao um retornante com sessao ja autenticada nao emite o evento — a primeira versao produzia o absurdo "Sem login → Pagou". Largura de uso (`count(DISTINCT feature)`) e o sinal honesto.
+  - Achado na primeira leitura (Max, sem admins): **100% dos 45 pagantes passaram por "Explorou (3+ features)"**.
+- **`sankey_engagement`** (nivel **sessao**): ordem em que os recursos sao usados dentro da sessao, ate 5 etapas, top 8 features + 'Outros' + no terminal 'Encerrou sessao'. `lag(feature)` colapsa repeticoes consecutivas — sem isso o fluxo seria quase so auto-loop, ja que uma sessao emite dezenas de eventos seguidos da mesma feature.
+- `sankey_overview` traz os totais (`acq_users`, `acq_paid`, `eng_sessions`, `eng_multi_feature`) para os KPIs — somar os links contaria em dobro os nos que aparecem em 2 stages.
+- Reusa o query param `?include_admins` da aba Airton (nao criou um toggle novo).
+- **Gotcha de Postgres**: `dense_rank() OVER (ORDER BY count(*) OVER (...))` e erro 42P20 (window function aninhada). Precisa de dois CTEs — vale para as duas RPCs.
+
+### Frontend
+
+- **`renderSankey(containerId, links, opts)`** — SVG proprio, **sem dependencia externa** (o dashboard nao carrega plugin de Sankey; a pagina ja tinha heatmap e funil feitos a mao). Escala **unica** para todas as colunas (escalar por coluna esconderia a evasao). A chave de um no e **(stage, label)**, nao so o label: o mesmo nome em colunas diferentes e um no diferente — essencial no fluxo de features, onde `core` reaparece em todas as etapas. Offsets das fitas: saida ordenada por y do destino, entrada por y da origem (minimiza cruzamentos). A fita herda a cor do **no de origem**, entao etapas intermediarias precisam de cor explicita em `opts.colors` ou o trecho sai cinza.
+- **`attachSeriesIsolator(canvasId)`** — chips acima do grafico para isolar **uma** serie em 1 clique (a legenda do Chart.js so esconde uma por vez; com 6 series, ver so uma exige 5 cliques). Generico: le os datasets do proprio chart. Aplicado em `iacoesFunnelTimeChart`, `iacoesConvRateTimeChart`, `iacoesConvDailyChart`, `iacoesReferrerChart`, `iacoesExpDailyChart`, `bhEngFeatureDailyChart`.
+- **Explorador da landing** (`drawLandingExplorer`) — barra de controles (dimensao x metrica x top N x "ocultar <5 sessoes") que comanda ranking + serie temporal + **tabela completa** (10 colunas, sortable, Export CSV, linha TOTAL). Estado em `window._landingExplorer`. Metricas derivadas (taxas, medias) tem `derive` e sao **recalculadas apos a soma** — somar percentuais de dias diferentes nao significa nada; por isso o grafico temporal vira **linha** (nao empilhado) quando a metrica e derivada.
+  - O caminho "sem dados" **nao** usa `showEmptyIfNeeded`: ele troca o `innerHTML` do container e mataria o `<canvas>`, deixando o grafico vazio para sempre ao voltar a dimensao. Em vez disso so destroi a instancia do chart.
+- Novas secoes na aba Landing: "Qualidade das sessoes" (7 KPIs + funil de scroll + 2 distribuicoes + scroll por pagina), "Explorador", "Fluxo da landing".
+- Secoes fixas antigas (Dispositivos / Navegador / SO / UTM) foram mantidas — sao a visao imediata, sem interacao; o explorador e o aprofundamento.
+
+### Achados na primeira leitura (30d, 2026-09)
+
+- 46,5% de rejeicao, 1,28 paginas/sessao, 26% leem ate o fim.
+- **Google converte 6x melhor que Direto em CTA**: 19,7% vs 3,3% de taxa de CTA por sessao.
+- **Home 33,9% de CTA vs pagina de ticker 2,7%** — as paginas de ticker trazem volume (2,0K sessoes) mas quase nao convertem.
 
 ## Emails — aba dedicada (2026-08-28)
 
