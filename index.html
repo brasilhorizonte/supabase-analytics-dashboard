@@ -265,6 +265,7 @@
                         <div class="sidebar-sub-item" data-tab="bhAirton">Airton</div>
                         <div class="sidebar-sub-item" data-tab="bhRetencao">Retencao</div>
                         <div class="sidebar-sub-item" data-tab="bhCustos">Receita & Assinaturas</div>
+                        <div class="sidebar-sub-item" data-tab="bhRelatorios">Relatorios</div>
                         <div class="sidebar-sub-item" data-tab="bhDetalhes">Detalhes</div>
                     </div>
                 </div>
@@ -325,6 +326,7 @@
                 <div class="tab-content" id="bhAirton"></div>
                 <div class="tab-content" id="bhRetencao"></div>
                 <div class="tab-content" id="bhCustos"></div>
+                <div class="tab-content" id="bhRelatorios"></div>
                 <div class="tab-content" id="bhDetalhes"></div>
                 <div class="tab-content" id="htaVisao"></div>
                 <div class="tab-content" id="htaAquisicao"></div>
@@ -375,7 +377,7 @@
 
     const TAB_TITLES = {
         bhVisao: 'iAcoes - Visao Geral', bhAquisicao: 'iAcoes - Aquisicao', bhEngajamento: 'iAcoes - Engajamento',
-        bhAirton: 'iAcoes - Airton', bhRetencao: 'iAcoes - Retencao', bhCustos: 'iAcoes - Receita & Assinaturas', bhDetalhes: 'iAcoes - Detalhes',
+        bhAirton: 'iAcoes - Airton', bhRetencao: 'iAcoes - Retencao', bhCustos: 'iAcoes - Receita & Assinaturas', bhRelatorios: 'iAcoes - Relatorios', bhDetalhes: 'iAcoes - Detalhes',
         htaVisao: 'HTA - Visao Geral', htaAquisicao: 'HTA - Aquisicao', htaEngajamento: 'HTA - Engajamento',
         htaRetencao: 'HTA - Retencao', htaCustos: 'HTA - Custos', htaDetalhes: 'HTA - Detalhes',
         iacoes: 'iAcoes - Landing'
@@ -3135,10 +3137,252 @@
         `;
     }
 
+    // ===== iAcoes > Relatorios (2026-09-16) =====
+    // Fonte: RPC get_analytics_data_bh_reports_v1 (chaves bh.reports_*).
+    // Downloads vem de report_downloads (desde 2025-10); views de usage_events.report_view
+    // (so desde 2026-01-08); plano = plano ATUAL do perfil (report_downloads nao guarda plano).
+    const REPORT_TYPE_LABELS = { equity:'Acoes (equity)', strategy:'Estrategia', fixed_income:'Renda fixa', macroeconomics:'Macro', exclusive:'Exclusivo', credit:'Credito', unknown:'Desconhecido' };
+    const REPORT_TYPE_COLORS = { equity:'#3ecf8e', strategy:'#6366f1', fixed_income:'#3b82f6', macroeconomics:'#ef4444', exclusive:'#f59e0b', credit:'#ec4899', unknown:'#94a3b8' };
+    const rtLabel = t => REPORT_TYPE_LABELS[t] || t || '-';
+
+    function renderBhRelatorios() {
+        const bh = dashboardData.bh; const f = globalFilters;
+        const ov = bh.reports_overview || {};
+        const daily = bh.reports_daily || [];
+        const byType = bh.reports_by_type || [];
+        const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const pct = (a, b) => b > 0 ? Math.round(100 * a / b) + '%' : '-';
+
+        const includeAdmins = !!dashboardData.bh_reports_include_admins;
+        window._bhReportsIncludeAdmins = includeAdmins;
+
+        if (!bh.reports_overview) {
+            buildHTML('bhRelatorios', createEmptyState('Sem dados de relatorios', 'RPC get_analytics_data_bh_reports_v1 ausente no response'));
+            return;
+        }
+
+        buildHTML('bhRelatorios', `
+            <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+                <button id="bhRelAdminToggle" title="Alterna entre visao oficial (sem admins) e debug interno"
+                    style="font-size:0.72rem;padding:5px 12px;border-radius:6px;border:1px solid ${includeAdmins?'#f59e0b':'#94a3b8'};background:transparent;color:${includeAdmins?'#f59e0b':'#64748b'};cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
+                    <span style="width:7px;height:7px;border-radius:50%;background:${includeAdmins?'#f59e0b':'#94a3b8'};"></span>
+                    <span>${includeAdmins?'Incluindo admins (debug)':'Sem admins (oficial)'}</span>
+                </button>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Visao geral', 'Downloads de report_downloads; views desde 08/01/2026.')}
+                <div class="kpi-grid-compact" id="bhRelKpis"></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Evolucao', 'Respeita granularidade do filtro global.')}
+                <div class="chart-container mb-2"><div class="chart-title">Downloads por tipo de relatorio</div><canvas id="bhRelTypeDailyChart"></canvas></div>
+                <div class="chart-container mb-2"><div class="chart-title">Views x Downloads x Novos leitores x Cliques em relatorio bloqueado</div><canvas id="bhRelDailyChart"></canvas></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Por tipo de relatorio', 'Produzir mais do que? Compare esforco (catalogo) com demanda (downloads/relatorio).')}
+                <div class="table-container mb-2"><table id="bhRelTypeTable"></table></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhRelTypeEffChart','Downloads por relatorio publicado')}
+                    ${canvasHTML('bhRelTypeViewConvChart','Views x Downloads por tipo')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Quem baixa', 'Plano ATUAL do usuario (report_downloads nao guarda o plano no momento do download).')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhRelPlanChart','Downloads e usuarios por plano')}
+                    ${canvasHTML('bhRelTypePlanChart','Tipo de relatorio por plano')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Timing', 'Quanto tempo um relatorio continua sendo baixado e quando publicar.')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhRelAgeChart','Downloads por idade do relatorio (dias desde a publicacao)')}
+                    ${canvasHTML('bhRelWeekdayChart','Downloads por dia da semana (BRT)')}
+                </div>
+                <div class="chart-container mb-2"><div class="chart-title">Downloads por hora do dia (BRT)</div><canvas id="bhRelHourChart"></canvas></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Autores e setores')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhRelAnalystChart','Downloads por analista')}
+                    ${canvasHTML('bhRelSectorChart','Downloads por setor (top 12)')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Paywall de relatorios', 'Cliques em relatorio bloqueado (passive_paywall_click). Sem report_id no evento — so agregado.')}
+                <div class="table-container mb-2"><table id="bhRelLockedTable"></table></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Catalogo', 'Todos os relatorios, inclusive sem download. Colunas "periodo" respeitam o filtro; lifetime e 1os 7d nao.')}
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                    <input id="bhRelSearch" type="search" placeholder="Buscar titulo, ticker, analista..." style="flex:1;min-width:200px;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:0.8rem;">
+                    <select id="bhRelTypeFilter" style="padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:0.8rem;"></select>
+                    <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:#64748b;"><input type="checkbox" id="bhRelZeroOnly"> So sem download no periodo</label>
+                </div>
+                <div class="table-container mb-2"><div class="table-title" id="bhRelCatalogTitle">Relatorios</div><table id="bhRelCatalogTable"></table></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Top leitores', 'Top 30 usuarios por downloads no periodo.')}
+                <div class="table-container mb-2"><div class="table-title" id="bhRelUsersTitle">Leitores</div><table id="bhRelUsersTable"></table></div>
+            </div>
+        `);
+
+        document.getElementById('bhRelAdminToggle').onclick = () => {
+            window._bhReportsIncludeAdmins = !window._bhReportsIncludeAdmins;
+            refetchAndRerender();
+        };
+
+        // ── KPIs ──
+        const dls = ov.downloads || 0, users = ov.unique_downloaders || 0;
+        document.getElementById('bhRelKpis').innerHTML = `
+            ${createKpiCardV2('Downloads', fmt(dls), { hero:true, hint:`${fmt(ov.lifetime_downloads||0)} lifetime`, spark: daily.map(d=>d.downloads||0) })}
+            ${createKpiCardV2('Leitores unicos', fmt(users), { hint:`${users ? (dls/users).toFixed(1) : '0'} downloads/leitor` })}
+            ${createKpiCardV2('Novos leitores', fmt(ov.new_downloaders||0), { intent:'positive', hint:'1o download da vida no periodo' })}
+            ${createKpiCardV2('Leitores recorrentes', fmt(ov.repeat_downloaders||0), { hint:`${pct(ov.repeat_downloaders||0, users)} baixaram 2+` })}
+            ${createKpiCardV2('Relatorios baixados', `${fmt(ov.reports_downloaded||0)}/${fmt(ov.catalog_total||0)}`, { hint:`${ov.catalog_never_downloaded||0} nunca baixados (lifetime)` })}
+            ${createKpiCardV2('Publicados no periodo', fmt(ov.published_in_period||0))}
+            ${createKpiCardV2('View &rarr; Download', pct(ov.viewers_who_downloaded||0, ov.unique_viewers||0), { hint:`${fmt(ov.unique_viewers||0)} abriram, ${fmt(ov.viewers_who_downloaded||0)} baixaram` })}
+            ${createKpiCardV2('Cliques em bloqueado', fmt(ov.locked_clicks||0), { intent:'warning', hint:`${fmt(ov.locked_unique_users||0)} usuarios bateram no paywall` })}
+        `;
+
+        // ── Evolucao ──
+        const typeDaily = bh.reports_daily_by_type || [];
+        if (!showEmptyIfNeeded('bhRelTypeDailyChart', filterSnapshot(typeDaily, f), 'Sem downloads no periodo')) {
+            const mc = prepareMultiCategoryTS(typeDaily, f, 'report_type', 'downloads');
+            destroyChart('bhRelTypeDailyChart');
+            charts.bhRelTypeDailyChart = new Chart(document.getElementById('bhRelTypeDailyChart'), {
+                type:'bar', data:{labels:mc.labels,datasets:mc.categories.map(t=>({label:rtLabel(t),data:mc.getValues(t),backgroundColor:REPORT_TYPE_COLORS[t]||'#8b5cf6'}))},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
+        }
+        if (!showEmptyIfNeeded('bhRelDailyChart', filterSnapshot(daily, f), 'Sem atividade no periodo')) {
+            const tsFields = ['downloads','views','new_downloaders','locked_clicks'];
+            const ts = prepareTimeSeries(daily, f, tsFields);
+            lineChart('bhRelDailyChart', ts.labels, [
+                {label:'Downloads', data:ts.data.map(d=>d.downloads||0), borderColor:'#f59e0b', fill:false, pointRadius:2},
+                {label:'Views', data:ts.data.map(d=>d.views||0), borderColor:'#6366f1', fill:false, pointRadius:2},
+                {label:'Novos leitores', data:ts.data.map(d=>d.new_downloaders||0), borderColor:'#3ecf8e', fill:false, pointRadius:2},
+                {label:'Cliques em bloqueado', data:ts.data.map(d=>d.locked_clicks||0), borderColor:'#ef4444', borderDash:[4,4], fill:false, pointRadius:2},
+            ]);
+        }
+
+        // ── Por tipo ──
+        const typeRows = byType.filter(t => (t.catalog||0) > 0);
+        document.getElementById('bhRelTypeTable').innerHTML =
+            '<thead><tr><th>Tipo</th><th style="text-align:right">Catalogo</th><th style="text-align:right">Publicados no periodo</th><th style="text-align:right">Baixados</th><th style="text-align:right">% catalogo c/ download</th><th style="text-align:right">Downloads</th><th style="text-align:right">Leitores</th><th style="text-align:right">Downloads/relatorio</th><th style="text-align:right">Views</th></tr></thead><tbody>' +
+            typeRows.map(t => `<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${REPORT_TYPE_COLORS[t.report_type]||'#8b5cf6'};margin-right:6px;"></span>${esc(rtLabel(t.report_type))}</td><td style="text-align:right">${t.catalog||0}</td><td style="text-align:right">${t.published_in_period||0}</td><td style="text-align:right">${t.reports_downloaded||0}</td><td style="text-align:right">${pct(t.reports_downloaded||0, t.catalog||0)}</td><td style="text-align:right">${fmt(t.downloads||0)}</td><td style="text-align:right">${fmt(t.unique_users||0)}</td><td style="text-align:right">${t.catalog ? ((t.downloads||0)/t.catalog).toFixed(1) : '-'}</td><td style="text-align:right">${fmt(t.views||0)}</td></tr>`).join('') +
+            '</tbody>';
+        makeSortable(document.getElementById('bhRelTypeTable'));
+        barChart('bhRelTypeEffChart', typeRows.map(t=>rtLabel(t.report_type)), [{label:'Downloads/relatorio', data:typeRows.map(t=>t.catalog ? +((t.downloads||0)/t.catalog).toFixed(2) : 0), backgroundColor:typeRows.map(t=>REPORT_TYPE_COLORS[t.report_type]||'#8b5cf6')}], {horizontal:true});
+        barChart('bhRelTypeViewConvChart', typeRows.map(t=>rtLabel(t.report_type)), [
+            {label:'Views', data:typeRows.map(t=>t.views||0), backgroundColor:'#6366f1'},
+            {label:'Downloads', data:typeRows.map(t=>t.downloads||0), backgroundColor:'#f59e0b'},
+        ]);
+
+        // ── Quem baixa ──
+        const byPlan = bh.reports_by_plan || [];
+        if (!showEmptyIfNeeded('bhRelPlanChart', byPlan, 'Sem downloads no periodo')) {
+            barChart('bhRelPlanChart', byPlan.map(p=>p.plan), [
+                {label:'Downloads', data:byPlan.map(p=>p.downloads||0), backgroundColor:'#f59e0b'},
+                {label:'Leitores', data:byPlan.map(p=>p.unique_users||0), backgroundColor:'#3ecf8e'},
+            ]);
+        }
+        const tbp = bh.reports_type_by_plan || [];
+        if (!showEmptyIfNeeded('bhRelTypePlanChart', tbp, 'Sem downloads no periodo')) {
+            const plans = byPlan.map(p=>p.plan);
+            const types = [...new Set(tbp.map(r=>r.report_type))];
+            destroyChart('bhRelTypePlanChart');
+            charts.bhRelTypePlanChart = new Chart(document.getElementById('bhRelTypePlanChart'), {
+                type:'bar', data:{labels:plans, datasets:types.map(t=>({label:rtLabel(t), backgroundColor:REPORT_TYPE_COLORS[t]||'#8b5cf6', data:plans.map(p=>(tbp.find(r=>r.plan===p&&r.report_type===t)||{}).downloads||0)}))},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
+        }
+
+        // ── Timing ──
+        const age = bh.reports_age_buckets || [];
+        if (!showEmptyIfNeeded('bhRelAgeChart', age, 'Sem downloads no periodo')) {
+            barChart('bhRelAgeChart', age.map(a=>a.bucket), [{label:'Downloads', data:age.map(a=>a.downloads||0), backgroundColor:'#6366f1'}]);
+        }
+        const wh = bh.reports_weekday_hour || [];
+        const DOW = ['Seg','Ter','Qua','Qui','Sex','Sab','Dom'];
+        const byDow = DOW.map((_,i)=>wh.filter(r=>r.dow===i+1).reduce((s,r)=>s+(r.downloads||0),0));
+        const byHour = Array.from({length:24},(_,h)=>wh.filter(r=>r.hour===h).reduce((s,r)=>s+(r.downloads||0),0));
+        if (!showEmptyIfNeeded('bhRelWeekdayChart', wh, 'Sem downloads no periodo')) {
+            barChart('bhRelWeekdayChart', DOW, [{label:'Downloads', data:byDow, backgroundColor:'#3b82f6'}]);
+        }
+        if (!showEmptyIfNeeded('bhRelHourChart', wh, 'Sem downloads no periodo')) {
+            barChart('bhRelHourChart', byHour.map((_,h)=>`${String(h).padStart(2,'0')}h`), [{label:'Downloads', data:byHour, backgroundColor:'#3b82f6'}]);
+        }
+
+        // ── Autores e setores ──
+        const an = bh.reports_by_analyst || [];
+        if (!showEmptyIfNeeded('bhRelAnalystChart', an, 'Sem downloads no periodo')) {
+            barChart('bhRelAnalystChart', an.map(a=>a.analyst), [
+                {label:'Downloads', data:an.map(a=>a.downloads||0), backgroundColor:'#f59e0b'},
+                {label:'Leitores', data:an.map(a=>a.unique_users||0), backgroundColor:'#3ecf8e'},
+            ], {horizontal:true});
+        }
+        const sec = (bh.reports_by_sector || []).slice(0,12);
+        if (!showEmptyIfNeeded('bhRelSectorChart', sec, 'Sem downloads no periodo')) {
+            barChart('bhRelSectorChart', sec.map(s=>s.sector), [
+                {label:'Downloads', data:sec.map(s=>s.downloads||0), backgroundColor:'#f59e0b'},
+                {label:'Leitores', data:sec.map(s=>s.unique_users||0), backgroundColor:'#3ecf8e'},
+            ], {horizontal:true});
+        }
+
+        // ── Paywall ──
+        const locked = bh.reports_locked_by_plan || [];
+        document.getElementById('bhRelLockedTable').innerHTML = locked.length
+            ? '<thead><tr><th>Plano alvo</th><th>Dispositivo</th><th style="text-align:right">Cliques</th><th style="text-align:right">Usuarios</th></tr></thead><tbody>' +
+              locked.map(l=>`<tr><td>${esc(l.target_plan)}</td><td>${esc(l.device)}</td><td style="text-align:right">${fmt(l.clicks||0)}</td><td style="text-align:right">${fmt(l.unique_users||0)}</td></tr>`).join('') + '</tbody>'
+            : '<tr><td style="padding:16px;text-align:center;color:var(--m)">Nenhum clique em relatorio bloqueado no periodo</td></tr>';
+
+        // ── Catalogo ──
+        const catalog = bh.reports_table || [];
+        const typeSel = document.getElementById('bhRelTypeFilter');
+        typeSel.innerHTML = '<option value="">Todos os tipos</option>' + [...new Set(catalog.map(r=>r.report_type))].map(t=>`<option value="${esc(t)}">${esc(rtLabel(t))}</option>`).join('');
+        const brDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-';
+        const renderCatalog = () => {
+            const q = document.getElementById('bhRelSearch').value.trim().toLowerCase();
+            const tf = typeSel.value;
+            const zeroOnly = document.getElementById('bhRelZeroOnly').checked;
+            const rows = catalog.filter(r =>
+                (!tf || r.report_type === tf) &&
+                (!zeroOnly || !(r.downloads > 0)) &&
+                (!q || [r.title, r.ticker, r.analyst, r.sector].some(v => (v||'').toLowerCase().includes(q))));
+            document.getElementById('bhRelCatalogTable').innerHTML =
+                '<thead><tr><th>Relatorio</th><th>Tipo</th><th>Ticker</th><th>Setor</th><th>Analista</th><th>Publicado</th><th style="text-align:right">Downloads (periodo)</th><th style="text-align:right">Leitores (periodo)</th><th style="text-align:right">Views (periodo)</th><th style="text-align:right">View&rarr;DL</th><th style="text-align:right">1os 7d</th><th style="text-align:right">Lifetime</th><th>Ultimo download</th></tr></thead><tbody>' +
+                rows.map(r => `<tr><td title="${esc((r.access_tiers||[]).join(', '))}">${esc(r.title||'Sem titulo')}</td><td>${esc(rtLabel(r.report_type))}</td><td>${esc(r.ticker||'-')}</td><td>${esc(r.sector||'-')}</td><td>${esc(r.analyst||'-')}</td><td>${r.published_date||'-'}</td><td style="text-align:right">${r.downloads||0}</td><td style="text-align:right">${r.unique_users||0}</td><td style="text-align:right">${r.views||0}</td><td style="text-align:right">${pct(r.unique_users||0, r.unique_viewers||0)}</td><td style="text-align:right">${r.downloads_first_7d||0}</td><td style="text-align:right">${r.lifetime_downloads||0}</td><td>${brDate(r.last_download)}</td></tr>`).join('') +
+                '</tbody>';
+            document.getElementById('bhRelCatalogTitle').firstChild.textContent = `Relatorios (${rows.length})`;
+            makeSortable(document.getElementById('bhRelCatalogTable'));
+        };
+        renderCatalog();
+        addExportBtn('#bhRelCatalogTitle', 'bhRelCatalogTable');
+        document.getElementById('bhRelSearch').oninput = renderCatalog;
+        typeSel.onchange = renderCatalog;
+        document.getElementById('bhRelZeroOnly').onchange = renderCatalog;
+
+        // ── Top leitores ──
+        const topUsers = bh.reports_top_users || [];
+        document.getElementById('bhRelUsersTable').innerHTML = topUsers.length
+            ? '<thead><tr><th>Email</th><th>Plano atual</th><th style="text-align:right">Downloads</th><th style="text-align:right">Relatorios distintos</th><th>1o download</th><th>Ultimo download</th></tr></thead><tbody>' +
+              topUsers.map(u=>`<tr><td>${esc(u.email||'-')}</td><td>${esc(u.plan)}</td><td style="text-align:right">${u.downloads||0}</td><td style="text-align:right">${u.distinct_reports||0}</td><td>${brDate(u.first_download)}</td><td>${brDate(u.last_download)}</td></tr>`).join('') + '</tbody>'
+            : '<tr><td style="padding:16px;text-align:center;color:var(--m)">Sem downloads no periodo</td></tr>';
+        enhanceTable('bhRelUsersTable', 'bhRelUsersTitle');
+    }
+
     function renderBhDetalhes() {
         const bh = dashboardData.bh; const f = globalFilters;
-        const downloads = bh.report_downloads_daily || [];
-        const topReports = (bh.top_reports_downloaded||[]).slice(0,10);
         const screens = bh.screen_summary || [];
         const routes = bh.top_routes || [];
         const sectionDaily = bh.section_daily || [];
@@ -3158,10 +3402,6 @@
                 ${canvasHTML('bhDetTopRoutesChart','Rotas Mais Visitadas')}
             </div>
             <div class="chart-container mb-2"><div class="chart-title">Uso de Secoes (diario)</div><canvas id="bhDetSectionDailyChart"></canvas></div>
-            <div class="charts-grid">
-                ${canvasHTML('bhDetDownloadsChart','Downloads de Relatorio (diario)')}
-                ${canvasHTML('bhDetTopReportsChart','Relatorios Mais Baixados')}
-            </div>
             <div class="charts-grid">
                 ${canvasHTML('bhDetTickersSearchedChart','Tickers Mais Buscados no Dashboard')}
             </div>
@@ -3198,12 +3438,6 @@
         const topSections = Object.entries(sectionTotals).sort((a,b)=>b[1]-a[1]).slice(0,6).map(e=>e[0]);
         const mcSD = prepareMultiCategoryTS(sectionDaily, f, 'section', 'cnt');
         lineChart('bhDetSectionDailyChart', mcSD.labels, topSections.map((s,i)=>({label:s,data:mcSD.getValues(s),borderColor:COLORS[i%COLORS.length],fill:false,pointRadius:2})));
-
-        const dlPrep = prepareTimeSeries(downloads, f, ['downloads']);
-        barChart('bhDetDownloadsChart', dlPrep.labels, [{label:'Downloads',data:dlPrep.data.map(d=>d.downloads||0),backgroundColor:'#f59e0b'}]);
-
-        const rtColors = {exclusive:'#f59e0b',strategy:'#6366f1',equity:'#3ecf8e',macroeconomics:'#ef4444'};
-        barChart('bhDetTopReportsChart', topReports.map(r=>{const t=r.title||'Sem titulo';return t.length>35?t.substring(0,32)+'...':t;}), [{label:'Downloads',data:topReports.map(r=>r.downloads||0),backgroundColor:topReports.map(r=>rtColors[r.report_type]||'#8b5cf6')}], {horizontal:true});
 
         barChart('bhDetTickersSearchedChart', tickersSearched.map(t=>t.ticker||'Unknown'), [{label:'Buscas',data:tickersSearched.map(t=>t.cnt||0),backgroundColor:'#6366f1'}], {horizontal:true});
 
@@ -4337,7 +4571,7 @@
 
     // ===== TAB NAVIGATION =====
     let currentTab = 'bhVisao';
-    const ALL_TABS = ['bhVisao','bhAquisicao','bhEngajamento','bhAirton','bhRetencao','bhCustos','bhDetalhes','htaVisao','htaAquisicao','htaEngajamento','htaRetencao','htaCustos','htaDetalhes','iacoes'];
+    const ALL_TABS = ['bhVisao','bhAquisicao','bhEngajamento','bhAirton','bhRetencao','bhCustos','bhRelatorios','bhDetalhes','htaVisao','htaAquisicao','htaEngajamento','htaRetencao','htaCustos','htaDetalhes','iacoes'];
     // Lazy render: abas marcadas dirty so sao (re)renderizadas quando visitadas.
     const dirtyTabs = new Set(ALL_TABS);
     function markAllTabsDirty() { ALL_TABS.forEach(t=>dirtyTabs.add(t)); }
@@ -4382,7 +4616,7 @@
             const renderMap = {
                 bhVisao: renderBhVisao, bhAquisicao: renderBhAquisicao, bhEngajamento: renderBhEngajamento,
                 bhAirton: renderBhAirton,
-                bhRetencao: renderBhRetencao, bhCustos: renderBhCustos, bhDetalhes: renderBhDetalhes,
+                bhRetencao: renderBhRetencao, bhCustos: renderBhCustos, bhRelatorios: renderBhRelatorios, bhDetalhes: renderBhDetalhes,
                 htaVisao: renderHtaVisao, htaAquisicao: renderHtaAquisicao, htaEngajamento: renderHtaEngajamento,
                 htaRetencao: renderHtaRetencao, htaCustos: renderHtaCustos, htaDetalhes: renderHtaDetalhes,
                 iacoes: renderIacoesTab
@@ -4452,6 +4686,7 @@
             if (globalFilters.from) params.set('from', `${globalFilters.from}T00:00:00-03:00`);
             if (globalFilters.to)   params.set('to',   `${globalFilters.to}T23:59:59.999-03:00`);
             if (window._airtonIncludeAdmins) params.set('include_admins', 'true');
+            if (window._bhReportsIncludeAdmins) params.set('bh_reports_include_admins', 'true');
             // 2026-05-27: params do bloco de tickers (Engajamento iAcoes).
             const tf = window._bhTickerFilters;
             if (tf) {

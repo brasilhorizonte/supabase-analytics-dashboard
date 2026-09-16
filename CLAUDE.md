@@ -59,7 +59,18 @@ supabase/
     20260817_dashboard_overhaul_bh.sql      # Overhaul: v2_impl sem 8 secoes mortas, NEW get_notification_analytics_v2(p_from,p_to), utm_v2 sem 50OFF, statement_timeout nas 5 RPCs restantes
     20260818_v2_impl_timeout_90s.sql        # Fix preset Max sem dados (57014): timeout real era 8s da role authenticator (SET em nivel de funcao e inerte no path REST); fix = ALTER ROLE service_role SET statement_timeout='90s'
     20260910_bh_tool_usage_v1.sql           # NEW RPC get_analytics_data_bh_tool_usage_v1(p_from,p_to) — secao "Uso das ferramentas" (Engajamento): abriram/escolheram/usaram/voltaram por ferramenta + acao_pendentes (⏳ p/ evento de acao ainda sem dado). EXECUTE so service_role
+    20260916_bh_reports_v1.sql              # NEW RPC get_analytics_data_bh_reports_v1(p_from,p_to,p_include_admins) — aba "Relatorios" (iAcoes): chaves reports_*. EXECUTE so service_role
 ```
+
+## Aba Relatorios (2026-09-16)
+
+Nova sub-aba **Relatorios** no grupo iAcoes (entre Receita & Assinaturas e Detalhes). Os 2 graficos de relatorio da aba Detalhes (`report_downloads_daily`, `top_reports_downloaded`) sairam de la — as chaves continuam na v2_impl, mas nao sao mais consumidas.
+
+- **RPC** `get_analytics_data_bh_reports_v1(p_from, p_to, p_include_admins DEFAULT false)`: `reports_overview`, `reports_daily`, `reports_daily_by_type`, `reports_by_type`, `reports_by_plan`, `reports_type_by_plan`, `reports_by_analyst`, `reports_by_sector`, `reports_age_buckets`, `reports_weekday_hour`, `reports_locked_by_plan`, `reports_table` (catalogo completo, 104 relatorios), `reports_top_users`, `reports_meta`. ~2s no preset Max.
+- **Fontes**: downloads = `report_downloads` (desde 2025-10-14; o evento `usage_events.report_download` cobre so ~15%); views = `usage_events.report_view` (so desde 2026-01-08; `report_id` e **text** — cast para uuid); paywall = `passive_paywall_click` com `feature LIKE 'research_report_locked%'` (sem report_id). Plano = `profiles.plan` **atual** (report_downloads nao guarda plano).
+- **Admins**: `report_downloads` nao passa por `usage_events_clean` — 336 dos 613 downloads lifetime (55%) eram de admins, e o grafico antigo da Detalhes nao filtrava. Filtro por `profiles.is_admin` com toggle.
+- **Edge Function**: 14o fetchRpc; query param `?bh_reports_include_admins=true`; response `bh_reports_include_admins`.
+- **Frontend**: `renderBhRelatorios()`; estado do toggle em `window._bhReportsIncludeAdmins`.
 
 ## Overhaul de Performance & Histórico (2026-08-17)
 

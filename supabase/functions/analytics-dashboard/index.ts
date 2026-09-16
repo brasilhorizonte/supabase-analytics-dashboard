@@ -57,6 +57,7 @@ function parseTimeWindow(req: Request): {
   bhTickerIncludeAdmins: boolean;
   bhTickers: string[] | null;
   bhTopN: number;
+  bhReportsIncludeAdmins: boolean;
 } {
   const url = new URL(req.url);
   const fromParam = url.searchParams.get("from");
@@ -87,6 +88,9 @@ function parseTimeWindow(req: Request): {
     ? bhTopNParam
     : 30;
 
+  // 2026-09-16: toggle de admins da aba Relatorios (default false).
+  const bhReportsIncludeAdmins = url.searchParams.get("bh_reports_include_admins") === "true";
+
   return {
     from: from.toISOString(),
     to: to.toISOString(),
@@ -94,6 +98,7 @@ function parseTimeWindow(req: Request): {
     bhTickerIncludeAdmins,
     bhTickers: bhTickers && bhTickers.length > 0 ? bhTickers : null,
     bhTopN,
+    bhReportsIncludeAdmins,
   };
 }
 
@@ -130,7 +135,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const { from, to, includeAdmins, bhTickerIncludeAdmins, bhTickers, bhTopN } = parseTimeWindow(req);
+    const { from, to, includeAdmins, bhTickerIncludeAdmins, bhTickers, bhTopN, bhReportsIncludeAdmins } = parseTimeWindow(req);
 
     // BH RPCs v2 aceitam janela temporal {p_from, p_to} -- reduz tempo da base
     // de ~3s (all-time) para ~1.2s em 7d / ~2.4s em 30d. v1 das RPCs sao mantidas
@@ -138,7 +143,7 @@ Deno.serve(async (req: Request) => {
     // 2026-08-17 overhaul: get_geo_profiles (x2) removidas — o frontend nunca
     // consumiu `geo`, eram 2 RPCs mortas por request. Notificacoes migraram para
     // get_notification_analytics_v2(p_from, p_to) — a v1 tinha 90 dias hardcoded.
-    const [bh, hta, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhOauth, bhAirton, bhAirtonTg, bhAirtonWa, bhPoolV2, bhTickersV3, bhToolUsage] = await Promise.all([
+    const [bh, hta, bhNotif, bhExtras, bhUtm, bhIacoesDaily, bhOauth, bhAirton, bhAirtonTg, bhAirtonWa, bhPoolV2, bhTickersV3, bhToolUsage, bhReports] = await Promise.all([
       fetchRpc(BH_URL, BH_KEY, "get_analytics_data_v2", { p_from: from, p_to: to }),
       fetchRpc(HTA_URL, HTA_KEY, "get_analytics_data"),
       fetchRpc(BH_URL, BH_KEY, "get_notification_analytics_v2", { p_from: from, p_to: to }),
@@ -173,11 +178,14 @@ Deno.serve(async (req: Request) => {
       // (aba Engajamento, chave tool_usage). Le de usage_events_clean (sem admins).
       // Eventos de acao do front: src/lib/toolActionEvents.ts (repo dashbrasilhorizonte).
       fetchRpc(BH_URL, BH_KEY, "get_analytics_data_bh_tool_usage_v1", { p_from: from, p_to: to }),
+      // 2026-09-16: aba Relatorios — downloads/views/paywall por tipo, plano,
+      // analista, setor, idade e catalogo completo (chaves reports_*).
+      fetchRpc(BH_URL, BH_KEY, "get_analytics_data_bh_reports_v1", { p_from: from, p_to: to, p_include_admins: bhReportsIncludeAdmins }),
     ]);
 
     // Merge BH data: base + notif + extras + utm + iacoes_daily + oauth + airton + airton_tg + airton_wa + pool_v2 + tool_usage + tickers_v3
     // tickers_v3 vem por ULTIMO de proposito — sobrescreve as 6 secoes de ticker da v2.
-    const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}), ...(bhUtm || {}), ...(bhIacoesDaily || {}), ...(bhOauth || {}), ...(bhAirton || {}), ...(bhAirtonTg || {}), ...(bhAirtonWa || {}), ...(bhPoolV2 || {}), ...(bhToolUsage || {}), ...(bhTickersV3 || {}) };
+    const bhMerged = { ...(bh || {}), ...(bhNotif || {}), ...(bhExtras || {}), ...(bhUtm || {}), ...(bhIacoesDaily || {}), ...(bhOauth || {}), ...(bhAirton || {}), ...(bhAirtonTg || {}), ...(bhAirtonWa || {}), ...(bhPoolV2 || {}), ...(bhToolUsage || {}), ...(bhReports || {}), ...(bhTickersV3 || {}) };
 
     return new Response(JSON.stringify({
       admin: email,
@@ -188,6 +196,7 @@ Deno.serve(async (req: Request) => {
       bh_ticker_include_admins: bhTickerIncludeAdmins,
       bh_tickers_filter: bhTickers,
       bh_top_n: bhTopN,
+      bh_reports_include_admins: bhReportsIncludeAdmins,
       ts: new Date().toISOString(),
     }), {
       headers: {
