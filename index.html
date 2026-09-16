@@ -194,6 +194,31 @@
         .filter-bar select { background: var(--bg); border: 1px solid var(--bd); color: var(--t); padding: 6px 10px; border-radius: 6px; font-size: 13px; font-family: inherit; }
         .filter-bar select:focus { outline: 2px solid var(--p); outline-offset: 2px; border-color: var(--p); }
 
+        /* Barra de controles local de um bloco (explorador da landing, etc.) */
+        .ctrl-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 8px 0 18px; padding: 12px 16px; background: var(--bg); border: 1px solid var(--bd); border-radius: 10px; font-size: 13px; }
+        .ctrl-bar label { display: inline-flex; align-items: center; gap: 6px; color: var(--m); font-weight: 600; font-size: 12px; }
+        .ctrl-bar select { background: var(--c); border: 1px solid var(--bd); color: var(--t); padding: 5px 9px; border-radius: 6px; font-size: 13px; font-family: inherit; }
+        .ctrl-bar select:focus { outline: 2px solid var(--p); outline-offset: 1px; border-color: var(--p); }
+        .ctrl-sep { width: 1px; height: 18px; background: var(--bd); }
+
+        /* Chips de isolamento de serie: "ver uma variavel especifica" num grafico */
+        .series-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; }
+        .series-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 9999px; border: 1px solid var(--bd); background: var(--c); color: var(--m); font-size: 11px; font-weight: 600; cursor: pointer; transition: border-color .15s, color .15s, background-color .15s; }
+        .series-chip:hover { border-color: var(--p); color: var(--t); }
+        .series-chip.active { border-color: var(--t); background: var(--t); color: #fff; }
+        .series-chip .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+        .series-chip.active .dot { box-shadow: 0 0 0 1.5px rgba(255,255,255,.65); }
+
+        /* Sankey (SVG proprio, sem dependencia externa) */
+        .sankey-wrap { overflow-x: auto; }
+        .sankey-wrap svg { display: block; width: 100%; min-width: 620px; height: auto; }
+        .sankey-link { fill-opacity: .32; transition: fill-opacity .15s; }
+        .sankey-link:hover { fill-opacity: .68; }
+        .sankey-node rect { rx: 2; }
+        .sankey-label { font-size: 11px; fill: var(--t); paint-order: stroke; stroke: var(--c); stroke-width: 3px; stroke-linejoin: round; }
+        .sankey-label .v { fill: var(--m); }
+        .sankey-stage { font-size: 11px; font-weight: 700; fill: var(--m); letter-spacing: .02em; }
+
         .retention-table { overflow-x: auto; margin-bottom: 24px; }
         .retention-table td.ret-good { color: var(--g); font-weight: 600; }
         .retention-table td.ret-mid { color: var(--a); font-weight: 600; }
@@ -263,6 +288,7 @@
                         <div class="sidebar-sub-item" data-tab="bhAquisicao">Aquisicao</div>
                         <div class="sidebar-sub-item" data-tab="bhEngajamento">Engajamento</div>
                         <div class="sidebar-sub-item" data-tab="bhAirton">Airton</div>
+                        <div class="sidebar-sub-item" data-tab="bhEmails">Emails</div>
                         <div class="sidebar-sub-item" data-tab="bhRetencao">Retencao</div>
                         <div class="sidebar-sub-item" data-tab="bhCustos">Receita & Assinaturas</div>
                         <div class="sidebar-sub-item" data-tab="bhRelatorios">Relatorios</div>
@@ -324,6 +350,7 @@
                 <div class="tab-content" id="bhAquisicao"></div>
                 <div class="tab-content" id="bhEngajamento"></div>
                 <div class="tab-content" id="bhAirton"></div>
+                <div class="tab-content" id="bhEmails"></div>
                 <div class="tab-content" id="bhRetencao"></div>
                 <div class="tab-content" id="bhCustos"></div>
                 <div class="tab-content" id="bhRelatorios"></div>
@@ -377,7 +404,7 @@
 
     const TAB_TITLES = {
         bhVisao: 'iAcoes - Visao Geral', bhAquisicao: 'iAcoes - Aquisicao', bhEngajamento: 'iAcoes - Engajamento',
-        bhAirton: 'iAcoes - Airton', bhRetencao: 'iAcoes - Retencao', bhCustos: 'iAcoes - Receita & Assinaturas', bhRelatorios: 'iAcoes - Relatorios', bhDetalhes: 'iAcoes - Detalhes',
+        bhAirton: 'iAcoes - Airton', bhEmails: 'iAcoes - Emails', bhRetencao: 'iAcoes - Retencao', bhCustos: 'iAcoes - Receita & Assinaturas', bhRelatorios: 'iAcoes - Relatorios', bhDetalhes: 'iAcoes - Detalhes',
         htaVisao: 'HTA - Visao Geral', htaAquisicao: 'HTA - Aquisicao', htaEngajamento: 'HTA - Engajamento',
         htaRetencao: 'HTA - Retencao', htaCustos: 'HTA - Custos', htaDetalhes: 'HTA - Detalhes',
         iacoes: 'iAcoes - Landing'
@@ -809,6 +836,162 @@
 
     function canvasHTML(id, title, extra='') { return `<div class="chart-container ${extra}"><div class="chart-title">${title}</div><canvas id="${id}"></canvas></div>`; }
 
+    // ===== SERIES ISOLATOR =====
+    /**
+     * Adiciona uma linha de chips acima do canvas para isolar UMA serie do
+     * grafico (ou voltar a ver todas). O clique na legenda do Chart.js so
+     * esconde/mostra uma serie por vez; com 5-6 series, ver so uma exige 5
+     * cliques. Aqui e 1 clique — e fica visivel que da pra fazer isso.
+     * Generico: le os datasets do proprio chart, entao serve pra qualquer
+     * grafico multi-serie ja existente.
+     */
+    function attachSeriesIsolator(canvasId, opts = {}) {
+        const chart = charts[canvasId];
+        const canvas = document.getElementById(canvasId);
+        if (!chart || !canvas) return;
+        const container = canvas.closest('.chart-container');
+        if (!container) return;
+        const datasets = chart.data.datasets || [];
+        if (datasets.length < 2) return;
+
+        // Evita duplicar a barra num re-render que reaproveitou o container
+        const existing = container.querySelector('.series-chips[data-for="' + canvasId + '"]');
+        if (existing) existing.remove();
+
+        const colorOf = ds => ds.borderColor || (Array.isArray(ds.backgroundColor) ? ds.backgroundColor[0] : ds.backgroundColor) || '#94a3b8';
+        const bar = document.createElement('div');
+        bar.className = 'series-chips';
+        bar.dataset.for = canvasId;
+        bar.innerHTML = `<button type="button" class="series-chip active" data-idx="all">${opts.allLabel || 'Todas'}</button>` +
+            datasets.map((ds, i) => `<button type="button" class="series-chip" data-idx="${i}"><span class="dot" style="background:${colorOf(ds)}"></span>${ds.label || 'Serie ' + (i + 1)}</button>`).join('');
+
+        bar.addEventListener('click', ev => {
+            const btn = ev.target.closest('.series-chip');
+            if (!btn) return;
+            const idx = btn.dataset.idx;
+            bar.querySelectorAll('.series-chip').forEach(b => b.classList.toggle('active', b === btn));
+            datasets.forEach((_, i) => chart.setDatasetVisibility(i, idx === 'all' || Number(idx) === i));
+            chart.update();
+        });
+
+        // Abaixo do titulo, acima do canvas
+        canvas.parentNode.insertBefore(bar, canvas);
+    }
+
+    // ===== SANKEY (SVG proprio, sem dependencia externa) =====
+    /**
+     * Desenha um diagrama de fluxo a partir de links no formato
+     * `{stage, source, target, value}` — o no `source` fica na coluna `stage`
+     * e o `target` na coluna `stage+1`.
+     *
+     * A chave de um no e (stage, label), nao so o label: o mesmo nome em
+     * colunas diferentes e um no diferente. Sem isso o fluxo de features
+     * viraria um emaranhado, ja que 'core' reaparece em todas as etapas.
+     *
+     * opts: { height, stageLabels: [], colors: {label: '#hex'}, unit }
+     */
+    function renderSankey(containerId, links, opts = {}) {
+        const el = document.getElementById(containerId);
+        if (!el) return;
+        const rows = (links || []).map(l => ({
+            stage: Number(l.stage) || 0, source: l.source, target: l.target, value: Number(l.value) || 0
+        })).filter(l => l.value > 0 && l.source && l.target);
+
+        if (rows.length === 0) {
+            el.innerHTML = `<p style="color:var(--m);font-size:13px;padding:12px">${opts.emptyMsg || 'Sem fluxo registrado no periodo selecionado.'}</p>`;
+            return;
+        }
+
+        const lastCol = Math.max(...rows.map(r => r.stage)) + 1;
+        const cols = Array.from({ length: lastCol + 1 }, () => new Map());
+        const nodeAt = (stage, label) => {
+            const m = cols[stage];
+            if (!m.has(label)) m.set(label, { stage, label, out: 0, inc: 0, value: 0, y: 0, h: 0 });
+            return m.get(label);
+        };
+        rows.forEach(r => {
+            r.s = nodeAt(r.stage, r.source);
+            r.t = nodeAt(r.stage + 1, r.target);
+            r.s.out += r.value; r.t.inc += r.value;
+        });
+
+        const colLists = cols.map(m => {
+            const list = [...m.values()];
+            list.forEach(n => { n.value = Math.max(n.out, n.inc); });
+            return list.sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+        });
+
+        // Escala unica pra todas as colunas: uma fita de 100 e visualmente
+        // igual em qualquer etapa. Escalar por coluna esconderia a evasao.
+        const GAP = 10, NW = 13, PAD_L = 158, PAD_R = 168, TOP = 26, VBW = 1000;
+        const maxCount = Math.max(...colLists.map(l => l.length));
+        const maxTotal = Math.max(...colLists.map(l => l.reduce((s, n) => s + n.value, 0)), 1);
+        const H = opts.height || Math.max(240, maxCount * 38);
+        const scale = Math.max((H - GAP * Math.max(maxCount - 1, 0)) / maxTotal, 0.0001);
+
+        colLists.forEach(list => {
+            let y = TOP;
+            list.forEach(n => { n.h = Math.max(n.value * scale, 1.5); n.y = y; y += n.h + GAP; });
+        });
+
+        const innerW = VBW - PAD_L - PAD_R;
+        const colX = i => PAD_L + (lastCol === 0 ? 0 : (i * (innerW - NW)) / lastCol);
+
+        // Cor por rotulo (estavel entre colunas), com override opcional
+        const palette = ['#6366f1', '#3ecf8e', '#f59e0b', '#3b82f6', '#ec4899', '#22c55e', '#8b5cf6', '#06b6d4', '#ef4444', '#94a3b8'];
+        const colorMap = Object.assign({}, opts.colors || {});
+        let ci = 0;
+        colLists.flat().forEach(n => { if (!colorMap[n.label]) colorMap[n.label] = palette[ci++ % palette.length]; });
+
+        // Offsets das fitas: na saida ordena por y do destino, na entrada por y
+        // da origem. Sao ordens diferentes de proposito — e o que minimiza
+        // cruzamentos dentro de cada no.
+        const outOff = new Map(), inOff = new Map();
+        rows.slice().sort((a, b) => a.s.y - b.s.y || a.t.y - b.t.y).forEach(r => {
+            const o = outOff.get(r.s) || 0;
+            r.sy = r.s.y + o; outOff.set(r.s, o + r.value * scale);
+        });
+        rows.slice().sort((a, b) => a.t.y - b.t.y || a.s.y - b.s.y).forEach(r => {
+            const o = inOff.get(r.t) || 0;
+            r.ty = r.t.y + o; inOff.set(r.t, o + r.value * scale);
+        });
+
+        const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const unit = opts.unit || 'itens';
+        const totalFirst = colLists[0].reduce((s, n) => s + n.value, 0);
+        const pct = v => totalFirst > 0 ? ((v / totalFirst) * 100).toFixed(1) + '%' : '';
+
+        const ribbons = rows.map(r => {
+            const x0 = colX(r.stage) + NW, x1 = colX(r.stage + 1);
+            const w = Math.max(r.value * scale, 0.8), c = (x1 - x0) / 2;
+            const d = `M${x0},${r.sy} C${x0 + c},${r.sy} ${x1 - c},${r.ty} ${x1},${r.ty} ` +
+                      `L${x1},${r.ty + w} C${x1 - c},${r.ty + w} ${x0 + c},${r.sy + w} ${x0},${r.sy + w} Z`;
+            return `<path class="sankey-link" d="${d}" fill="${colorMap[r.source]}"><title>${esc(r.source)} → ${esc(r.target)}: ${fmt(r.value)} ${unit} (${pct(r.value)})</title></path>`;
+        }).join('');
+
+        const nodesSvg = colLists.map((list, i) => list.map(n => {
+            const x = colX(i);
+            // Primeira coluna com rotulo a esquerda (usa PAD_L), as demais a
+            // direita do no (a ultima usa PAD_R). Assim nenhuma etiqueta
+            // atravessa o proprio diagrama nas bordas.
+            const onLeft = i === 0;
+            const tx = onLeft ? x - 8 : x + NW + 8;
+            const anchor = onLeft ? 'end' : 'start';
+            const ty = n.y + n.h / 2 + 4;
+            return `<g class="sankey-node">` +
+                `<rect x="${x}" y="${n.y}" width="${NW}" height="${n.h}" fill="${colorMap[n.label]}"><title>${esc(n.label)}: ${fmt(n.value)} ${unit} (${pct(n.value)})</title></rect>` +
+                `<text class="sankey-label" x="${tx}" y="${ty}" text-anchor="${anchor}">${esc(n.label)} <tspan class="v">${fmt(n.value)}</tspan></text>` +
+                `</g>`;
+        }).join('')).join('');
+
+        const stageLabels = (opts.stageLabels || []).map((lbl, i) => {
+            if (i > lastCol || !lbl) return '';
+            return `<text class="sankey-stage" x="${colX(i) + NW / 2}" y="12" text-anchor="middle">${esc(lbl)}</text>`;
+        }).join('');
+
+        el.innerHTML = `<div class="sankey-wrap"><svg viewBox="0 0 ${VBW} ${H + TOP + 12}" preserveAspectRatio="xMidYMin meet" role="img">${ribbons}${nodesSvg}${stageLabels}</svg></div>`;
+    }
+
     // ===== CHART HELPERS =====
     // (doughnut click-to-filter removed — replaced by horizontal bars)
     function _unused_setupDoughnutFilter(doughnutCanvasId, relatedChartId, rawData, f, categoryField, valueField, dateField, colorMap, colorArray) {
@@ -985,6 +1168,13 @@
             </div>
             <div class="chart-container mb-2"><div class="chart-title">Funil de Conversao</div><div class="funnel" id="bhAqFunnel"></div></div>
 
+            <!-- ===== Sankey de aquisicao (fonte -> profundidade de uso -> desfecho) ===== -->
+            <div class="section-block">
+                ${createSectionHeader('Fluxo de aquisicao', 'Cada usuario do periodo percorre fonte de origem (first-touch do primeiro session_start) &rarr; quantas features distintas usou &rarr; desfecho comercial. A largura da fita e o numero de usuarios. Responde "de onde vem quem paga?", que o funil agregado nao responde.')}
+                <div class="kpi-grid-compact" id="bhAqSankeyKpis"></div>
+                <div class="chart-container mb-2"><div class="chart-title">Fonte &rarr; Uso &rarr; Desfecho</div><div id="bhAqSankey"></div></div>
+            </div>
+
             <!-- ===== Metodos de Login (Google OAuth adoption) ===== -->
             <div class="section-block">
                 ${createSectionHeader('Metodos de Login (Google OAuth)', 'Adocao de Google OAuth vs email/senha. Habilitado em 2026-04-30. Eventos auth_login (started/success/error) e profile_type_onboarding_complete em usage_events. Respeita filtro temporal global.')}
@@ -1014,6 +1204,27 @@
                 </div>
             </div>
         `);
+
+        // ===== Sankey de aquisicao =====
+        const sankeyAcq = bh.sankey_acquisition || [];
+        const sankeyOv = bh.sankey_overview || {};
+        const acqUsers = Number(sankeyOv.acq_users) || 0;
+        const acqPaid = Number(sankeyOv.acq_paid) || 0;
+        document.getElementById('bhAqSankeyKpis').innerHTML = `
+            ${createKpiCardV2('Usuarios no periodo', fmt(acqUsers), { hint:'com pelo menos 1 evento' })}
+            ${createKpiCardV2('Pagaram / assinaram', fmt(acqPaid), { intent:'positive' })}
+            ${createKpiCardV2('Conversao', acqUsers>0?((acqPaid/acqUsers)*100).toFixed(1)+'%':'0%')}
+        `;
+        renderSankey('bhAqSankey', sankeyAcq, {
+            unit: 'usuarios',
+            height: 280,
+            stageLabels: ['Fonte (first-touch)', 'Profundidade de uso', 'Desfecho'],
+            // A fita herda a cor do no de origem: sem cor explicita no meio, todo
+            // o trecho "uso -> desfecho" sairia cinza.
+            colors: { 'Explorou (3+ features)':'#0ea5e9', 'Usou 1-2 features':'#f59e0b', 'So abriu':'#cbd5e1',
+                      'Pagou / assinou':'#22c55e', 'Checkout sem pagar':'#f59e0b', 'Parou no paywall':'#ec4899', 'Sem sinal de compra':'#cbd5e1' },
+            emptyMsg: 'Sem usuarios no periodo (ou a RPC get_analytics_data_bh_sankey_v1 ainda nao foi deployada).'
+        });
 
         // Filter referrer summary by date range
         const filteredRefDaily = filterSnapshot(refDaily, f);
@@ -1341,6 +1552,13 @@
             </div>
             <div class="chart-container mb-2"><div class="chart-title">Uso de Recursos (diario)</div><canvas id="bhEngFeatureDailyChart"></canvas></div>
 
+            <!-- ===== Sankey de navegacao entre features ===== -->
+            <div class="section-block">
+                ${createSectionHeader('Fluxo entre recursos', 'Ordem em que os recursos sao usados DENTRO de uma sessao: 1o recurso &rarr; 2o &rarr; 3o &rarr; 4o. Repeticoes consecutivas do mesmo recurso sao colapsadas (sem isso o fluxo seria quase so auto-loop). "Encerrou sessao" = a sessao acabou naquela etapa. `feature_usage` conta usos isolados e nao mostra essa ordem.')}
+                <div class="kpi-grid-compact" id="bhEngSankeyKpis"></div>
+                <div class="chart-container mb-2"><div class="chart-title">1o &rarr; 2o &rarr; 3o &rarr; 4o recurso da sessao</div><div id="bhEngSankey"></div></div>
+            </div>
+
             <!-- 2026-05-27: sub-barra de controles do bloco de tickers.
                  Multi-select aplica em ticker_trend_daily (server-side via RPC v3).
                  Toggle "Incluir admins" refetcha (server-side).
@@ -1501,6 +1719,24 @@
         charts.bhEngFeatureDailyChart = new Chart(document.getElementById('bhEngFeatureDailyChart'), {
             type:'bar', data:{labels:mcFD.labels,datasets:mcFD.categories.map((feat,i)=>({label:feat,data:mcFD.getValues(feat),backgroundColor:colorForCategory(feat,i)}))},
             options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+        });
+        attachSeriesIsolator('bhEngFeatureDailyChart');
+
+        // ===== Sankey de navegacao entre features =====
+        const sankeyEng = bh.sankey_engagement || [];
+        const sankeyOvEng = bh.sankey_overview || {};
+        const engSessions = Number(sankeyOvEng.eng_sessions) || 0;
+        const engMulti = Number(sankeyOvEng.eng_multi_feature) || 0;
+        document.getElementById('bhEngSankeyKpis').innerHTML = `
+            ${createKpiCardV2('Sessoes com recurso', fmt(engSessions))}
+            ${createKpiCardV2('Usaram 2+ recursos', fmt(engMulti), { hint: engSessions>0?((engMulti/engSessions)*100).toFixed(1)+'% das sessoes':'' })}
+        `;
+        renderSankey('bhEngSankey', sankeyEng, {
+            unit: 'sessoes',
+            height: 380,
+            stageLabels: ['1o recurso', '2o recurso', '3o recurso', '4o recurso', '5o recurso'],
+            colors: { 'Encerrou sessao': '#cbd5e1', 'Outros': '#94a3b8' },
+            emptyMsg: 'Sem sessoes com recurso identificado no periodo (ou a RPC get_analytics_data_bh_sankey_v1 ainda nao foi deployada).'
         });
 
         // ── 2026-05-27: wire ticker controls ──
@@ -2554,6 +2790,347 @@
         }
     }
 
+    // ===== EMAILS (iAcoes) =====
+    // Fonte: get_analytics_data_bh_email_v1 (migration 20260828_bh_email_analytics_v1.sql).
+    // Substitui a secao "Comunicacao outbound" da aba Detalhes, que mostrava
+    // email_type cru (37 valores distintos, sem taxonomia e sem performance).
+    //
+    // NAO existe taxa de abertura: email_log nao tem opened_at e o provedor nao
+    // manda webhook. A metrica de engajamento aqui e o CLIQUE, reconstruido por
+    // utm_source=email em usage_events (first-touch por usuario x campanha).
+    const EMAIL_CAT_LABELS = {
+        digest:'Digest CVM', onboarding:'Onboarding', trial:'Trial', dunning:'Cobranca',
+        winback:'Winback', activation:'Ativacao', community:'Comunidade',
+        announcement:'Anuncio', content:'Conteudo', manual:'Manual', other:'Outro'
+    };
+    const EMAIL_CAT_COLORS = {
+        digest:'#6366f1', onboarding:'#3ecf8e', trial:'#f59e0b', dunning:'#ef4444',
+        winback:'#8b5cf6', activation:'#22c55e', community:'#ec4899',
+        announcement:'#3b82f6', content:'#14b8a6', manual:'#94a3b8', other:'#64748b'
+    };
+    const EMAIL_CADENCE_LABELS = {
+        recorrente:'Recorrente', automatico:'Automatico (gatilho)', campanha:'Campanha (blast)', manual:'Manual', other:'Outro'
+    };
+    const EMAIL_STAGE_LABELS = {
+        ativacao:'Ativacao', engajamento:'Engajamento', retencao:'Retencao', monetizacao:'Monetizacao', outro:'Outro'
+    };
+    const emailCatLabel = c => EMAIL_CAT_LABELS[c] || c || '-';
+    const emailCatColor = c => EMAIL_CAT_COLORS[c] || '#94a3b8';
+    /** Badge colorido de categoria para uso em tabelas. */
+    function emailCatBadge(c) {
+        const color = emailCatColor(c);
+        return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;background:${color}1a;color:${color};white-space:nowrap;">${emailCatLabel(c)}</span>`;
+    }
+
+    function renderBhEmails() {
+        const bh = dashboardData.bh; const f = globalFilters;
+        const ov = bh.email_overview || {};
+        const byCat = bh.email_by_category || [];
+        const byCadence = bh.email_by_cadence || [];
+        const byStage = bh.email_by_stage || [];
+        const byType = bh.email_by_type || [];
+        const campaigns = bh.email_campaigns || [];
+        const daily = bh.email_daily || [];
+        const clickFunnel = bh.email_click_funnel || {};
+        const timeToClick = bh.email_time_to_click || [];
+        const domains = bh.email_domains || [];
+        const subjectSrc = bh.email_subject_source || [];
+        const frequency = bh.email_frequency || [];
+        const topRecipients = bh.email_top_recipients || [];
+        const failures = bh.email_failures || [];
+        const sendHour = bh.email_send_hour || [];
+        const optin = bh.email_optin || {};
+        const byTier = bh.email_by_tier || [];
+
+        const includeAdmins = !!window._emailIncludeAdmins;
+
+        buildHTML('bhEmails', `
+            <div class="section-block">
+                ${createSectionHeader('Emails enviados pela plataforma',
+                  'Todos os disparos de <code>email_log</code> classificados em 3 eixos: categoria (familia), cadencia (como dispara) e estagio (onde atua no funil).',
+                  `<div id="bhEmailAdminToggle" style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid #94a3b8;border-radius:16px;cursor:pointer;font-size:0.78rem;color:#64748b;user-select:none;">
+                     <span id="bhEmailAdminDot" style="width:8px;height:8px;border-radius:50%;background:#94a3b8;"></span>
+                     <span id="bhEmailAdminLabel">Sem admins (oficial)</span>
+                   </div>`)}
+                <div id="bhEmailNoOpenNotice" style="margin:0 0 14px;padding:10px 14px;border-left:3px solid #f59e0b;background:#fffbeb;border-radius:4px;font-size:0.82rem;color:#78350f;line-height:1.5;">
+                    <strong>Taxa de abertura nao esta disponivel.</strong>
+                    A tabela <code>email_log</code> registra apenas o envio &mdash; nao ha <code>opened_at</code>,
+                    pixel de rastreio nem webhook do provedor. O engajamento aqui e medido por
+                    <strong>clique</strong>, reconstruido pelas UTMs (<code>utm_source=email</code>) que chegam
+                    em <code>usage_events</code>. Como so os links que carregam UTM sao rastreados,
+                    o CTR abaixo e um <em>piso</em>, nao o valor real.
+                </div>
+                <div class="kpi-grid-compact" id="bhEmailHeroKpis"></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Taxonomia', 'Volume e desempenho por familia de email. O CTR usa entregues como denominador.')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhEmailCatVolumeChart','Enviados por Categoria')}
+                    ${canvasHTML('bhEmailCatCtrChart','CTR por Categoria (%)')}
+                </div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhEmailCadenceChart','Enviados por Cadencia')}
+                    ${canvasHTML('bhEmailStageChart','Enviados por Estagio do Funil')}
+                </div>
+                <div class="chart-container mb-2"><div class="chart-title">Envios diarios por categoria</div><canvas id="bhEmailDailyChart"></canvas></div>
+                <div class="table-container"><div class="table-title" id="bhEmailTypeTitle">Todos os tipos de email</div><div style="max-height:460px;overflow-y:auto"><table id="bhEmailTypeTable"></table></div></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Do envio ao pagamento', 'Funil de clique. Sessoes = primeira sessao de cada usuario por campanha (a UTM fica gravada na sessao, entao visitas organicas posteriores nao contam como clique novo).')}
+                <div class="kpi-grid-compact" id="bhEmailFunnelKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhEmailFunnelChart','Funil de clique')}
+                    ${canvasHTML('bhEmailTimeToClickChart','Tempo ate o primeiro clique')}
+                </div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Campanhas', 'Cada linha e uma chave de atribuicao (utm_campaign, campaign ou email_type). Sessoes/Login/Pago vem da sessao aberta pelo clique.')}
+                <div class="table-container"><div class="table-title" id="bhEmailCampaignTitle">Performance por campanha</div><div style="max-height:460px;overflow-y:auto"><table id="bhEmailCampaignTable"></table></div></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Entregabilidade & timing', 'Falhas por dominio e efeito do horario de disparo sobre o clique.')}
+                <div class="charts-grid">
+                    ${canvasHTML('bhEmailHourChart','Envios por hora do dia (Brasilia)')}
+                    ${canvasHTML('bhEmailSubjectChart','Assunto: IA vs fallback (CTR %)')}
+                </div>
+                <div class="table-container"><div class="table-title">Dominios dos destinatarios</div><table id="bhEmailDomainTable"></table></div>
+                <div class="table-container"><div class="table-title">Falhas de envio</div><table id="bhEmailFailureTable"></table></div>
+            </div>
+
+            <div class="section-block">
+                ${createSectionHeader('Pressao sobre a base', 'Quantos emails cada pessoa recebe e quem esta sendo mais impactado. Base de opt-in dos digests e estado atual (nao respeita o filtro de periodo).')}
+                <div class="kpi-grid-compact" id="bhEmailOptinKpis"></div>
+                <div class="charts-grid">
+                    ${canvasHTML('bhEmailFrequencyChart','Emails recebidos por pessoa')}
+                    ${canvasHTML('bhEmailTierChart','Envios por tier (digests)')}
+                </div>
+                <div class="table-container"><div class="table-title" id="bhEmailRecipientTitle">Destinatarios mais impactados</div><div style="max-height:400px;overflow-y:auto"><table id="bhEmailRecipientTable"></table></div></div>
+            </div>
+        `);
+
+        // ── Toggle admins ──
+        const adminToggle = document.getElementById('bhEmailAdminToggle');
+        if (adminToggle) {
+            const dot = document.getElementById('bhEmailAdminDot');
+            const label = document.getElementById('bhEmailAdminLabel');
+            adminToggle.style.borderColor = includeAdmins ? '#f59e0b' : '#94a3b8';
+            adminToggle.style.color = includeAdmins ? '#f59e0b' : '#64748b';
+            dot.style.background = includeAdmins ? '#f59e0b' : '#94a3b8';
+            label.textContent = includeAdmins ? 'Incluindo admins (debug)' : 'Sem admins (oficial)';
+            adminToggle.onclick = () => {
+                window._emailIncludeAdmins = !window._emailIncludeAdmins;
+                refetchAndRerender();
+            };
+        }
+
+        // ── Hero KPIs ──
+        const failRate = ov.fail_rate || 0;
+        document.getElementById('bhEmailHeroKpis').innerHTML = [
+            createKpiCardV2('Enviados', fmt(ov.total_sent||0), { hero:true, hint:`${fmt(ov.campaigns||0)} campanhas, ${fmt(ov.email_types||0)} tipos` }),
+            createKpiCardV2('Aceitos pelo provedor', fmt(ov.delivered||0), { intent:'positive', hint:`${(100-failRate).toFixed(1)}% dos disparos` }),
+            createKpiCardV2('Falhas', fmt(ov.failed||0), { intent: failRate > 1 ? 'negative' : 'positive', hint:`${failRate.toFixed(2)}% de falha` }),
+            createKpiCardV2('Destinatarios unicos', fmt(ov.unique_recipients||0), { hint:`${ov.sends_per_recipient||0} emails por pessoa` }),
+            createKpiCardV2('Cliques rastreados', fmt(ov.clicked_sends||0), { hint:`${ov.ctr_sends||0}% dos entregues (piso)` }),
+            createKpiCardV2('Pessoas que clicaram', fmt(ov.unique_clickers||0), { intent:'positive', hint:`${ov.ctr_recipients||0}% dos destinatarios` }),
+            createKpiCardV2('Mediana ate o clique', ov.median_hours_to_click != null ? String(ov.median_hours_to_click) : '-', { unit:'h' }),
+            createKpiCardV2('Dominios atingidos', fmt(ov.domains||0))
+        ].join('');
+
+        // ── Taxonomia ──
+        const catSorted = [...byCat].sort((a,b)=>(b.sent||0)-(a.sent||0));
+        if (!showEmptyIfNeeded('bhEmailCatVolumeChart', catSorted, 'Nenhum email no periodo')) {
+            doughnutChart('bhEmailCatVolumeChart',
+                catSorted.map(r=>emailCatLabel(r.category)),
+                catSorted.map(r=>r.sent||0),
+                catSorted.map(r=>emailCatColor(r.category)));
+        }
+        // CTR ordenado por desempenho (nao por volume) — a leitura util aqui e "o que engaja".
+        const ctrSorted = [...byCat].filter(r=>(r.delivered||0)>0).sort((a,b)=>(b.ctr||0)-(a.ctr||0));
+        if (!showEmptyIfNeeded('bhEmailCatCtrChart', ctrSorted, 'Sem cliques rastreados no periodo')) {
+            doughnutChart('bhEmailCatCtrChart',
+                ctrSorted.map(r=>emailCatLabel(r.category)),
+                ctrSorted.map(r=>r.ctr||0),
+                ctrSorted.map(r=>emailCatColor(r.category)));
+        }
+        if (!showEmptyIfNeeded('bhEmailCadenceChart', byCadence, 'Sem dados')) {
+            doughnutChart('bhEmailCadenceChart',
+                byCadence.map(r=>EMAIL_CADENCE_LABELS[r.cadence]||r.cadence),
+                byCadence.map(r=>r.sent||0), COLORS);
+        }
+        if (!showEmptyIfNeeded('bhEmailStageChart', byStage, 'Sem dados')) {
+            doughnutChart('bhEmailStageChart',
+                byStage.map(r=>EMAIL_STAGE_LABELS[r.stage]||r.stage),
+                byStage.map(r=>r.sent||0), COLORS.slice(3));
+        }
+
+        const dailyFiltered = filterSnapshot(daily, f);
+        if (!showEmptyIfNeeded('bhEmailDailyChart', dailyFiltered, 'Sem envios no periodo')) {
+            const mc = prepareMultiCategoryTS(daily, f, 'category', 'sent');
+            destroyChart('bhEmailDailyChart');
+            charts.bhEmailDailyChart = new Chart(document.getElementById('bhEmailDailyChart'), {
+                type:'bar',
+                data:{labels:mc.labels,datasets:mc.categories.map(c=>({label:emailCatLabel(c),data:mc.getValues(c),backgroundColor:emailCatColor(c)}))},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
+            });
+        }
+
+        const typeTable = document.getElementById('bhEmailTypeTable');
+        typeTable.innerHTML = `<thead><tr>
+            <th>Tipo</th><th>Categoria</th><th>Cadencia</th><th>Estagio</th>
+            <th>Enviados</th><th>Destinatarios</th><th>Falhas</th><th>Cliques</th><th>CTR %</th><th>Mediana (h)</th><th>Ultimo envio</th>
+        </tr></thead><tbody>${byType.map(r=>`<tr>
+            <td style="font-family:monospace;font-size:0.78rem;">${r.email_type||'-'}</td>
+            <td>${emailCatBadge(r.category)}</td>
+            <td style="color:var(--m);font-size:0.8rem;">${EMAIL_CADENCE_LABELS[r.cadence]||r.cadence||'-'}</td>
+            <td style="color:var(--m);font-size:0.8rem;">${EMAIL_STAGE_LABELS[r.stage]||r.stage||'-'}</td>
+            <td><strong>${fmt(r.sent||0)}</strong></td>
+            <td>${fmt(r.recipients||0)}</td>
+            <td style="color:${(r.failed||0)>0?'#ef4444':'inherit'};">${fmt(r.failed||0)}</td>
+            <td>${fmt(r.clicks||0)}</td>
+            <td style="font-weight:600;color:${(r.ctr||0)>=1?'#3ecf8e':'var(--m)'};">${r.ctr != null ? r.ctr : '0'}%</td>
+            <td>${r.median_hours_to_click != null ? r.median_hours_to_click : '-'}</td>
+            <td style="color:var(--m);font-size:0.8rem;">${r.last_send||'-'}</td>
+        </tr>`).join('')}</tbody>`;
+        makeSortable(typeTable);
+        addExportBtn('#bhEmailTypeTitle', 'bhEmailTypeTable');
+
+        // ── Funil de clique ──
+        const fSent = clickFunnel.sent||0, fDelivered = clickFunnel.delivered||0;
+        const fRecipients = clickFunnel.recipients||0, fClickers = clickFunnel.clickers||0;
+        const fSessions = clickFunnel.sessions||0, fLogin = clickFunnel.sessions_login||0;
+        const fPaywall = clickFunnel.sessions_paywall||0, fPayment = clickFunnel.sessions_payment||0;
+        const pctOf = (n,d) => d > 0 ? ((n/d)*100).toFixed(1)+'%' : '-';
+        document.getElementById('bhEmailFunnelKpis').innerHTML = [
+            createKpiCardV2('Destinatarios', fmt(fRecipients), { hint:`${fmt(fDelivered)} emails aceitos` }),
+            createKpiCardV2('Clicaram', fmt(fClickers), { intent:'positive', hint:`${pctOf(fClickers, fRecipients)} dos destinatarios` }),
+            createKpiCardV2('Sessoes abertas', fmt(fSessions), { hint:'primeira sessao por usuario x campanha' }),
+            createKpiCardV2('Com login', fmt(fLogin), { hint:`${pctOf(fLogin, fSessions)} das sessoes` }),
+            createKpiCardV2('Bateram no paywall', fmt(fPaywall), { hint:`${pctOf(fPaywall, fSessions)} das sessoes` }),
+            createKpiCardV2('Pagaram', fmt(fPayment), { intent: fPayment > 0 ? 'positive' : null, hint:`${pctOf(fPayment, fSessions)} das sessoes` })
+        ].join('');
+
+        const funnelLabels = ['Enviados','Aceitos','Destinatarios','Clicaram','Sessoes','Login','Paywall','Pagamento'];
+        const funnelValues = [fSent, fDelivered, fRecipients, fClickers, fSessions, fLogin, fPaywall, fPayment];
+        if (!showEmptyIfNeeded('bhEmailFunnelChart', funnelValues.filter(v=>v>0), 'Sem dados de funil')) {
+            destroyChart('bhEmailFunnelChart');
+            charts.bhEmailFunnelChart = new Chart(document.getElementById('bhEmailFunnelChart'), {
+                type:'bar',
+                data:{labels:funnelLabels,datasets:[{label:'Volume',data:funnelValues,backgroundColor:['#94a3b8','#64748b','#6366f1','#8b5cf6','#3b82f6','#3ecf8e','#f59e0b','#22c55e'],borderRadius:6}]},
+                // Escala log: o funil vai de milhares de envios a unidades de pagamento.
+                options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{type:'logarithmic',beginAtZero:false,grid:{color:'#f1f5f9'}}}}
+            });
+        }
+
+        const ttcRows = timeToClick.filter(r=>(r.cnt||0)>0);
+        if (!showEmptyIfNeeded('bhEmailTimeToClickChart', ttcRows, 'Nenhum clique rastreado')) {
+            barChart('bhEmailTimeToClickChart', timeToClick.map(r=>r.bucket),
+                [{label:'Cliques',data:timeToClick.map(r=>r.cnt||0),backgroundColor:'#6366f1',borderRadius:6}]);
+        }
+
+        // ── Campanhas ──
+        const campTable = document.getElementById('bhEmailCampaignTable');
+        campTable.innerHTML = `<thead><tr>
+            <th>Campanha</th><th>Categoria</th><th>Enviados</th><th>Destinatarios</th>
+            <th>Cliques</th><th>CTR %</th><th>Sessoes</th><th>Login</th><th>Paywall</th><th>Pago</th><th>1o envio</th>
+        </tr></thead><tbody>${campaigns.map(r=>`<tr>
+            <td style="font-family:monospace;font-size:0.78rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.campaign_key||''}">${r.campaign_key||'-'}</td>
+            <td>${emailCatBadge(r.category)}</td>
+            <td><strong>${fmt(r.sent||0)}</strong></td>
+            <td>${fmt(r.recipients||0)}</td>
+            <td>${fmt(r.clicks||0)}</td>
+            <td style="font-weight:600;color:${(r.ctr||0)>=1?'#3ecf8e':'var(--m)'};">${r.ctr != null ? r.ctr : '0'}%</td>
+            <td>${fmt(r.sessions||0)}</td>
+            <td>${fmt(r.sessions_login||0)}</td>
+            <td>${fmt(r.sessions_paywall||0)}</td>
+            <td style="color:${(r.sessions_payment||0)>0?'#3ecf8e':'inherit'};font-weight:${(r.sessions_payment||0)>0?'600':'400'};">${fmt(r.sessions_payment||0)}</td>
+            <td style="color:var(--m);font-size:0.8rem;">${r.first_send||'-'}</td>
+        </tr>`).join('')}</tbody>`;
+        makeSortable(campTable);
+        addExportBtn('#bhEmailCampaignTitle', 'bhEmailCampaignTable');
+
+        // ── Entregabilidade & timing ──
+        if (!showEmptyIfNeeded('bhEmailHourChart', sendHour, 'Sem envios no periodo')) {
+            destroyChart('bhEmailHourChart');
+            charts.bhEmailHourChart = new Chart(document.getElementById('bhEmailHourChart'), {
+                type:'bar',
+                data:{labels:sendHour.map(r=>String(r.hour).padStart(2,'0')+'h'),datasets:[
+                    {type:'bar',label:'Enviados',data:sendHour.map(r=>r.sent||0),backgroundColor:'#6366f1',borderRadius:4,yAxisID:'y'},
+                    {type:'line',label:'CTR %',data:sendHour.map(r=>r.ctr||0),borderColor:'#3ecf8e',backgroundColor:'#3ecf8e',fill:false,tension:0.4,pointRadius:2,yAxisID:'y1'}
+                ]},
+                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},
+                    scales:{y:{beginAtZero:true,position:'left',grid:{color:'#f1f5f9'}},y1:{beginAtZero:true,position:'right',grid:{display:false},ticks:{callback:v=>v+'%'}}}}
+            });
+        }
+        if (!showEmptyIfNeeded('bhEmailSubjectChart', subjectSrc, 'Sem metadados de assunto (so digests registram)')) {
+            barChart('bhEmailSubjectChart', subjectSrc.map(r=>r.subject_source),
+                [{label:'CTR %',data:subjectSrc.map(r=>r.ctr||0),backgroundColor:subjectSrc.map((_,i)=>COLORS[i%COLORS.length]),borderRadius:6}]);
+        }
+
+        const domTable = document.getElementById('bhEmailDomainTable');
+        domTable.innerHTML = `<thead><tr><th>Dominio</th><th>Enviados</th><th>Destinatarios</th><th>Falhas</th><th>Falha %</th><th>Cliques</th><th>CTR %</th></tr></thead>
+            <tbody>${domains.map(r=>`<tr>
+                <td>${r.domain||'-'}</td>
+                <td><strong>${fmt(r.sent||0)}</strong></td>
+                <td>${fmt(r.recipients||0)}</td>
+                <td style="color:${(r.failed||0)>0?'#ef4444':'inherit'};">${fmt(r.failed||0)}</td>
+                <td style="color:${(r.fail_rate||0)>1?'#ef4444':'var(--m)'};">${r.fail_rate != null ? r.fail_rate : '0'}%</td>
+                <td>${fmt(r.clicks||0)}</td>
+                <td style="font-weight:600;">${r.ctr != null ? r.ctr : '0'}%</td>
+            </tr>`).join('')}</tbody>`;
+        makeSortable(domTable);
+
+        const failTable = document.getElementById('bhEmailFailureTable');
+        failTable.innerHTML = failures.length === 0
+            ? `<tbody><tr><td style="padding:14px;color:var(--m);">Nenhuma falha de envio no periodo.</td></tr></tbody>`
+            : `<thead><tr><th>Tipo</th><th>Categoria</th><th>Erro</th><th>Ocorrencias</th><th>Primeira</th><th>Ultima</th></tr></thead>
+               <tbody>${failures.map(r=>`<tr>
+                   <td style="font-family:monospace;font-size:0.78rem;">${r.email_type||'-'}</td>
+                   <td>${emailCatBadge(r.category)}</td>
+                   <td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.8rem;" title="${(r.error_message||'').replace(/"/g,'&quot;')}">${r.error_message||'-'}</td>
+                   <td><strong>${fmt(r.cnt||0)}</strong></td>
+                   <td style="color:var(--m);font-size:0.8rem;">${r.first_seen||'-'}</td>
+                   <td style="color:var(--m);font-size:0.8rem;">${r.last_seen||'-'}</td>
+               </tr>`).join('')}</tbody>`;
+        if (failures.length > 0) makeSortable(failTable);
+
+        // ── Pressao sobre a base ──
+        document.getElementById('bhEmailOptinKpis').innerHTML = [
+            createKpiCardV2('Opt-in digest por email', fmt(optin.any_email_digest||0), { hero:true, hint:`de ${fmt(optin.total_prefs||0)} com preferencias salvas` }),
+            createKpiCardV2('Digest diario (email)', fmt(optin.daily_email||0)),
+            createKpiCardV2('Digest semanal (email)', fmt(optin.weekly_email||0)),
+            createKpiCardV2('Digest diario (WhatsApp)', fmt(optin.daily_whatsapp||0)),
+            createKpiCardV2('Digest diario (Telegram)', fmt(optin.daily_telegram||0))
+        ].join('');
+
+        const freqRows = frequency.filter(r=>(r.users||0)>0);
+        if (!showEmptyIfNeeded('bhEmailFrequencyChart', freqRows, 'Sem destinatarios no periodo')) {
+            barChart('bhEmailFrequencyChart', frequency.map(r=>r.bucket),
+                [{label:'Pessoas',data:frequency.map(r=>r.users||0),backgroundColor:'#8b5cf6',borderRadius:6}]);
+        }
+        if (!showEmptyIfNeeded('bhEmailTierChart', byTier, 'Sem metadados de tier (so digests registram)')) {
+            doughnutChart('bhEmailTierChart', byTier.map(r=>r.tier), byTier.map(r=>r.sent||0), COLORS.slice(1));
+        }
+
+        const recTable = document.getElementById('bhEmailRecipientTable');
+        recTable.innerHTML = `<thead><tr><th>Email</th><th>Recebidos</th><th>Tipos</th><th>Categorias</th><th>Cliques</th><th>CTR %</th><th>Ultimo envio</th><th>Ultimo clique</th></tr></thead>
+            <tbody>${topRecipients.map(r=>`<tr>
+                <td style="font-size:0.82rem;">${r.email||'-'}</td>
+                <td><strong>${fmt(r.sent||0)}</strong></td>
+                <td>${fmt(r.types||0)}</td>
+                <td>${fmt(r.categories||0)}</td>
+                <td>${fmt(r.clicks||0)}</td>
+                <td style="font-weight:600;color:${(r.ctr||0)>=1?'#3ecf8e':'var(--m)'};">${r.ctr != null ? r.ctr : '0'}%</td>
+                <td style="color:var(--m);font-size:0.8rem;">${r.last_send||'-'}</td>
+                <td style="color:var(--m);font-size:0.8rem;">${r.last_click||'-'}</td>
+            </tr>`).join('')}</tbody>`;
+        makeSortable(recTable);
+        addExportBtn('#bhEmailRecipientTitle', 'bhEmailRecipientTable');
+    }
+
     function renderBhRetencao() {
         const bh = dashboardData.bh; const f = globalFilters;
         const stickiness = bh.stickiness || [];
@@ -3408,14 +3985,10 @@
             <div class="table-container"><div class="table-title">Tamanhos de Tabela</div><table id="bhDetTableSizes"></table></div>
 
             <div class="section-block">
-                ${createSectionHeader('Comunicacao outbound', 'Volumes de email (email_log) e WhatsApp (whatsapp_log) enviados pela plataforma.')}
+                ${createSectionHeader('Comunicacao outbound (WhatsApp)', 'Volumes de <code>whatsapp_log</code>. As metricas de email sairam daqui: viraram a aba <strong>Emails</strong>, com taxonomia por categoria/cadencia/estagio e atribuicao de clique.')}
                 <div class="kpi-grid-compact" id="bhDetCommKpis"></div>
                 <div class="charts-grid">
-                    ${canvasHTML('bhDetEmailChart','Email por Tipo (totais)')}
                     ${canvasHTML('bhDetWhatsappChart','WhatsApp por Categoria (totais)')}
-                </div>
-                <div class="charts-grid">
-                    ${canvasHTML('bhDetEmailDailyChart','Emails enviados (diario)')}
                     ${canvasHTML('bhDetWhatsappDailyChart','WhatsApp enviados (diario)')}
                 </div>
             </div>
@@ -3446,41 +4019,24 @@
         document.getElementById('bhDetTableSizes').innerHTML = `<thead><tr><th>Tabela</th><th>Tamanho</th><th>Rows</th></tr></thead><tbody>${tableSizes.map(t=>`<tr><td>${t.table_name||'-'}</td><td>${fmtBytes(t.total_bytes||0)}</td><td>${fmt(t.row_count||0)}</td></tr>`).join('')}</tbody>`;
         makeSortable(document.getElementById('bhDetTableSizes'));
 
-        // ===== Comunicacao outbound =====
-        const emailDaily = bh.email_log_daily || [];
-        const emailSummary = bh.email_log_summary || [];
+        // ===== Comunicacao outbound (WhatsApp) =====
+        // 2026-08-28: email saiu desta aba. As chaves email_log_* continuam vindo
+        // de get_analytics_data_bh_extras_v2, mas nao sao mais renderizadas aqui —
+        // a aba Emails usa get_analytics_data_bh_email_v1, que filtra admins e
+        // classifica os tipos. Manter os dois na tela mostrava numeros divergentes.
         const whatsappDaily = bh.whatsapp_log_daily || [];
         const whatsappSummary = bh.whatsapp_log_summary || [];
-        const totalEmails = emailSummary.reduce((s,r)=>s+(r.total||0),0);
-        const sentEmails = emailSummary.reduce((s,r)=>s+(r.sent||0),0);
-        const failedEmails = emailSummary.reduce((s,r)=>s+(r.failed||0),0);
         const totalWhatsapp = whatsappSummary.reduce((s,r)=>s+(r.total||0),0);
-        const emailSuccessRate = totalEmails > 0 ? (sentEmails/totalEmails*100) : 0;
+        // unique_recipients e por categoria — somar entre categorias contaria o
+        // mesmo usuario varias vezes, entao mostramos so a maior categoria.
+        const waTop = whatsappSummary[0];
         document.getElementById('bhDetCommKpis').innerHTML = `
-            ${createKpiCardV2('Emails Enviados', fmt(totalEmails), { hint:`${fmt(sentEmails)} sent, ${fmt(failedEmails)} failed` })}
-            ${createKpiCardV2('Taxa de Sucesso Email', emailSuccessRate.toFixed(1), { unit:'%', intent: emailSuccessRate > 95 ? 'positive' : 'warning' })}
-            ${createKpiCardV2('WhatsApp Enviados', fmt(totalWhatsapp))}
-            ${createKpiCardV2('Tipos Email', fmt(emailSummary.length))}
+            ${createKpiCardV2('WhatsApp Enviados', fmt(totalWhatsapp), { hero:true })}
             ${createKpiCardV2('Categorias WhatsApp', fmt(whatsappSummary.length))}
+            ${createKpiCardV2('Categoria principal', waTop ? (waTop.category||'-') : '-', { hint: waTop ? `${fmt(waTop.total||0)} envios, ${fmt(waTop.unique_recipients||0)} destinatarios` : '' })}
         `;
-        if (!showEmptyIfNeeded('bhDetEmailChart', emailSummary, 'Nenhum email enviado')) {
-            barChart('bhDetEmailChart', emailSummary.map(r=>r.email_type||'-'), [
-                {label:'Sent',data:emailSummary.map(r=>r.sent||0),backgroundColor:'#3ecf8e'},
-                {label:'Failed',data:emailSummary.map(r=>r.failed||0),backgroundColor:'#ef4444'}
-            ], {horizontal:true});
-        }
         if (!showEmptyIfNeeded('bhDetWhatsappChart', whatsappSummary, 'Nenhum WhatsApp enviado')) {
             barChart('bhDetWhatsappChart', whatsappSummary.map(r=>r.category||'-'), [{label:'Total',data:whatsappSummary.map(r=>r.total||0),backgroundColor:'#25d366'}], {horizontal:true});
-        }
-        const emailDailyFiltered = filterSnapshot(emailDaily, f);
-        if (!showEmptyIfNeeded('bhDetEmailDailyChart', emailDailyFiltered, 'Sem emails no periodo')) {
-            const mcED = prepareMultiCategoryTS(emailDaily, f, 'email_type', 'sent');
-            const topTypes = mcED.categories.slice(0,6);
-            destroyChart('bhDetEmailDailyChart');
-            charts.bhDetEmailDailyChart = new Chart(document.getElementById('bhDetEmailDailyChart'), {
-                type:'bar',data:{labels:mcED.labels,datasets:topTypes.map((t,i)=>({label:t,data:mcED.getValues(t),backgroundColor:COLORS[i%COLORS.length]}))},
-                options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{mode:'index',callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
-            });
         }
         const waDailyFiltered = filterSnapshot(whatsappDaily, f);
         if (!showEmptyIfNeeded('bhDetWhatsappDailyChart', waDailyFiltered, 'Sem WhatsApp no periodo')) {
@@ -4230,6 +4786,57 @@
     }
 
     // ===== IACOES TAB =====
+
+    // Dimensoes disponiveis em `iacoes_dim_daily` (RPC get_analytics_data_iacoes_v3).
+    // A RPC entrega uma tabela tidy (day, dim, value, metricas), entao o
+    // explorador abaixo e um so bloco de codigo para as 9 dimensoes.
+    const LANDING_DIMS = [
+        { k: 'fonte',        l: 'Fonte de trafego' },
+        { k: 'tipo_pagina',  l: 'Tipo de pagina' },
+        { k: 'pagina',       l: 'Pagina de entrada' },
+        { k: 'dispositivo',  l: 'Dispositivo' },
+        { k: 'navegador',    l: 'Navegador' },
+        { k: 'so',           l: 'Sistema operacional' },
+        { k: 'utm_source',   l: 'UTM source' },
+        { k: 'utm_medium',   l: 'UTM medium' },
+        { k: 'utm_campaign', l: 'UTM campaign' }
+    ];
+    // Campos somaveis de `iacoes_dim_daily`. Tudo que e taxa fica FORA daqui e
+    // e recalculado depois da soma (`derive`) -- somar percentuais de dias
+    // diferentes daria um numero sem significado.
+    const LANDING_SUM_FIELDS = ['sessions', 'views', 'cta_clicks', 'bounces', 'clicked_sessions',
+                                'scroll_25', 'scroll_50', 'scroll_75', 'scroll_100',
+                                'multi_page_sessions', 'dur_sum'];
+    const LANDING_METRICS = [
+        { k: 'sessions',        l: 'Sessoes',                 kind: 'int' },
+        { k: 'views',           l: 'Page views',              kind: 'int' },
+        { k: 'cta_clicks',      l: 'Cliques em CTA',          kind: 'int' },
+        { k: 'clicked_sessions',l: 'Sessoes que clicaram',    kind: 'int' },
+        { k: 'scroll_100',      l: 'Leram ate o fim',         kind: 'int' },
+        { k: 'bounce_rate',     l: 'Taxa de rejeicao',        kind: 'pct', derive: r => r.sessions > 0 ? r.bounces / r.sessions * 100 : 0 },
+        { k: 'cta_rate',        l: 'Taxa de CTA',             kind: 'pct', derive: r => r.sessions > 0 ? r.clicked_sessions / r.sessions * 100 : 0 },
+        { k: 'scroll50_rate',   l: '% passou da metade',      kind: 'pct', derive: r => r.sessions > 0 ? r.scroll_50 / r.sessions * 100 : 0 },
+        { k: 'scroll100_rate',  l: '% leu ate o fim',         kind: 'pct', derive: r => r.sessions > 0 ? r.scroll_100 / r.sessions * 100 : 0 },
+        { k: 'pages_per_session', l: 'Paginas por sessao',    kind: 'dec', derive: r => r.sessions > 0 ? r.views / r.sessions : 0 },
+        { k: 'avg_duration',    l: 'Tempo medio na sessao',   kind: 'dur', derive: r => r.sessions > 0 ? r.dur_sum / r.sessions : 0 }
+    ];
+
+    function fmtDur(sec) {
+        const s = Math.round(Number(sec) || 0);
+        if (s < 60) return s + 's';
+        const m = Math.floor(s / 60);
+        if (m < 60) return m + 'm ' + String(s % 60).padStart(2, '0') + 's';
+        return Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm';
+    }
+    function fmtMetric(v, kind) {
+        if (kind === 'pct') return (Number(v) || 0).toFixed(1) + '%';
+        if (kind === 'dec') return (Number(v) || 0).toFixed(2);
+        if (kind === 'dur') return fmtDur(v);
+        return fmt(Math.round(Number(v) || 0));
+    }
+    const emptyLandingRow = () => LANDING_SUM_FIELDS.reduce((o, k) => (o[k] = 0, o), {});
+    const addLandingRow = (acc, r) => { LANDING_SUM_FIELDS.forEach(k => acc[k] += Number(r[k]) || 0); return acc; };
+
     function renderIacoesTab() {
         const bh = dashboardData.bh; const f = globalFilters;
         const convFunnel = bh.iacoes_conversion_funnel || {};
@@ -4240,7 +4847,7 @@
         const pagesDaily = bh.iacoes_pages_daily || [];
         const referrers = bh.iacoes_referrers || [];
         const referrerDaily = bh.iacoes_referrer_daily || [];
-        // Daily breakdowns (RPC get_analytics_data_iacoes_daily) -- substitui snapshots all-time pra respeitarem o filtro temporal global
+        // Daily breakdowns (RPC get_analytics_data_iacoes_daily_v2) -- substitui snapshots all-time pra respeitarem o filtro temporal global
         const devicesDaily = bh.iacoes_devices_daily || [];
         const browsersDaily = bh.iacoes_browsers_daily || [];
         const osDaily = bh.iacoes_os_daily || [];
@@ -4251,6 +4858,13 @@
         const vsOtherConversionDaily = bh.iacoes_vs_other_conversion_daily || [];
         const hourlyDaily = bh.iacoes_hourly_daily || [];
         const conversionHourlyDaily = bh.iacoes_conversion_hourly_daily || [];
+        // Landing v3 (RPC get_analytics_data_iacoes_v3) -- modelo por sessao + scroll depth.
+        // `dim_daily` tem `day` e e refiltrado no cliente; as outras 3 sao
+        // agregados do periodo ja recortado pelo backend (from/to == globalFilters).
+        const dimDaily = bh.iacoes_dim_daily || [];
+        const scrollByPage = bh.iacoes_scroll_by_page || [];
+        const sessionDepth = bh.iacoes_session_depth || [];
+        const landingSankey = bh.iacoes_landing_sankey || [];
 
         // Helper local: agrega rows filtradas somando sumFields por chave composta.
         const aggregateBy = (rows, keyFields, sumFields) => {
@@ -4258,7 +4872,7 @@
             rows.forEach(r => {
                 const key = keyFields.map(k => r[k] ?? '').join('|');
                 if (!out[key]) { out[key] = {}; keyFields.forEach(k => out[key][k] = r[k]); sumFields.forEach(s => out[key][s] = 0); }
-                sumFields.forEach(s => out[key][s] += Number(r[s])||0);
+                sumFields.forEach(s => out[key][s] += Number(r[s]) || 0);
             });
             return Object.values(out);
         };
@@ -4302,7 +4916,53 @@
             paywall_rate:c.sessions>0 ? Math.round((c.paywall / c.sessions)*1000)/10 : 0
         }));
 
+        // ===== Totais de sessao do periodo =====
+        // Qualquer dimensao cobre 100% das sessoes (todo valor vem coalescido na
+        // RPC), entao 'fonte' serve de total. Usar a soma de TODAS as dimensoes
+        // contaria cada sessao 9 vezes.
+        const dimFiltered = filterSnapshot(dimDaily, f);
+        const sessTotals = dimFiltered.filter(r => r.dim === 'fonte').reduce(addLandingRow, emptyLandingRow());
+        const hasV3 = dimFiltered.length > 0;
+
         buildHTML('iacoes', `
+            <h3 class="section-title">Qualidade das sessoes</h3>
+            <p class="section-desc">Uma linha por sessao da landing, com os atributos do primeiro evento (first-touch) e a profundidade de leitura atingida. "Rejeicao" = 1 pageview, nenhum CTA e sem passar da metade da pagina.</p>
+            <div class="kpi-grid" id="iacoesSessionKpis"></div>
+            <div class="charts-grid">
+                ${canvasHTML('iacoesScrollFunnelChart','Ate onde as pessoas leem (profundidade de scroll)')}
+                ${canvasHTML('iacoesDepthPagesChart','Paginas por sessao')}
+            </div>
+            <div class="charts-grid">
+                ${canvasHTML('iacoesDepthDurChart','Duracao da sessao')}
+                <div class="chart-container"><div class="chart-title">Scroll por pagina (top 15)</div><div style="max-height:320px;overflow-y:auto"><table id="iacoesScrollPageTable"></table></div></div>
+            </div>
+
+            <h3 class="section-title">Explorador &mdash; qualquer dimensao x qualquer metrica</h3>
+            <p class="section-desc">Escolha a dimensao (fonte, dispositivo, pagina, UTM...) e a metrica. Os dois graficos e a tabela abaixo respondem juntos.</p>
+            <div class="ctrl-bar" id="iacoesExplorerCtrl">
+                <label>Dimensao
+                    <select id="iacoesExpDim">${LANDING_DIMS.map(d=>`<option value="${d.k}">${d.l}</option>`).join('')}</select>
+                </label>
+                <label>Metrica
+                    <select id="iacoesExpMetric">${LANDING_METRICS.map(m=>`<option value="${m.k}">${m.l}</option>`).join('')}</select>
+                </label>
+                <label>Top
+                    <select id="iacoesExpTopN">${[5,8,10,15,25].map(n=>`<option value="${n}"${n===8?' selected':''}>${n}</option>`).join('')}</select>
+                </label>
+                <span class="ctrl-sep"></span>
+                <label style="font-weight:500;color:var(--m)"><input type="checkbox" id="iacoesExpMinSessions" checked style="accent-color:var(--p)"> Ocultar valores com &lt; 5 sessoes</label>
+                <span id="iacoesExpMeta" style="margin-left:auto;color:var(--m);font-size:11px"></span>
+            </div>
+            <div class="charts-grid">
+                ${canvasHTML('iacoesExpRankChart','Ranking')}
+                ${canvasHTML('iacoesExpDailyChart','Ao longo do tempo')}
+            </div>
+            <div class="table-container"><div class="table-title" id="iacoesExpTableTitle">Detalhamento</div><div style="max-height:460px;overflow:auto"><table id="iacoesExpTable"></table></div></div>
+
+            <h3 class="section-title">Fluxo da landing</h3>
+            <p class="section-desc">Cada sessao percorre fonte &rarr; pagina de entrada &rarr; profundidade de leitura &rarr; clique. A largura da fita e o numero de sessoes.</p>
+            <div class="chart-container mb-2"><div class="chart-title">Fonte &rarr; Entrada &rarr; Leitura &rarr; CTA</div><div id="iacoesLandingSankey"></div></div>
+
             <h3 class="section-title">Visao Diaria &mdash; padrao por hora do dia</h3>
             <p class="section-desc">Distribuicao por hora (0-23h) somada sobre o periodo selecionado. Hora local Sao Paulo (BRT).</p>
             <div class="charts-grid" id="iacoesDailyMiniGrid" style="grid-template-columns:repeat(3,1fr);gap:12px"></div>
@@ -4338,6 +4998,89 @@
             </div>
         `);
 
+        // ===== Qualidade das sessoes =====
+        const sT = sessTotals;
+        document.getElementById('iacoesSessionKpis').innerHTML = hasV3 ? `
+            ${createKpiCardV2('Sessoes', fmt(sT.sessions), { hero:true, hint:'first-touch por session_id' })}
+            ${createKpiCardV2('Page views', fmt(sT.views))}
+            ${createKpiCardV2('Paginas / sessao', sT.sessions>0?(sT.views/sT.sessions).toFixed(2):'0')}
+            ${createKpiCardV2('Taxa de rejeicao', (sT.sessions>0?(sT.bounces/sT.sessions*100):0).toFixed(1)+'%', { hint:'1 pageview, sem CTA, sem passar da metade' })}
+            ${createKpiCardV2('Leram ate o fim', (sT.sessions>0?(sT.scroll_100/sT.sessions*100):0).toFixed(1)+'%', { hint:fmt(sT.scroll_100)+' sessoes com scroll_100' })}
+            ${createKpiCardV2('Sessoes que clicaram', (sT.sessions>0?(sT.clicked_sessions/sT.sessions*100):0).toFixed(1)+'%', { hint:fmt(sT.clicked_sessions)+' sessoes', intent:'positive' })}
+            ${createKpiCardV2('Tempo medio', fmtDur(sT.sessions>0?sT.dur_sum/sT.sessions:0), { hint:'cap de 30min/sessao — o session_id persiste por semanas' })}
+        ` : createEmptyState('Aguardando a RPC get_analytics_data_iacoes_v3', 'A aba continua funcionando com as secoes antigas.');
+
+        // Funil de scroll: base = todas as sessoes, depois cada marco
+        const scrollSteps = [
+            { l: 'Sessoes',        v: sT.sessions },
+            { l: 'Scroll 25%',     v: sT.scroll_25 },
+            { l: 'Scroll 50%',     v: sT.scroll_50 },
+            { l: 'Scroll 75%',     v: sT.scroll_75 },
+            { l: 'Leu ate o fim',  v: sT.scroll_100 }
+        ];
+        if (!showEmptyIfNeeded('iacoesScrollFunnelChart', hasV3 ? scrollSteps : [], 'Sem dados de scroll no periodo')) {
+            destroyChart('iacoesScrollFunnelChart');
+            charts.iacoesScrollFunnelChart = new Chart(document.getElementById('iacoesScrollFunnelChart'), {
+                type:'bar',
+                data:{labels:scrollSteps.map(s=>s.l), datasets:[{label:'Sessoes', data:scrollSteps.map(s=>s.v), backgroundColor:['#94a3b8','#6366f1','#3b82f6','#3ecf8e','#22c55e'], borderRadius:4}]},
+                options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
+                    const base = scrollSteps[0].v;
+                    return fmt(ctx.parsed.x) + (base>0?' ('+((ctx.parsed.x/base)*100).toFixed(1)+'% das sessoes)':'');
+                }}}},scales:{x:{beginAtZero:true,grid:{color:'#f1f5f9'}},y:{grid:{display:false}}}}
+            });
+        }
+
+        const depthPages = sessionDepth.filter(d => d.kind === 'paginas').sort((a,b)=>(a.ord||0)-(b.ord||0));
+        const depthDur   = sessionDepth.filter(d => d.kind === 'duracao').sort((a,b)=>(a.ord||0)-(b.ord||0));
+        if (!showEmptyIfNeeded('iacoesDepthPagesChart', depthPages, 'Sem dados de profundidade no periodo')) {
+            barChart('iacoesDepthPagesChart', depthPages.map(d=>d.bucket), [{label:'Sessoes',data:depthPages.map(d=>d.sessions||0),backgroundColor:'#6366f1'}]);
+        }
+        if (!showEmptyIfNeeded('iacoesDepthDurChart', depthDur, 'Sem dados de duracao no periodo')) {
+            barChart('iacoesDepthDurChart', depthDur.map(d=>d.bucket), [{label:'Sessoes',data:depthDur.map(d=>d.sessions||0),backgroundColor:'#3ecf8e'}]);
+        }
+
+        const scrollTbl = document.getElementById('iacoesScrollPageTable');
+        if (scrollTbl) {
+            if (scrollByPage.length === 0) {
+                scrollTbl.outerHTML = '<p style="color:var(--m);font-size:13px;padding:12px">Sem eventos de scroll no periodo.</p>';
+            } else {
+                const rows = scrollByPage.slice(0, 15);
+                const pctOf = (v, base) => base > 0 ? ((v/base)*100).toFixed(0)+'%' : '-';
+                scrollTbl.innerHTML = '<thead><tr><th>Pagina</th><th>Sessoes</th><th>50%</th><th>Fim</th><th>CTA</th></tr></thead><tbody>' +
+                    rows.map(p => `<tr><td>${p.page_path==='/'?'Home (/)':p.page_path}</td><td>${fmt(p.sessions||0)}</td><td>${pctOf(p.scroll_50||0,p.sessions||0)}</td><td>${pctOf(p.scroll_100||0,p.sessions||0)}</td><td>${fmt(p.cta_clicks||0)}</td></tr>`).join('') +
+                    '</tbody>';
+                makeSortable(scrollTbl);
+            }
+        }
+
+        // ===== Explorador =====
+        // Estado global pra sobreviver ao re-render de periodo/granularidade.
+        if (!window._landingExplorer) window._landingExplorer = { dim:'fonte', metric:'sessions', topN:8, minSessions:true };
+        const expState = window._landingExplorer;
+        const dimSel = document.getElementById('iacoesExpDim');
+        const metricSel = document.getElementById('iacoesExpMetric');
+        const topNSel = document.getElementById('iacoesExpTopN');
+        const minSel = document.getElementById('iacoesExpMinSessions');
+        if (dimSel) dimSel.value = expState.dim;
+        if (metricSel) metricSel.value = expState.metric;
+        if (topNSel) topNSel.value = String(expState.topN);
+        if (minSel) minSel.checked = expState.minSessions;
+        [dimSel, metricSel, topNSel, minSel].forEach(elx => { if (elx) elx.onchange = () => {
+            expState.dim = dimSel.value; expState.metric = metricSel.value;
+            expState.topN = Number(topNSel.value) || 8; expState.minSessions = minSel.checked;
+            drawLandingExplorer(dimFiltered, f);
+        }; });
+        drawLandingExplorer(dimFiltered, f);
+
+        // ===== Sankey da landing =====
+        renderSankey('iacoesLandingSankey', landingSankey, {
+            unit: 'sessoes',
+            height: 300,
+            stageLabels: ['Fonte', 'Pagina de entrada', 'Profundidade', 'Desfecho'],
+            colors: { 'Clicou CTA':'#22c55e', 'Saiu sem clicar':'#cbd5e1', 'Leu ate o fim':'#22c55e', 'Sem scroll':'#cbd5e1' },
+            emptyMsg: 'Sem sessoes no periodo (ou a RPC iacoes_v3 ainda nao foi deployada).'
+        });
+
         document.getElementById('iacoesConvKpis').innerHTML = `
             ${createKpiCard('Sessoes no BH', fmt(bhSessions))}
             ${createKpiCard('Usuarios Unicos', fmt(bhUniqueUsers))}
@@ -4353,12 +5096,14 @@
         const funnelTSPrep = prepareTimeSeries(funnelDailyMerged, f, ['views','landing_sessions','cta_clicks','sessions','logins','paywall','payments']);
 
         // ===== Visao Diaria - distribuicao por hora-do-dia =====
+        // A RPC devolve as colunas `hour` e `dow` (nao `hr`/`wday`) -- ler as
+        // chaves erradas jogava 100% dos eventos na hora 0 / domingo.
         const filteredHourly = filterSnapshot(hourlyDaily, f);
         const filteredConvHourly = filterSnapshot(conversionHourlyDaily, f);
         // Agregadas por hora (0..23) somando todos os dias do filtro
         const hourBuckets = (rows, fields) => {
             const out = Array.from({length:24}, (_,h) => { const o={hr:h}; fields.forEach(fld => o[fld]=0); return o; });
-            rows.forEach(r => { const h=Number(r.hr)||0; fields.forEach(fld => out[h][fld] += Number(r[fld])||0); });
+            rows.forEach(r => { const h=Number(r.hour)||0; if (h<0||h>23) return; fields.forEach(fld => out[h][fld] += Number(r[fld])||0); });
             return out;
         };
         const hourLanding = hourBuckets(filteredHourly, ['views','sessions','cta_clicks']);
@@ -4389,7 +5134,7 @@
         // Heatmap dow x hour para Views da landing
         const heatRows = {};
         filteredHourly.forEach(r => {
-            const k = (r.wday ?? 0) + '|' + (r.hr ?? 0);
+            const k = (r.dow ?? 0) + '|' + (r.hour ?? 0);
             heatRows[k] = (heatRows[k] || 0) + (Number(r.views)||0);
         });
         const heatmapData = Object.entries(heatRows).map(([k,v]) => { const [wday,hr]=k.split('|'); return {dow:Number(wday), hour:Number(hr), events:v}; });
@@ -4407,6 +5152,7 @@
                 {label:'Pagamentos',data:funnelTSPrep.data.map(d=>d.payments||0),borderColor:'#22c55e',backgroundColor:'transparent',borderWidth:2,pointRadius:2,tension:0.4}
             ]}, options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:10}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{y:{type:'logarithmic',beginAtZero:false,grid:{color:'#f1f5f9'},ticks:{callback:v=>fmt(v)}}}}
         });
+        attachSeriesIsolator('iacoesFunnelTimeChart');
 
         // Conversion rates over time
         const rateData = funnelTSPrep.data.map(d => ({
@@ -4426,6 +5172,7 @@
                 {label:'Pagamento/Paywall %',data:rateData.map(d=>d.payment_rate),borderColor:'#22c55e',backgroundColor:'transparent',borderWidth:2,pointRadius:2,tension:0.4}
             ]}, options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:10}}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+ctx.parsed.y.toFixed(1)+'%'}}},scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'},ticks:{callback:v=>v+'%'}}}}
         });
+        attachSeriesIsolator('iacoesConvRateTimeChart');
 
         const convDailyPrep = prepareTimeSeries(convDaily, f, ['sessions','unique_users','logins','paywall','payments']);
         barChart('iacoesConvDailyChart', convDailyPrep.labels, [
@@ -4434,6 +5181,7 @@
             {label:'Paywall',data:convDailyPrep.data.map(d=>d.paywall||0),backgroundColor:'#f59e0b'},
             {label:'Pagamentos',data:convDailyPrep.data.map(d=>d.payments||0),backgroundColor:'#3b82f6'}
         ]);
+        attachSeriesIsolator('iacoesConvDailyChart');
 
         // Comparison chart (convComparison agregado de iacoes_vs_other_conversion_daily filtrado)
         const srcColors ={'iAcoes':'#f97316','Google':'#4285f4','Google (ads)':'#4285f4','Direto':'#94a3b8','Stripe':'#635bff','App BH':'#3ecf8e','Twitter/X':'#1d9bf0','Twitter/X (ads)':'#1d9bf0','Twitter/X (app)':'#1d9bf0','Facebook':'#1877f2','Facebook (ads)':'#1877f2','Facebook (app)':'#1877f2','Instagram':'#e4405f','Instagram (app)':'#e4405f','LinkedIn':'#0a66c2','LinkedIn (ads)':'#0a66c2','LinkedIn (app)':'#0a66c2','WhatsApp':'#25d366','WhatsApp (app)':'#25d366','YouTube':'#ff0000','Telegram':'#26a5e4','Telegram (app)':'#26a5e4','TikTok (ads)':'#010101','Bing (ads)':'#00809d','Reddit':'#ff4500','Lovable (Dev)':'#d946ef','Localhost (Dev)':'#a1a1aa'};
@@ -4483,6 +5231,7 @@
                 type:'bar',data:{labels:mcRef.labels,datasets:refSources.map((s,i)=>({label:s,data:mcRef.getValues(s),backgroundColor:COLORS[i%COLORS.length]}))},
                 options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:richTooltipCallbacks}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,grid:{color:'#f1f5f9'}}}}
             });
+            attachSeriesIsolator('iacoesReferrerChart');
         } else if (referrers.length > 0) {
             barChart('iacoesReferrerChart', referrers.map(r=>r.source), [{label:'Views',data:referrers.map(r=>r.views||0),backgroundColor:COLORS}], {horizontal:true});
         }
@@ -4549,6 +5298,149 @@
         if (osSummary.length > 0) { doughnutChart('iacoesOsChart', osSummary.map(o=>o.os||'N/A'), osSummary.map(o=>o.cnt||o.views||0), COLORS); }
     }
 
+    /**
+     * Explorador da landing: um ranking, uma serie temporal e uma tabela
+     * completa para o par (dimensao, metrica) escolhido na barra de controles.
+     * Recebe `rows` = iacoes_dim_daily ja filtrado pelo periodo global.
+     */
+    function drawLandingExplorer(rows, f) {
+        const st = window._landingExplorer;
+        const metricDef = LANDING_METRICS.find(m => m.k === st.metric) || LANDING_METRICS[0];
+        const dimDef = LANDING_DIMS.find(d => d.k === st.dim) || LANDING_DIMS[0];
+        const valueOf = row => metricDef.derive ? metricDef.derive(row) : (Number(row[metricDef.k]) || 0);
+
+        const dimRows = rows.filter(r => r.dim === st.dim);
+        const titleEl = document.getElementById('iacoesExpTableTitle');
+        const metaEl = document.getElementById('iacoesExpMeta');
+
+        if (dimRows.length === 0) {
+            // Nao usa showEmptyIfNeeded aqui: ele substitui o innerHTML do
+            // container e mataria o <canvas> — trocar a dimensao de volta
+            // deixaria o grafico vazio pra sempre. Esvazia o chart e mantem o DOM.
+            ['iacoesExpRankChart', 'iacoesExpDailyChart'].forEach(id => destroyChart(id));
+            const t = document.getElementById('iacoesExpTable');
+            if (t) t.innerHTML = `<tbody><tr><td style="color:var(--m);padding:12px">Sem dados de ${dimDef.l.toLowerCase()} no periodo.</td></tr></tbody>`;
+            if (metaEl) metaEl.textContent = 'sem dados';
+            return;
+        }
+
+        // Totais do periodo por valor da dimensao
+        const byValue = {};
+        dimRows.forEach(r => {
+            if (!byValue[r.value]) byValue[r.value] = Object.assign({ value: r.value }, emptyLandingRow());
+            addLandingRow(byValue[r.value], r);
+        });
+        let ranked = Object.values(byValue);
+        // Valores com pouquissimas sessoes produzem taxas de 0% ou 100% que
+        // dominam o ranking sem significar nada. O corte e opcional e visivel.
+        const hidden = st.minSessions ? ranked.filter(r => r.sessions < 5).length : 0;
+        if (st.minSessions) ranked = ranked.filter(r => r.sessions >= 5);
+        ranked.sort((a, b) => valueOf(b) - valueOf(a) || b.sessions - a.sessions);
+        const top = ranked.slice(0, st.topN);
+        const topNames = top.map(r => r.value);
+
+        if (metaEl) {
+            const totalSess = Object.values(byValue).reduce((s, r) => s + r.sessions, 0);
+            metaEl.textContent = `${Object.keys(byValue).length} valores - ${fmt(totalSess)} sessoes` + (hidden ? ` - ${hidden} ocultos (<5 sessoes)` : '');
+        }
+
+        // ===== Ranking =====
+        destroyChart('iacoesExpRankChart');
+        const rankCanvas = document.getElementById('iacoesExpRankChart');
+        if (rankCanvas) {
+            const cont = rankCanvas.closest('.chart-container');
+            const t = cont && cont.querySelector('.chart-title');
+            if (t) t.textContent = `${metricDef.l} por ${dimDef.l.toLowerCase()}`;
+            charts.iacoesExpRankChart = new Chart(rankCanvas, {
+                type: 'bar',
+                data: { labels: top.map(r => r.value), datasets: [{ label: metricDef.l, data: top.map(valueOf), backgroundColor: top.map((_, i) => COLORS[i % COLORS.length]), borderRadius: 4 }] },
+                options: { indexAxis:'y', responsive:true, maintainAspectRatio:true,
+                    plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: ctx => {
+                        const r = top[ctx.dataIndex];
+                        return `${metricDef.l}: ${fmtMetric(ctx.parsed.x, metricDef.kind)}  (${fmt(r.sessions)} sessoes)`;
+                    }}}},
+                    scales:{ x:{ beginAtZero:true, grid:{color:'#f1f5f9'}, ticks:{ callback: v => fmtMetric(v, metricDef.kind) } }, y:{ grid:{display:false} } } }
+            });
+        }
+
+        // ===== Serie temporal =====
+        // Indexa (valor, dia) somado, depois aplica a granularidade global.
+        const idx = {};
+        const dayset = new Set();
+        dimRows.forEach(r => {
+            if (!topNames.includes(r.value)) return;
+            dayset.add(r.day);
+            const key = r.value + '|' + r.day;
+            if (!idx[key]) idx[key] = emptyLandingRow();
+            addLandingRow(idx[key], r);
+        });
+        const days = [...dayset].sort();
+        const granDays = aggregateDayList(days, f.gran);
+        const buckets = buildDayBuckets(days, f.gran);
+        const labels = granDays.map(d => formatLabel(d, f.gran));
+        const seriesFor = name => buckets.map(bucket => {
+            const acc = emptyLandingRow();
+            bucket.forEach(day => { const row = idx[name + '|' + day]; if (row) addLandingRow(acc, row); });
+            return valueOf(acc);
+        });
+
+        destroyChart('iacoesExpDailyChart');
+        const dailyCanvas = document.getElementById('iacoesExpDailyChart');
+        if (dailyCanvas) {
+            const cont = dailyCanvas.closest('.chart-container');
+            const t = cont && cont.querySelector('.chart-title');
+            if (t) t.textContent = `${metricDef.l} ao longo do tempo`;
+            // Taxas e medias NAO empilham (a soma nao tem significado) -> linhas.
+            const isRate = !!metricDef.derive;
+            charts.iacoesExpDailyChart = new Chart(dailyCanvas, {
+                type: isRate ? 'line' : 'bar',
+                data: { labels, datasets: topNames.map((name, i) => ({
+                    label: name,
+                    data: seriesFor(name),
+                    backgroundColor: isRate ? 'transparent' : COLORS[i % COLORS.length],
+                    borderColor: COLORS[i % COLORS.length],
+                    borderWidth: 2, pointRadius: 2, tension: 0.4
+                })) },
+                options: { responsive:true, maintainAspectRatio:true,
+                    plugins:{ legend:{position:'top',labels:{boxWidth:12,font:{size:10}}},
+                              tooltip:{ callbacks:{ label: ctx => ctx.dataset.label + ': ' + fmtMetric(ctx.parsed.y, metricDef.kind) } } },
+                    scales: isRate
+                        ? { y:{ beginAtZero:true, grid:{color:'#f1f5f9'}, ticks:{ callback: v => fmtMetric(v, metricDef.kind) } } }
+                        : { x:{stacked:true}, y:{ stacked:true, beginAtZero:true, grid:{color:'#f1f5f9'} } } }
+            });
+            attachSeriesIsolator('iacoesExpDailyChart');
+        }
+
+        // ===== Tabela completa =====
+        if (titleEl) titleEl.textContent = `Detalhamento por ${dimDef.l.toLowerCase()}`;
+        const tableEl = document.getElementById('iacoesExpTable');
+        if (tableEl) {
+            const cols = [
+                { h: dimDef.l,             v: r => r.value, raw: true },
+                { h: 'Sessoes',            v: r => fmt(r.sessions) },
+                { h: 'Page views',         v: r => fmt(r.views) },
+                { h: 'Pg/sessao',          v: r => (r.sessions>0 ? r.views/r.sessions : 0).toFixed(2) },
+                { h: 'Rejeicao',           v: r => (r.sessions>0 ? r.bounces/r.sessions*100 : 0).toFixed(1)+'%' },
+                { h: 'Scroll 50%',         v: r => (r.sessions>0 ? r.scroll_50/r.sessions*100 : 0).toFixed(0)+'%' },
+                { h: 'Leu ate o fim',      v: r => (r.sessions>0 ? r.scroll_100/r.sessions*100 : 0).toFixed(0)+'%' },
+                { h: 'CTA clicks',         v: r => fmt(r.cta_clicks) },
+                { h: 'Taxa CTA',           v: r => (r.sessions>0 ? r.clicked_sessions/r.sessions*100 : 0).toFixed(1)+'%' },
+                { h: 'Tempo medio',        v: r => fmtDur(r.sessions>0 ? r.dur_sum/r.sessions : 0) }
+            ];
+            // A tabela lista TODOS os valores (nao so o top N do grafico) --
+            // ordenada por sessoes, que e o volume, nao pela metrica escolhida.
+            const tableRows = ranked.slice().sort((a,b)=>b.sessions-a.sessions);
+            const totals = tableRows.reduce(addLandingRow, Object.assign({ value: 'TOTAL' }, emptyLandingRow()));
+            tableEl.innerHTML =
+                '<thead><tr>' + cols.map(c => `<th>${c.h}</th>`).join('') + '</tr></thead>' +
+                '<tbody>' + tableRows.map(r => '<tr>' + cols.map(c => `<td>${c.v(r)}</td>`).join('') + '</tr>').join('') +
+                `<tr style="font-weight:700;border-top:2px solid var(--bd)">` + cols.map(c => `<td>${c.v(totals)}</td>`).join('') + '</tr>' +
+                '</tbody>';
+            makeSortable(tableEl);
+            addExportBtn('#iacoesExpTableTitle', 'iacoesExpTable');
+        }
+    }
+
     function renderHeatmap(containerId, data) {
         const dows = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'];
         const maxVal = Math.max(...data.map(d=>d.events), 1);
@@ -4571,7 +5463,7 @@
 
     // ===== TAB NAVIGATION =====
     let currentTab = 'bhVisao';
-    const ALL_TABS = ['bhVisao','bhAquisicao','bhEngajamento','bhAirton','bhRetencao','bhCustos','bhRelatorios','bhDetalhes','htaVisao','htaAquisicao','htaEngajamento','htaRetencao','htaCustos','htaDetalhes','iacoes'];
+    const ALL_TABS = ['bhVisao','bhAquisicao','bhEngajamento','bhAirton','bhEmails','bhRetencao','bhCustos','bhRelatorios','bhDetalhes','htaVisao','htaAquisicao','htaEngajamento','htaRetencao','htaCustos','htaDetalhes','iacoes'];
     // Lazy render: abas marcadas dirty so sao (re)renderizadas quando visitadas.
     const dirtyTabs = new Set(ALL_TABS);
     function markAllTabsDirty() { ALL_TABS.forEach(t=>dirtyTabs.add(t)); }
@@ -4615,7 +5507,7 @@
         try {
             const renderMap = {
                 bhVisao: renderBhVisao, bhAquisicao: renderBhAquisicao, bhEngajamento: renderBhEngajamento,
-                bhAirton: renderBhAirton,
+                bhAirton: renderBhAirton, bhEmails: renderBhEmails,
                 bhRetencao: renderBhRetencao, bhCustos: renderBhCustos, bhRelatorios: renderBhRelatorios, bhDetalhes: renderBhDetalhes,
                 htaVisao: renderHtaVisao, htaAquisicao: renderHtaAquisicao, htaEngajamento: renderHtaEngajamento,
                 htaRetencao: renderHtaRetencao, htaCustos: renderHtaCustos, htaDetalhes: renderHtaDetalhes,
@@ -4686,6 +5578,8 @@
             if (globalFilters.from) params.set('from', `${globalFilters.from}T00:00:00-03:00`);
             if (globalFilters.to)   params.set('to',   `${globalFilters.to}T23:59:59.999-03:00`);
             if (window._airtonIncludeAdmins) params.set('include_admins', 'true');
+            // 2026-08-28: toggle da aba Emails (inclui contas @brasilhorizonte.com.br).
+            if (window._emailIncludeAdmins) params.set('email_include_admins', 'true');
             if (window._bhReportsIncludeAdmins) params.set('bh_reports_include_admins', 'true');
             // 2026-05-27: params do bloco de tickers (Engajamento iAcoes).
             const tf = window._bhTickerFilters;
